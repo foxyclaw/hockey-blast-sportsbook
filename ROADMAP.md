@@ -84,21 +84,26 @@ Hockey players often have **multiple records** in `humans` table representing th
 
 **Key constraint:** Easy to link, very hard to unlink. Merging player identities is irreversible in practice.
 
-**Phase 1 (current):** Simple — user picks ONE `hb_human_id`. Store it. Don't try to merge anything.
+**Revised approach (2026-03-11, Pasha):** Just collect. Don't merge. Let users claim as many `hb_human_id`s as they recognize as themselves — store all of them in OUR DB. Merging/deduplication happens later in a nightly stats job on the hockey_blast side, not here.
 
-**Phase 2 (future, after proper process established in Pasha's repos):**
-- Let user claim multiple `hb_human_id`s as aliases of themselves
-- Show aggregate stats across all claimed records
-- Trigger merge review (manual or semi-auto) via admin UI
-- Alert if two users claim the same `hb_human_id` — needs resolution
+**Implementation:**
+- `pred_user_hb_claims` table: `(id, user_id, hb_human_id, claimed_at, source)`
+  - `source`: 'self_reported' | 'email_match' | 'admin'
+  - Multiple rows allowed per user
+  - No uniqueness constraint on `hb_human_id` — two users CAN claim the same record (conflict flagged, resolved later)
+- Keep `pred_users.hb_human_id` as "primary" claim for quick lookups (the one they picked first or confirmed as primary)
+- When displaying player stats: union across ALL claimed `hb_human_id`s
+- No writes to `hockey_blast` DB ever from this app
+
+**Nightly job (future):**
+- Read all `pred_user_hb_claims`
+- Feed into hockey_blast merge/alias logic
+- Flag conflicts (same `hb_human_id` claimed by >1 user) for manual review
 
 **What NOT to implement now:**
-- Auto-linking without user confirmation
-- Merging records
-- Cross-user conflict resolution
-- Anything that writes to the hockey_blast DB
-
-**For now:** Store `hb_human_id` as-is. The predictions DB can hold multiple `hb_human_ids` per user later (via a join table `pred_user_hb_aliases`).
+- Any merging of human records
+- Conflict resolution UI
+- Anything that writes to `hockey_blast` DB
 
 ### Token Limit / Credit Warning Skill
 - OpenClaw exposes session token usage via `session_status` tool
