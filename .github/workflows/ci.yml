@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: hockey_blast_predictions_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Lint with flake8
+        run: |
+          flake8 app/ tests/ --max-line-length=100 --extend-ignore=E203,W503
+
+      - name: Format check with black
+        run: |
+          black --check --line-length=100 app/ tests/
+
+      - name: Run unit tests
+        env:
+          FLASK_ENV: testing
+          SECRET_KEY: ci-test-secret
+          AUTH0_DOMAIN: test.auth0.com
+          AUTH0_CLIENT_ID: test-client
+          AUTH0_CLIENT_SECRET: test-secret
+          AUTH0_AUDIENCE: test-audience
+          PRED_DATABASE_URL: sqlite:///:memory:
+          HB_DATABASE_URL: sqlite:///:memory:
+        run: |
+          pytest tests/unit/ -v
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install black flake8 isort
+      - run: black --check --line-length=100 app/ tests/
+      - run: flake8 app/ tests/ --max-line-length=100 --extend-ignore=E203,W503
+      - run: isort --check-only --profile black app/ tests/

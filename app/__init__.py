@@ -1,0 +1,127 @@
+"""
+Flask application factory.
+
+Usage:
+    from app import create_app
+    app = create_app()
+
+    # Or with explicit config:
+    app = create_app("production")
+"""
+
+import logging
+import os
+
+from flask import Flask, jsonify
+from flask_cors import CORS
+
+from app.config import config, get_config
+from app.db import init_db
+
+
+def create_app(config_name: str | None = None) -> Flask:
+    """
+    Application factory. Creates and configures the Flask app.
+
+    Args:
+        config_name: "development" | "testing" | "production" | None
+                     Defaults to FLASK_ENV environment variable, then "development".
+    """
+    app = Flask(__name__)
+
+    # ── Load config ────────────────────────────────────────────────────────────
+    if config_name is None:
+        config_name = os.environ.get("FLASK_ENV", "development")
+
+    cfg_class = config.get(config_name, config["default"])
+    app.config.from_object(cfg_class)
+
+    # ── Logging ────────────────────────────────────────────────────────────────
+    log_level = getattr(logging, app.config.get("LOG_LEVEL", "INFO"), logging.INFO)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    # ── CORS ───────────────────────────────────────────────────────────────────
+    CORS(
+        app,
+        origins=app.config.get("CORS_ORIGINS", ["*"]),
+        supports_credentials=True,
+    )
+
+    # ── Database (dual sessions) ───────────────────────────────────────────────
+    init_db(app)
+
+    # ── Auth0 OAuth client ─────────────────────────────────────────────────────
+    from app.auth.routes import init_oauth
+    init_oauth(app)
+
+    # ── Blueprints ─────────────────────────────────────────────────────────────
+    _register_blueprints(app)
+
+    # ── Background scheduler ───────────────────────────────────────────────────
+    if not app.config.get("TESTING") and os.environ.get("WERKZEUG_RUN_MAIN") != "false":
+        # Only start scheduler in the main process (not the reloader child)
+        if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            from app.jobs.grade_results import start_scheduler
+            start_scheduler(app)
+
+    # ── Health check ───────────────────────────────────────────────────────────
+    @app.route("/api/health")
+    def health():
+        """Liveness probe endpoint."""
+        return jsonify({"status": "ok", "service": "hockey-blast-predictions"})
+
+    @app.route("/api/health/db")
+    def health_db():
+        """Readiness probe — checks both DB connections."""
+        from app.db import HBSession, PredSession
+        results = {}
+
+        try:
+            HBSession().execute(__import__("sqlalchemy").text("SELECT 1"))
+            results["hb_db"] = "ok"
+        except Exception as exc:
+            results["hb_db"] = f"error: {exc}"
+
+        try:
+            PredSession().execute(__import__("sqlalchemy").text("SELECT 1"))
+            results["pred_db"] = "ok"
+        except Exception as exc:
+            results["pred_db"] = f"error: {exc}"
+
+        all_ok = all(v == "ok" for v in results.values())
+        return jsonify({"status": "ok" if all_ok else "degraded", **results}), (
+            200 if all_ok else 503
+        )
+
+    # ── Error handlers ─────────────────────────────────────────────────────────
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({"error": "NOT_FOUND", "message": "Resource not found"}), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed(e):
+        return jsonify({"error": "METHOD_NOT_ALLOWED", "message": str(e)}), 405
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        return jsonify({"error": "INTERNAL_ERROR", "message": "An unexpected error occurred"}), 500
+
+    return app
+
+
+def _register_blueprints(app: Flask) -> None:
+    """Register all blueprints with the app."""
+    from app.auth.routes import auth_bp
+    from app.blueprints.games import games_bp
+    from app.blueprints.picks import picks_bp
+    from app.blueprints.leagues import leagues_bp
+    from app.blueprints.standings import standings_bp
+
+    app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(games_bp, url_prefix="/api/games")
+    app.register_blueprint(picks_bp, url_prefix="/api/picks")
+    app.register_blueprint(leagues_bp, url_prefix="/api/leagues")
+    app.register_blueprint(standings_bp, url_prefix="/api/standings")

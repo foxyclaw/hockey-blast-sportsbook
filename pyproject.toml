@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "hockey-blast-predictions"
+version = "0.1.0"
+description = "Pick-em predictions game layered on top of Hockey Blast"
+authors = [{ name = "FoxyClaw", email = "foxyclawpower@gmail.com" }]
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "W503"]
