@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom hockey theme overrides */
+:root {
+  --color-ice: #e8f4f8;
+  --color-rink: #0a1628;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: oklch(var(--b2));
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(var(--p));
+  border-radius: 3px;
+}
+
+/* Lock urgency animations */
+@keyframes pulse-red {
+  0%, 100% { color: oklch(var(--er)); }
+  50% { color: oklch(var(--er) / 0.6); }
+}
+
+.lock-urgent {
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+/* Skill bar transitions */
+.skill-bar-fill {
+  transition: width 0.6s ease-out;
+}

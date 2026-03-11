@@ -20,8 +20,8 @@ from app.models.pred_result import PredResult
 from app.models.pred_league import PredLeague
 
 
-FINAL_STATUSES = frozenset({"Final", "Final/OT", "Final/SO"})
-VOID_STATUSES = frozenset({"Forfeit", "CANCELED"})
+FINAL_STATUSES = frozenset({"Final", "Final.", "Final/OT", "Final/OT2", "Final/SO", "Final(SO)"})
+VOID_STATUSES = frozenset({"Forfeit", "FORFEIT", "CANCELED", "NOEVENTS"})
 UPSET_SCALE = 0.5
 
 
@@ -123,32 +123,21 @@ def _load_games(game_ids: set[int]) -> dict[int, object]:
 
 def _get_winner(game, pred_session: Session) -> int | None:
     """
-    Determine the winning team_id for a final game using goal counts.
-    Returns None for ties (pick voided) or if data unavailable.
+    Determine the winning team_id for a final game.
+    Uses home_final_score / visitor_final_score directly from the game row —
+    more reliable than counting goals and avoids an extra DB query.
+    Returns None for ties or missing scores (pick voided).
     """
-    try:
-        from hockey_blast_common_lib.models import Goal
-    except ImportError:
+    home_score = getattr(game, "home_final_score", None)
+    visitor_score = getattr(game, "visitor_final_score", None)
+
+    if home_score is None or visitor_score is None:
         return None
 
-    hb_session = HBSession()
-
-    home_goals_stmt = select(Goal).where(
-        Goal.game_id == game.id,
-        Goal.team_id == game.home_team_id,
-    )
-    away_goals_stmt = select(Goal).where(
-        Goal.game_id == game.id,
-        Goal.team_id == game.away_team_id,
-    )
-
-    home_goals = len(hb_session.execute(home_goals_stmt).scalars().all())
-    away_goals = len(hb_session.execute(away_goals_stmt).scalars().all())
-
-    if home_goals > away_goals:
+    if home_score > visitor_score:
         return game.home_team_id
-    elif away_goals > home_goals:
-        return game.away_team_id
+    elif visitor_score > home_score:
+        return game.visitor_team_id
     return None  # Tie — void
 
 
