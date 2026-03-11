@@ -11,7 +11,7 @@ GET   /api/leagues/<id>/picks   — all picks in league for a game (post-lock on
 from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.auth.jwt_validator import require_auth
 from app.db import PredSession
@@ -339,3 +339,33 @@ def league_game_picks(league_id: int):
         "game_locked": game_is_locked,
         "picks": picks_data,
     })
+
+
+@leagues_bp.route("/mine", methods=["GET"])
+@require_auth
+def my_leagues():
+    """GET /api/leagues/mine — leagues the current user belongs to."""
+    pred_session = PredSession()
+    user = g.pred_user
+
+    stmt = (
+        select(PredLeague)
+        .join(PredLeagueMember, PredLeagueMember.league_id == PredLeague.id)
+        .where(PredLeagueMember.user_id == user.id, PredLeagueMember.is_active == True)  # noqa: E712
+        .order_by(PredLeague.created_at.desc())
+    )
+    leagues = pred_session.execute(stmt).scalars().all()
+
+    result = []
+    for league in leagues:
+        # Member count
+        member_count_stmt = select(func.count()).select_from(PredLeagueMember).where(
+            PredLeagueMember.league_id == league.id,
+            PredLeagueMember.is_active == True,  # noqa: E712
+        )
+        member_count = pred_session.execute(member_count_stmt).scalar_one()
+        d = league.to_dict() if hasattr(league, "to_dict") else {"id": league.id, "name": league.name}
+        d["member_count"] = member_count
+        result.append(d)
+
+    return jsonify({"leagues": result})
