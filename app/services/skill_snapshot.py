@@ -1,12 +1,10 @@
 """
 Skill snapshot — captures team average skill at pick submission time.
 
-Skill data comes from hockey_blast_common_lib's OrgStatsSkater table.
-skill_value: 0 = elite, 100 = worst.
+Skill data: Human.skater_skill_value (0 = elite, 100 = worst) aggregated
+via GameRoster to find recent skaters for a team.
 
 We snapshot at pick time because skill values change throughout the season.
-Point-in-time fairness: the upset bonus is based on who was the underdog
-when you made your pick, not who ended up winning the season.
 """
 
 from sqlalchemy import func, select
@@ -14,42 +12,40 @@ from sqlalchemy import func, select
 from app.db import HBSession
 
 
-def get_team_avg_skill(team_id: int, org_id: int) -> float | None:
+def get_team_avg_skill(team_id: int, org_id: int | None = None) -> float | None:
     """
-    Return the average skater_skill_value for a team's rostered skaters
-    using the pre-aggregated org_stats_skater table.
+    Return the average skater_skill_value for a team's skaters via GameRoster.
+    Looks at up to the last 200 roster entries to keep it fast.
 
-    Returns None if:
-      - No stats found (new team, no history)
-      - hockey_blast_common_lib not installed (returns None gracefully)
+    Returns None if no data found or lib not installed.
     """
     try:
-        from hockey_blast_common_lib.models import OrgStatsSkater
+        from hockey_blast_common_lib.models import GameRoster, Human
     except ImportError:
         return None
 
     session = HBSession()
-    stmt = select(func.avg(OrgStatsSkater.skater_skill_value)).where(
-        OrgStatsSkater.team_id == team_id,
-        OrgStatsSkater.org_id == org_id,
+
+    # Get recent skaters for this team (role='skater')
+    recent_stmt = (
+        select(GameRoster.human_id)
+        .where(GameRoster.team_id == team_id, GameRoster.role != "G")
+        .order_by(GameRoster.id.desc())
+        .limit(200)
+        .subquery()
     )
-    result = session.execute(stmt).scalar_one_or_none()
+
+    skill_stmt = select(func.avg(Human.skater_skill_value)).where(
+        Human.id.in_(select(recent_stmt.c.human_id)),
+        Human.skater_skill_value.isnot(None),
+    )
+    result = session.execute(skill_stmt).scalar_one_or_none()
     return float(result) if result is not None else None
 
 
 def get_game_skill_snapshot(game_id: int) -> dict:
     """
     Fetch skill averages for both teams in a game.
-
-    Returns a dict with:
-        home_team_avg_skill:   float | None
-        away_team_avg_skill:   float | None
-        picked_team_avg_skill: None (caller fills this in)
-        opponent_avg_skill:    None (caller fills this in)
-        skill_differential:    None (caller fills this in)
-        is_upset_pick:         False (caller fills this in)
-
-    Caller is responsible for computing the pick-specific fields.
     """
     try:
         from hockey_blast_common_lib.models import Game
@@ -63,53 +59,37 @@ def get_game_skill_snapshot(game_id: int) -> dict:
     if game is None:
         return _empty_snapshot()
 
-    # We need the org_id to look up stats.
-    # Games belong to a season which belongs to an org — try game.org_id or game.season.org_id
     org_id = getattr(game, "org_id", None)
-    if org_id is None:
-        # Try to get it via season relationship
-        season = getattr(game, "season", None)
-        if season:
-            org_id = getattr(season, "org_id", None)
-
-    if org_id is None:
-        return _empty_snapshot()
-
     home_skill = get_team_avg_skill(game.home_team_id, org_id)
-    away_skill = get_team_avg_skill(game.away_team_id, org_id)
+    visitor_skill = get_team_avg_skill(game.visitor_team_id, org_id)
 
     return {
         "home_team_avg_skill": home_skill,
-        "away_team_avg_skill": away_skill,
-        "picked_team_avg_skill": None,   # filled by pick_service
-        "opponent_avg_skill": None,       # filled by pick_service
-        "skill_differential": None,       # filled by pick_service
-        "is_upset_pick": False,           # filled by pick_service
+        "away_team_avg_skill": visitor_skill,
+        "picked_team_avg_skill": None,
+        "opponent_avg_skill": None,
+        "skill_differential": None,
+        "is_upset_pick": False,
     }
 
 
 def compute_pick_skill_fields(
     picked_team_id: int,
     home_team_id: int,
-    away_team_id: int,
+    visitor_team_id: int,
     home_skill: float | None,
-    away_skill: float | None,
+    visitor_skill: float | None,
 ) -> dict:
     """
-    Given the picked team and both teams' skill values, compute:
-        picked_team_avg_skill
-        opponent_avg_skill
-        skill_differential  (picked - opponent; positive = upset pick)
-        is_upset_pick
+    Compute picked/opponent skill fields given both team IDs and skills.
     """
     if picked_team_id == home_team_id:
         picked_skill = home_skill
-        opp_skill = away_skill
-    elif picked_team_id == away_team_id:
-        picked_skill = away_skill
+        opp_skill = visitor_skill
+    elif picked_team_id == visitor_team_id:
+        picked_skill = visitor_skill
         opp_skill = home_skill
     else:
-        # Shouldn't happen — validation in pick_service catches this
         return {
             "picked_team_avg_skill": None,
             "opponent_avg_skill": None,
@@ -119,7 +99,7 @@ def compute_pick_skill_fields(
 
     if picked_skill is not None and opp_skill is not None:
         diff = picked_skill - opp_skill
-        is_upset = diff > 0  # Higher skill value = worse team = upset if they win
+        is_upset = diff > 0  # Higher value = worse team = upset pick
     else:
         diff = None
         is_upset = False
