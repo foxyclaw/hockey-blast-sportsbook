@@ -54,9 +54,14 @@ def create_pick():
     league_id = data["league_id"]
     picked_team_id = data["picked_team_id"]
     confidence = data.get("confidence", 1)
+    wager = data.get("wager", None)
 
     if confidence not in (1, 2, 3):
         return error_response("VALIDATION_ERROR", "Confidence must be 1, 2, or 3", 400)
+
+    if wager is not None:
+        if not isinstance(wager, int) or wager < 1 or wager > 500:
+            return error_response("VALIDATION_ERROR", "Wager must be an integer between 1 and 500", 400)
 
     pred_session = PredSession()
     user = g.pred_user
@@ -69,6 +74,7 @@ def create_pick():
             picked_team_id=picked_team_id,
             confidence=confidence,
             pred_session=pred_session,
+            wager=wager,
         )
         pred_session.commit()
         pred_session.refresh(pick)
@@ -86,18 +92,23 @@ def create_pick():
 
     lock_deadline = get_lock_deadline(game_id)
 
+    # Reload user to get fresh balance
+    pred_session.refresh(user)
+
     return jsonify({
         "pick_id": pick.id,
         "game_id": pick.game_id,
         "league_id": pick.league_id,
         "picked_team_id": pick.picked_team_id,
         "confidence": pick.confidence,
+        "wager": pick.wager,
         "is_upset_pick": pick.is_upset_pick,
         "skill_differential": (
             float(pick.skill_differential) if pick.skill_differential is not None else None
         ),
         "projected_points": projected,
         "lock_deadline": lock_deadline.isoformat() if lock_deadline else None,
+        "balance": user.balance,
     }), 201
 
 

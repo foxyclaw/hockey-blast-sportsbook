@@ -64,6 +64,9 @@ class PredPick(PredBase):
     confidence: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     # 1 = 1x, 2 = 2x, 3 = 3x
 
+    wager: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Optional paper-money wager (1–500). None = no wager placed.
+
     # ── Skill snapshot (captured at pick submission time) ─────────────────────
     # skill_value: 0 = elite, 100 = worst
     home_team_avg_skill: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
@@ -119,6 +122,7 @@ class PredPick(PredBase):
             "away_team_id": self.away_team_id,
             "picked_team_id": self.picked_team_id,
             "confidence": self.confidence,
+            "wager": self.wager,
             "skill_differential": (
                 float(self.skill_differential) if self.skill_differential is not None else None
             ),

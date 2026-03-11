@@ -118,6 +118,7 @@ def submit_pick(
     picked_team_id: int,
     confidence: int,
     pred_session: Session,
+    wager: int | None = None,
 ) -> PredPick:
     """
     Submit or update a pick.
@@ -126,8 +127,9 @@ def submit_pick(
       1. Validate pick window (game must be pickable)
       2. Validate user is in the league
       3. Validate picked_team_id is home or away
-      4. Snapshot skill data
-      5. Upsert PredPick
+      4. Validate wager (if provided)
+      5. Snapshot skill data
+      6. Upsert PredPick
 
     Returns the PredPick (not yet committed — caller commits).
     """
@@ -142,7 +144,14 @@ def submit_pick(
     if picked_team_id not in (home_team_id, away_team_id):
         raise InvalidTeamError()
 
-    # Step 4: Skill snapshot
+    # Step 4: Validate wager if provided
+    if wager is not None:
+        if not isinstance(wager, int) or wager < 1 or wager > 500:
+            raise PickError("VALIDATION_ERROR", "Wager must be an integer between 1 and 500", 400)
+        if user.balance < wager:
+            raise PickError("INSUFFICIENT_BALANCE", "Insufficient balance", 400)
+
+    # Step 5: Skill snapshot
     snapshot = get_game_skill_snapshot(game_id)
     skill_fields = compute_pick_skill_fields(
         picked_team_id=picked_team_id,
@@ -152,7 +161,7 @@ def submit_pick(
         visitor_skill=snapshot["away_team_avg_skill"],
     )
 
-    # Step 5: Upsert
+    # Step 6: Upsert
     stmt = select(PredPick).where(
         PredPick.user_id == user.id,
         PredPick.game_id == game_id,
@@ -175,6 +184,7 @@ def submit_pick(
         existing.opponent_avg_skill = skill_fields["opponent_avg_skill"]
         existing.skill_differential = skill_fields["skill_differential"]
         existing.is_upset_pick = skill_fields["is_upset_pick"]
+        existing.wager = wager
         pick = existing
     else:
         # Create new pick
@@ -193,6 +203,7 @@ def submit_pick(
             opponent_avg_skill=skill_fields["opponent_avg_skill"],
             skill_differential=skill_fields["skill_differential"],
             is_upset_pick=skill_fields["is_upset_pick"],
+            wager=wager,
         )
         pred_session.add(pick)
 

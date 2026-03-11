@@ -38,6 +38,9 @@ class PredUser(PredBase):
     hb_human_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # References hockey_blast.humans.id — no FK constraint (cross-DB)
 
+    balance: Mapped[int] = mapped_column(Integer, default=1000, nullable=False, server_default="1000")
+    # Virtual currency balance (paper money). Starts at 1000, modified by wagers on picks.
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -67,5 +70,6 @@ class PredUser(PredBase):
             "email": self.email,
             "avatar_url": self.avatar_url,
             "hb_human_id": self.hb_human_id,
+            "balance": self.balance,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

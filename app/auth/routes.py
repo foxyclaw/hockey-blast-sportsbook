@@ -113,6 +113,7 @@ def me():
             "avatar_url": user.avatar_url,
             "hb_human_id": user.hb_human_id,
             "auth0_sub": user.auth0_sub,
+            "balance": user.balance,
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "last_login_at": (
                 user.last_login_at.isoformat() if user.last_login_at else None

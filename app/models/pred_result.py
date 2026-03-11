@@ -58,6 +58,13 @@ class PredResult(PredBase):
     total_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # = pre_multiplier_points × confidence_multiplier
 
+    # ── Paper money (wager) ────────────────────────────────────────────────────
+    wager: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Copied from pick.wager at grading time. None if no wager was placed.
+
+    balance_change: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Net change to user's balance. Positive if won, negative if lost. None if no wager.
+
     graded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -85,5 +92,7 @@ class PredResult(PredBase):
             "pre_multiplier_points": self.pre_multiplier_points,
             "confidence_multiplier": self.confidence_multiplier,
             "total_points": self.total_points,
+            "wager": self.wager,
+            "balance_change": self.balance_change,
             "graded_at": self.graded_at.isoformat() if self.graded_at else None,
         }

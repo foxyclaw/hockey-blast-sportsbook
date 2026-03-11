@@ -74,6 +74,15 @@ def grade_completed_games() -> dict:
             result = _grade_pick(pick, game, league)
             pred_session.add(result)
 
+            # Apply wager balance change if a wager was placed
+            if pick.wager is not None:
+                from app.models.pred_user import PredUser
+                pred_user = pred_session.get(PredUser, pick.user_id)
+                if pred_user is not None:
+                    balance_change = _compute_balance_change(pick, result)
+                    result.balance_change = balance_change
+                    pred_user.balance = max(0, pred_user.balance + balance_change)
+
             # Update standings for this user in this league
             from app.services.standings_service import update_standings_for_result
             update_standings_for_result(result, pick, league, pred_session)
@@ -154,6 +163,7 @@ def _grade_pick(pick: PredPick, game, league: PredLeague | None) -> PredResult:
         pick_id=pick.id,
         game_final_status=game_status,
         graded_at=datetime.now(timezone.utc),
+        wager=pick.wager,
     )
 
     # Voided game — zero points, pick excluded from accuracy stats
@@ -198,6 +208,29 @@ def _grade_pick(pick: PredPick, game, league: PredLeague | None) -> PredResult:
     result.total_points = result.pre_multiplier_points * multiplier
 
     return result
+
+
+def _compute_balance_change(pick, result) -> int:
+    """
+    Compute the balance change for a wager.
+
+    multiplier = confidence + upset_bonus (0 or 1 extra if is_upset_pick)
+    If correct: +wager * multiplier
+    If wrong:   -wager
+    If void (no actual winner): 0 (refund)
+    """
+    if pick.wager is None:
+        return 0
+
+    # Voided game — full refund
+    if result.actual_winner_team_id is None and result.game_final_status not in FINAL_STATUSES:
+        return 0
+
+    multiplier = pick.confidence + (1 if pick.is_upset_pick else 0)
+    if result.is_correct:
+        return pick.wager * multiplier
+    else:
+        return -pick.wager
 
 
 def compute_points(
