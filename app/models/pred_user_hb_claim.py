@@ -8,7 +8,7 @@ Two users can claim the same hb_human_id — we store both, flag for review late
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import PredBase as Base
@@ -24,6 +24,10 @@ class PredUserHbClaim(Base):
         String(50), nullable=False, default="self_reported"
     )  # 'self_reported' | 'email_match' | 'admin'
     is_primary: Mapped[bool] = mapped_column(default=False)
+    # Snapshot of the human's profile at claim time — disaster recovery insurance.
+    # If hockey_blast DB is rebuilt from scratch, IDs change but names/teams don't.
+    # This snapshot lets us re-link by name even after a full DB rebuild.
+    profile_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     claimed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
