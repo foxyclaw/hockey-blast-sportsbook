@@ -62,6 +62,50 @@ def _enrich_pick(pick, hb_session) -> dict:
 
 picks_bp = Blueprint("picks", __name__)
 
+GLOBAL_LEAGUE_NAME = "🌎 Global Picks"
+GLOBAL_LEAGUE_JOIN_CODE = "GLOBAL01"
+
+
+def _get_or_create_global_league(user, pred_session) -> int:
+    """Return (creating if needed) the global default league ID, auto-joining the user."""
+    from app.models.pred_league import PredLeague, LeagueScope
+    from app.models.pred_league_member import PredLeagueMember, MemberRole
+
+    # Find or create global league
+    league = pred_session.execute(
+        select(PredLeague).where(PredLeague.join_code == GLOBAL_LEAGUE_JOIN_CODE)
+    ).scalar_one_or_none()
+
+    if not league:
+        league = PredLeague(
+            name=GLOBAL_LEAGUE_NAME,
+            join_code=GLOBAL_LEAGUE_JOIN_CODE,
+            scope=LeagueScope.ALL_ORGS,
+            commissioner_id=user.id,
+            max_members=10000,
+            is_public=True,
+        )
+        pred_session.add(league)
+        pred_session.flush()
+
+    # Auto-join if not already a member
+    existing = pred_session.execute(
+        select(PredLeagueMember).where(
+            PredLeagueMember.user_id == user.id,
+            PredLeagueMember.league_id == league.id,
+        )
+    ).scalar_one_or_none()
+
+    if not existing:
+        pred_session.add(PredLeagueMember(
+            user_id=user.id,
+            league_id=league.id,
+            role=MemberRole.MEMBER,
+        ))
+        pred_session.flush()
+
+    return league.id
+
 
 @picks_bp.route("", methods=["POST"])
 @require_auth
@@ -80,15 +124,19 @@ def create_pick():
     data = request.get_json(force=True, silent=True) or {}
 
     # Validate required fields
-    missing = [f for f in ("game_id", "league_id", "picked_team_id") if f not in data]
+    missing = [f for f in ("game_id", "picked_team_id") if f not in data]
     if missing:
         return error_response(
             "VALIDATION_ERROR", f"Missing required fields: {', '.join(missing)}", 400
         )
 
     game_id = data["game_id"]
-    league_id = data["league_id"]
     picked_team_id = data["picked_team_id"]
+
+    # If no league_id provided, auto-join the global default league
+    league_id = data.get("league_id")
+    if not league_id:
+        league_id = _get_or_create_global_league(user, pred_session)
     confidence = data.get("confidence", 1)
     wager = data.get("wager", None)
 
