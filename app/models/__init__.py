@@ -12,6 +12,9 @@ from app.models.pred_league_member import PredLeagueMember, MemberRole
 from app.models.pred_pick import PredPick
 from app.models.pred_result import PredResult
 from app.models.pred_league_standings import PredLeagueStandings
+from app.models.chat_message import ChatMessage
+from app.models.chat_feedback import ChatFeedback
+from app.models.chat_violation import ChatViolation
 
 __all__ = [
     "PredUser",
@@ -22,4 +25,7 @@ __all__ = [
     "PredPick",
     "PredResult",
     "PredLeagueStandings",
+    "ChatMessage",
+    "ChatFeedback",
+    "ChatViolation",
 ]

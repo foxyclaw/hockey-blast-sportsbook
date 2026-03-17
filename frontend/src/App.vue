@@ -7,6 +7,8 @@
     <footer class="footer footer-center p-4 bg-base-300 text-base-content text-xs opacity-60">
       <span>🏒 Hockey Blast Predictions · Not gambling · Just fun</span>
     </footer>
+    <!-- Floating AI chat widget (visible when logged in) -->
+    <ChatWidget v-if="isAuthenticated" />
   </div>
 </template>
 
@@ -15,6 +17,7 @@ import { watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import NavBar from '@/components/NavBar.vue'
+import ChatWidget from '@/components/ChatWidget.vue'
 import { useUserStore } from '@/stores/user'
 
 const { isAuthenticated, isLoading } = useAuth0()

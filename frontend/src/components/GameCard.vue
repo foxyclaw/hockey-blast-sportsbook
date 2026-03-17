@@ -26,7 +26,7 @@
       <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
         <!-- Home team -->
         <div class="text-center">
-          <div class="font-bold text-sm leading-tight mb-2">{{ game.home_team?.name ?? 'Home' }}</div>
+          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.home_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-2" @click.stop>{{ game.home_team?.name ?? 'Home' }}</a>
           <SkillBar :skill="game.home_team?.avg_skill" />
         </div>
 
@@ -37,17 +37,20 @@
 
         <!-- Away team -->
         <div class="text-center">
-          <div class="font-bold text-sm leading-tight mb-2">{{ game.away_team?.name ?? 'Away' }}</div>
+          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.away_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-2" @click.stop>{{ game.away_team?.name ?? 'Away' }}</a>
           <SkillBar :skill="game.away_team?.avg_skill" />
         </div>
       </div>
 
-      <!-- Footer: time + countdown -->
+      <!-- Footer: time + countdown + HB link -->
       <div class="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-base-content/5">
         <span class="text-xs text-base-content/50">
           {{ formatTime(game.scheduled_start) }}
         </span>
-        <Countdown v-if="game.lock_deadline" :deadline="game.lock_deadline" />
+        <div class="flex items-center gap-2">
+          <a v-if="game.game_id" :href="'https://hockey-blast.com/game_card?game_id=' + game.game_id" target="_blank" class="text-xs link link-secondary opacity-70" @click.stop>View on HB →</a>
+          <Countdown v-if="game.lock_deadline" :deadline="game.lock_deadline" />
+        </div>
       </div>
 
       <!-- Existing pick indicator -->
