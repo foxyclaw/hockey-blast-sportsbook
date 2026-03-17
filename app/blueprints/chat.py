@@ -74,7 +74,21 @@ def send_message():
         # Set DB env vars for MCP (common lib reads them at import time)
         _set_mcp_env()
         from hockey_blast_mcp.bedrock_chat import chat as hb_chat
-        result = hb_chat(query)
+
+        # Fetch last 10 non-off-topic messages for context
+        recent = (
+            db.query(ChatMessage)
+            .filter_by(user_id=user.id, is_off_topic=False)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(10)
+            .all()
+        )
+        history = []
+        for m in reversed(recent):
+            history.append({"role": "user", "content": m.query})
+            history.append({"role": "assistant", "content": m.answer})
+
+        result = hb_chat(query, history=history)
     except Exception as e:
         logger.error(f"Chat engine error: {e}", exc_info=True)
         return jsonify({"error": "Chat engine failed", "detail": str(e)}), 500
