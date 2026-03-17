@@ -69,7 +69,6 @@ watch(
         const token = idTokenClaims.value?.__raw
         debugToken.value = token ? token.substring(0, 30) + '…' : 'MISSING'
         await userStore.fetchPredUser(token)
-        redirectIfNeeded()
       } catch (e) {
         debugToken.value = 'EXCEPTION: ' + e.message
         console.error('[App] fetchPredUser failed:', e)
@@ -78,7 +77,10 @@ watch(
       userStore.reset()
     }
 
-    appReady.value = true  // show the app only after we know the state
+    // Wait for router to finish its initial navigation before we redirect
+    await router.isReady()
+    appReady.value = true
+    if (authed) redirectIfNeeded()
   },
   { immediate: true }
 )
