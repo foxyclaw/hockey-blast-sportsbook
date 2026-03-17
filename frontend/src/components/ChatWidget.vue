@@ -6,7 +6,7 @@
       class="btn btn-circle btn-lg chat-fab shadow-xl"
       :class="open ? 'btn-error' : 'btn-primary'"
       @click="open = !open"
-      title="Blast AI"
+      title="AI Blast"
     >
       <span v-if="!open">🏒</span>
       <span v-else class="text-xl font-bold">✕</span>
@@ -19,7 +19,7 @@
         <div class="chat-header bg-primary text-primary-content px-4 py-3 rounded-t-2xl flex items-center gap-2">
           <span class="text-lg">🏒</span>
           <div class="flex-1">
-            <div class="font-bold text-sm">Blast AI</div>
+            <div class="font-bold text-sm">AI Blast</div>
             <div class="text-xs opacity-75">Ask anything about players, teams & games</div>
           </div>
           <button
