@@ -274,7 +274,7 @@ async function scrollToBottom() {
   bottom: 80px;
   right: 24px;
   width: min(860px, calc(100vw - 48px));
-  height: calc(100vh - 120px);
+  height: calc(100vh - 180px);
   border-radius: 1rem;
 }
 .chat-messages {
