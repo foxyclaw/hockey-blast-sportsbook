@@ -35,7 +35,7 @@ const userStore = useUserStore()
 const router = useRouter()
 const debugToken = ref(null)
 
-// Load pred user profile when Auth0 confirms authentication
+// Step 1: fetch pred user when Auth0 confirms authentication
 watch(
   () => [isAuthenticated.value, isLoading.value],
   async ([authed, loading]) => {
@@ -49,29 +49,27 @@ watch(
         debugToken.value = 'EXCEPTION: ' + e.message
         console.error('[App] fetchPredUser failed:', e)
       }
-      // Step 1: name missing → collect name first
-      if (userStore.needsNameSetup) {
-        const current = router.currentRoute.value.name
-        if (current !== 'profile-setup' && current !== 'callback') {
-          router.push({ name: 'profile-setup' })
-        }
-      // Step 2: name ok but no hockey profile linked → identity setup
-      } else if (userStore.needsIdentitySetup) {
-        const current = router.currentRoute.value.name
-        if (current !== 'identity' && current !== 'callback') {
-          router.push({ name: 'identity' })
-        }
-      // Step 3: identity done but player prefs not set → player prefs
-      } else if (userStore.needsPrefsSetup) {
-        const current = router.currentRoute.value.name
-        if (current !== 'player-prefs' && current !== 'callback' && current !== 'identity') {
-          router.push({ name: 'player-prefs' })
-        }
-      }
     } else if (!authed && !loading) {
       userStore.reset()
     }
   },
   { immediate: true }
 )
+
+// Step 2: redirect to correct onboarding step once predUser is loaded
+function redirectIfNeeded() {
+  const current = router.currentRoute.value.name
+  const skip = ['callback', 'profile-setup', 'identity', 'player-prefs']
+  if (userStore.needsNameSetup) {
+    if (!skip.includes(current)) router.push({ name: 'profile-setup' })
+  } else if (userStore.needsIdentitySetup) {
+    if (current !== 'identity' && current !== 'callback') router.push({ name: 'identity' })
+  } else if (userStore.needsPrefsSetup) {
+    if (current !== 'player-prefs' && current !== 'callback' && current !== 'identity') router.push({ name: 'player-prefs' })
+  }
+}
+
+watch(() => userStore.predUser, (user) => {
+  if (user) redirectIfNeeded()
+})
 </script>

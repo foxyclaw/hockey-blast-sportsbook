@@ -23,7 +23,7 @@ export const useUserStore = defineStore('user', () => {
   )
 
   const needsPrefsSetup = computed(
-    () => predUser.value !== null && !needsNameSetup.value && predUser.value.preferences_completed === false
+    () => predUser.value !== null && !needsNameSetup.value && !predUser.value.preferences_completed
   )
 
   async function fetchPredUser(idToken = null) {
