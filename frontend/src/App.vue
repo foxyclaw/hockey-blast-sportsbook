@@ -47,28 +47,18 @@ const router = useRouter()
 const debugToken = ref(null)
 const appReady = ref(false)  // blocks rendering until we know user state
 
-function redirectIfNeeded() {
-  const current = router.currentRoute.value.name
-  const onboardingRoutes = ['callback', 'profile-setup', 'identity', 'player-prefs']
-  if (userStore.needsNameSetup) {
-    if (!onboardingRoutes.includes(current)) router.push({ name: 'profile-setup' })
-  } else if (userStore.needsIdentitySetup) {
-    if (current !== 'identity' && current !== 'callback') router.push({ name: 'identity' })
-  } else if (userStore.needsPrefsSetup) {
-    if (!onboardingRoutes.includes(current)) router.push({ name: 'player-prefs' })
-  }
-}
-
 watch(
   () => [isAuthenticated.value, isLoading.value],
   async ([authed, loading]) => {
-    if (loading) return  // Auth0 still initializing, wait
+    if (loading) return  // Auth0 still initializing
 
     if (authed) {
       try {
         const token = idTokenClaims.value?.__raw
         debugToken.value = token ? token.substring(0, 30) + '…' : 'MISSING'
         await userStore.fetchPredUser(token)
+        // Trigger a navigation to current route so the router guard re-evaluates
+        await router.replace(router.currentRoute.value.fullPath)
       } catch (e) {
         debugToken.value = 'EXCEPTION: ' + e.message
         console.error('[App] fetchPredUser failed:', e)
@@ -77,10 +67,7 @@ watch(
       userStore.reset()
     }
 
-    // Wait for router to finish its initial navigation before we redirect
-    await router.isReady()
     appReady.value = true
-    if (authed) redirectIfNeeded()
   },
   { immediate: true }
 )
