@@ -113,9 +113,9 @@
         </div>
 
         <!-- Projected points preview -->
-        <div v-if="selectedTeam && projectedPoints !== null" class="alert alert-success bg-success/10 border-success/30 mb-5">
+        <div v-if="selectedTeam && projectedPoints !== null" class="rounded-xl border border-success/40 bg-success/10 px-4 py-3 mb-5">
           <div>
-            <div class="text-sm font-bold">If correct: <span class="text-success">{{ projectedPoints }} pts</span></div>
+            <div class="text-sm font-bold text-base-content">If correct: <span class="text-success">{{ projectedPoints }} pts</span></div>
             <div class="text-xs text-base-content/60 mt-0.5">
               <template v-if="isUpsetPick">
                 🎯 Upset bonus included! If wrong: 0 pts.
@@ -160,7 +160,7 @@
         </div>
 
         <!-- Success message -->
-        <div v-if="submitted" class="alert alert-success mt-4 text-sm">
+        <div v-if="submitted" class="rounded-xl border border-success/40 bg-success/10 text-base-content mt-4 text-sm px-4 py-3">
           ✅ Pick saved! Good luck 🏒
         </div>
       </template>
