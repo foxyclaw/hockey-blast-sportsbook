@@ -91,7 +91,11 @@
 import { ref, onMounted } from 'vue'
 import GameCard from '@/components/GameCard.vue'
 import PickModal from '@/components/PickModal.vue'
-import { publicClient } from '@/api/client'
+import { publicClient, useApiClient } from '@/api/client'
+import { useAuth0 } from '@auth0/auth0-vue'
+
+const { isAuthenticated } = useAuth0()
+const authApi = useApiClient()
 
 const games = ref([])
 const orgs = ref([])
@@ -102,6 +106,11 @@ const selectedOrg = ref(null)
 const page = ref(1)
 const total = ref(0)
 const perPage = 20
+
+// Use authenticated client when logged in so user_pick is included in response
+function gamesClient() {
+  return isAuthenticated.value ? authApi : publicClient
+}
 
 const selectedGame = ref(null)
 const modalOpen = ref(false)
@@ -117,7 +126,7 @@ async function loadGames() {
   try {
     const params = { page: 1, per_page: perPage }
     if (selectedOrg.value) params.org_id = selectedOrg.value
-    const { data } = await publicClient.get('/api/games', { params })
+    const { data } = await gamesClient().get('/api/games', { params })
     games.value = data.games ?? data
     total.value = data.total ?? games.value.length
     // Extract unique orgs for filter
@@ -141,7 +150,7 @@ async function loadMore() {
   try {
     const params = { page: page.value, per_page: perPage }
     if (selectedOrg.value) params.org_id = selectedOrg.value
-    const { data } = await publicClient.get('/api/games', { params })
+    const { data } = await gamesClient().get('/api/games', { params })
     games.value.push(...(data.games ?? data))
     total.value = data.total ?? games.value.length
   } catch (e) {
