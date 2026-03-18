@@ -12,16 +12,8 @@
     </div>
 
     <template v-else>
-      <!-- DEBUG PANEL — remove before prod -->
-      <div class="bg-black text-green-400 text-xs font-mono p-3 space-y-1 border-b border-green-700">
-        <div>🔐 isAuthenticated: <b>{{ isAuthenticated }}</b> | isLoading: <b>{{ isLoading }}</b></div>
-        <div>👤 predUser: <b>{{ userStore.predUser ? userStore.predUser.email : 'null' }}</b> | storeLoading: <b>{{ userStore.loading }}</b></div>
-        <div>🪙 token: <b>{{ debugToken || 'null' }}</b></div>
-        <div>❌ storeError: <b>{{ userStore.error || 'none' }}</b></div>
-        <div>📝 needsNameSetup: <b>{{ userStore.needsNameSetup }}</b> | 🔗 needsIdentitySetup: <b>{{ userStore.needsIdentitySetup }}</b> | 🏒 needsPrefsSetup: <b>{{ userStore.needsPrefsSetup }}</b></div>
-        <div>🧪 lastApiCall: <b>{{ debugLastCall || 'none' }}</b> | status: <b>{{ debugLastStatus || '—' }}</b></div>
-        <div v-if="debugLastError" class="text-red-400">💥 lastError: <b>{{ debugLastError }}</b></div>
-      </div>
+      <!-- DEBUG PANEL — hidden in prod via v-if="false" -->
+      <div v-if="false"></div>
       <main class="flex-1 container mx-auto px-4 py-6 max-w-6xl">
         <RouterView />
       </main>
