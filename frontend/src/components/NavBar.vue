@@ -23,6 +23,11 @@
             Leagues
           </RouterLink>
         </li>
+        <li>
+          <RouterLink to="/free-agents" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
+            Free Agents
+          </RouterLink>
+        </li>
       </ul>
     </div>
 
@@ -30,6 +35,45 @@
       <!-- Balance badge -->
       <div v-if="isAuthenticated && !isLoading" class="badge badge-outline badge-primary font-mono text-xs hidden sm:flex">
         💰 {{ balance.toLocaleString() }} pts
+      </div>
+
+      <!-- Notification bell (authenticated users only) -->
+      <div v-if="isAuthenticated && !isLoading" class="relative">
+        <button @click="toggleNotifications" class="btn btn-ghost btn-circle btn-sm relative">
+          <span class="text-lg">🔔</span>
+          <span
+            v-if="unreadCount > 0"
+            class="absolute -top-1 -right-1 bg-error text-white text-xs rounded-full w-4 h-4 flex items-center justify-center"
+          >
+            {{ unreadCount > 9 ? '9+' : unreadCount }}
+          </span>
+        </button>
+        <!-- Dropdown -->
+        <div
+          v-if="showNotifications"
+          class="absolute right-0 top-12 w-80 bg-base-200 rounded-box shadow-xl z-50 border border-base-content/10"
+        >
+          <div class="p-3 border-b border-base-content/10 flex justify-between">
+            <span class="font-semibold text-sm">Notifications</span>
+            <button v-if="notifications.length" @click="markAllRead" class="text-xs link">Mark all read</button>
+          </div>
+          <div class="max-h-80 overflow-y-auto">
+            <div v-if="!notifications.length" class="p-4 text-center text-base-content/50 text-sm">
+              No notifications yet
+            </div>
+            <div
+              v-for="n in notifications"
+              :key="n.id"
+              class="p-3 border-b border-base-content/5 hover:bg-base-300 cursor-pointer"
+              :class="{ 'opacity-60': n.is_read }"
+              @click="openNotification(n)"
+            >
+              <div class="text-sm font-medium">{{ n.title }}</div>
+              <div v-if="n.body" class="text-xs text-base-content/60 mt-0.5">{{ n.body }}</div>
+              <div class="text-xs text-base-content/40 mt-1">{{ timeAgo(n.created_at) }}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Auth button -->
@@ -51,6 +95,7 @@
           </li>
           <li><RouterLink to="/picks">My Picks</RouterLink></li>
           <li><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
           <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
           <li><hr class="my-1 opacity-20" /></li>
           <li>
@@ -76,6 +121,7 @@
           <li><RouterLink to="/">Games</RouterLink></li>
           <li v-if="isAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
           <li v-if="isAuthenticated"><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
         </ul>
       </div>
     </div>
@@ -83,10 +129,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
+import { useApiClient } from '@/api/client'
 
 const { isAuthenticated, isLoading, user, loginWithRedirect, logout } = useAuth0()
 const userStore = useUserStore()
@@ -95,6 +142,64 @@ const loginInProgress = ref(false)
 
 const balance = computed(() => userStore.balance)
 
+// ── Notifications ──────────────────────────────────────────────────────────
+const notifications = ref([])
+const unreadCount = ref(0)
+const showNotifications = ref(false)
+
+async function loadNotifications() {
+  if (!isAuthenticated.value) return
+  try {
+    const api = useApiClient()
+    const { data } = await api.get('/api/notifications')
+    notifications.value = data.notifications || []
+    unreadCount.value = notifications.value.filter(n => !n.is_read).length
+  } catch {
+    // silently ignore — bell just shows 0
+  }
+}
+
+function toggleNotifications() {
+  showNotifications.value = !showNotifications.value
+  if (showNotifications.value) loadNotifications()
+}
+
+async function markAllRead() {
+  const api = useApiClient()
+  for (const n of notifications.value.filter(n => !n.is_read)) {
+    await api.post(`/api/notifications/${n.id}/read`).catch(() => {})
+  }
+  notifications.value.forEach(n => (n.is_read = true))
+  unreadCount.value = 0
+}
+
+function openNotification(n) {
+  if (!n.is_read) {
+    const api = useApiClient()
+    api.post(`/api/notifications/${n.id}/read`).catch(() => {})
+    n.is_read = true
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
+  if (n.link) router.push(n.link)
+  showNotifications.value = false
+}
+
+function timeAgo(iso) {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`
+  return `${Math.floor(mins / 1440)}d ago`
+}
+
+// Load notifications when user logs in
+watch(isAuthenticated, (v) => {
+  if (v) loadNotifications()
+}, { immediate: true })
+
+// ── Login ──────────────────────────────────────────────────────────────────
 async function doLogin() {
   await loginWithRedirect()
 }

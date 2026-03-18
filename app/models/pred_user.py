@@ -70,6 +70,9 @@ class PredUser(PredBase):
     captain_claims: Mapped[list["PredUserCaptainClaim"]] = relationship(
         "PredUserCaptainClaim", back_populates="user", lazy="dynamic"
     )
+    notifications: Mapped[list["PredNotification"]] = relationship(
+        "PredNotification", back_populates="user", lazy="dynamic"
+    )
 
     def __repr__(self) -> str:
         return f"<PredUser id={self.id} name={self.display_name!r}>"

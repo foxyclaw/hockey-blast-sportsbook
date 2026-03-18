@@ -46,6 +46,11 @@ const router = createRouter({
       beforeEnter: authGuard,
     },
     {
+      path: '/free-agents',
+      name: 'free-agents',
+      component: () => import('@/views/FreeAgentsView.vue'),
+    },
+    {
       path: '/callback',
       name: 'callback',
       component: () => import('@/views/CallbackView.vue'),
@@ -63,7 +68,7 @@ const router = createRouter({
 
 // Onboarding guard — runs on every navigation
 // The user store is imported lazily to avoid circular deps
-const ONBOARDING_ROUTES = ['profile-setup', 'identity', 'player-prefs', 'callback', 'not-found']
+const ONBOARDING_ROUTES = ['profile-setup', 'identity', 'player-prefs', 'callback', 'not-found', 'free-agents']
 
 router.beforeEach(async (to) => {
   // Skip guard for onboarding routes themselves and public routes
