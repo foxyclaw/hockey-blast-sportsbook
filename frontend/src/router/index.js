@@ -110,7 +110,8 @@ router.beforeEach(async (to) => {
   if (!userStore.predUser) return true  // not logged in, let auth0 handle it
 
   if (userStore.needsNameSetup) return { name: 'profile-setup' }
-  if (userStore.needsPrefsSetup) return { name: 'player-prefs' }
+  // Prefs are optional — users can navigate freely. The Player Profile link
+  // in the nav dropdown is how they reach it when ready.
 
   // Admin guard
   if (to.meta?.requiresAdmin && !userStore.predUser?.is_admin) {
