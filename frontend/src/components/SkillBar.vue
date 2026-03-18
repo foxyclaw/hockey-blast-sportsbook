@@ -3,8 +3,8 @@
     skill: 0 = elite (green), 100 = worst (red)
     We invert for display: fill% = 100 - skill
   -->
-  <div class="flex items-center gap-2" :title="`Skill rating: ${skill ?? 'N/A'} (0=elite, 100=worst)`">
-    <div class="flex-1 bg-base-300 rounded-full h-2 overflow-hidden min-w-[60px]">
+  <div class="flex items-center gap-2" :title="`Skill: ${skill ?? 'N/A'} — lower = stronger team`">
+    <div class="flex-1 bg-base-300 rounded-full h-2 overflow-hidden w-full">
       <div
         class="h-full rounded-full skill-bar-fill"
         :class="barColor"
