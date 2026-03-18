@@ -136,6 +136,7 @@ def me():
             "auth0_sub": user.auth0_sub,
             "balance": user.balance,
             "preferences_completed": user.preferences_completed,
+            "is_admin": user.is_admin,
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "last_login_at": (
                 user.last_login_at.isoformat() if user.last_login_at else None
