@@ -27,3 +27,5 @@ requests==2.32.3
 
 # Production server
 gunicorn==23.0.0
+twilio
+sendgrid
