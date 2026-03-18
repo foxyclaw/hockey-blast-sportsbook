@@ -183,23 +183,22 @@ function toggleNotifications() {
 
 async function markAllRead() {
   const api = useApiClient()
-  for (const n of notifications.value.filter(n => !n.is_read)) {
+  for (const n of [...notifications.value]) {
     await api.post(`/api/notifications/${n.id}/read`).catch(() => {})
   }
-  notifications.value.forEach(n => (n.is_read = true))
+  notifications.value = []
   unreadCount.value = 0
+  showNotifications.value = false
 }
 
 function openNotification(n) {
-  if (!n.is_read) {
-    const api = useApiClient()
-    api.post(`/api/notifications/${n.id}/read`).catch(() => {})
-    n.is_read = true
-    unreadCount.value = Math.max(0, unreadCount.value - 1)
-  }
+  const api = useApiClient()
+  api.post(`/api/notifications/${n.id}/read`).catch(() => {})
+  // Remove from list immediately — delete on read
+  notifications.value = notifications.value.filter(x => x.id !== n.id)
+  unreadCount.value = Math.max(0, unreadCount.value - 1)
   showNotifications.value = false
   if (n.link) {
-    // Defer navigation so dropdown closes cleanly first
     setTimeout(() => router.push(n.link), 50)
   }
 }

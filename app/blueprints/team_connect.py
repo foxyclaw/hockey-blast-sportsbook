@@ -64,7 +64,8 @@ def mark_notification_read(notif_id: int):
     if not notif:
         return error_response("NOT_FOUND", "Notification not found", 404)
 
-    notif.is_read = True
+    # Delete on read — notifications are nudges, not an inbox
+    session.delete(notif)
     session.commit()
     return jsonify({"ok": True})
 

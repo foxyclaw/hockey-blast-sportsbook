@@ -301,14 +301,15 @@ def _get_pool(league_id: int) -> dict:
 
 
 def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None:
-    """Mark ALL previous draft pick notifications for this user as read."""
+    """Delete ALL previous draft pick notifications for this user."""
     from app.models.pred_notification import PredNotification
     try:
-        pred.query(PredNotification).filter(
+        stale = pred.query(PredNotification).filter(
             PredNotification.user_id == user_id,
             PredNotification.type == "fantasy_draft",
-            PredNotification.is_read == False,  # noqa: E712
-        ).update({"is_read": True})
+        ).all()
+        for n in stale:
+            pred.delete(n)
     except Exception:
         pass
 
