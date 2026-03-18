@@ -131,11 +131,13 @@
 
                 <!-- Skater / Goalie sub-tabs -->
                 <div class="tabs tabs-boxed tabs-xs mb-3 w-fit">
-                  <button class="tab" :class="{ 'tab-active': poolTab === 'skaters' }" @click="poolTab = 'skaters'" :disabled="mustPickGoalie">
-                    Skaters <span v-if="mustPickSkater" class="badge badge-xs badge-success ml-1">Pick here</span>
+                  <button class="tab" :class="{ 'tab-active': poolTab === 'skaters' }" @click="poolTab = 'skaters'"
+                    :disabled="currentPick?.is_goalie_pick && currentPick?.user_id === myUserId">
+                    Skaters
                   </button>
-                  <button class="tab" :class="{ 'tab-active': poolTab === 'goalies' }" @click="poolTab = 'goalies'" :disabled="mustPickSkater">
-                    Goalies <span v-if="mustPickGoalie" class="badge badge-xs badge-error ml-1">Must pick!</span>
+                  <button class="tab" :class="{ 'tab-active': poolTab === 'goalies' }" @click="poolTab = 'goalies'"
+                    :disabled="currentPick && !currentPick?.is_goalie_pick && currentPick?.user_id === myUserId">
+                    Goalies <span v-if="currentPick?.is_goalie_pick && currentPick?.user_id === myUserId" class="badge badge-xs badge-error ml-1">Round 1!</span>
                   </button>
                 </div>
 
@@ -704,12 +706,10 @@ watch(activeTab, (tab) => {
   if (tab === 'standings') loadStandings()
 })
 
-// Auto-switch pool tab when goalie must be picked
-watch(mustPickGoalie, (val) => {
-  if (val) poolTab.value = 'goalies'
-})
-watch(mustPickSkater, (val) => {
-  if (val) poolTab.value = 'skaters'
+// Auto-switch pool tab based on pick type
+watch(currentPick, (pick) => {
+  if (!pick || pick.user_id !== myUserId.value) return
+  poolTab.value = pick.is_goalie_pick ? 'goalies' : 'skaters'
 })
 
 onMounted(async () => {

@@ -53,7 +53,9 @@ def build_draft_queue(league_id: int) -> None:
 
     overall = 1
     entries = []
+    # Round 1 = goalie picks; remaining rounds = skater picks
     for rnd in range(1, total_rounds + 1):
+        is_goalie_round = (rnd == 1)
         # Snake: odd rounds forward, even rounds reverse
         if rnd % 2 == 1:
             order = list(range(n))
@@ -70,6 +72,7 @@ def build_draft_queue(league_id: int) -> None:
                 "user_id": mgr.user_id,
                 "hb_human_id": None,
                 "is_skipped": False,
+                "is_goalie_pick": is_goalie_round,
                 "deadline": None,
                 "picked_at": None,
             })
@@ -217,29 +220,11 @@ def make_pick(league_id: int, user_id: int, hb_human_id: int) -> dict:
     if player_info is None:
         raise ValueError("Player not in eligible pool for this league")
 
-    # Enforce roster composition — check how many skaters/goalies this user already has
-    league_obj = pred.get(FantasyLeague, league_id)
-    existing_roster = pred.execute(
-        select(FantasyRoster).where(
-            FantasyRoster.league_id == league_id,
-            FantasyRoster.user_id == user_id,
-        )
-    ).scalars().all()
-    skaters_drafted = sum(1 for r in existing_roster if not r.is_goalie)
-    goalies_drafted = sum(1 for r in existing_roster if r.is_goalie)
-
-    picks_remaining = (league_obj.roster_skaters + league_obj.roster_goalies) - len(existing_roster)
-    goalies_needed = league_obj.roster_goalies - goalies_drafted
-
-    if player_info["is_goalie"]:
-        if goalies_drafted >= league_obj.roster_goalies:
-            raise ValueError("You already have your goalie — pick a skater")
-    else:
-        if skaters_drafted >= league_obj.roster_skaters:
-            raise ValueError("Skater slots full — you must pick a goalie")
-        # If this is the last pick and you still need a goalie, force it
-        if picks_remaining <= goalies_needed:
-            raise ValueError("You must pick a goalie now to fill your roster")
+    # Enforce pick type — round 1 is goalie-only, all others are skater-only
+    if current.is_goalie_pick and not player_info["is_goalie"]:
+        raise ValueError("Round 1 is goalie picks only — please select a goalie")
+    if not current.is_goalie_pick and player_info["is_goalie"]:
+        raise ValueError("Goalies can only be picked in Round 1")
 
     now = datetime.now(timezone.utc)
     _record_pick(league_id, current, hb_human_id, player_info["is_goalie"], pred, now)
