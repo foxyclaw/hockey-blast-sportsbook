@@ -23,6 +23,11 @@
             Leagues
           </RouterLink>
         </li>
+        <li v-if="isFullyAuthenticated">
+          <RouterLink to="/fantasy" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
+            Fantasy
+          </RouterLink>
+        </li>
         <li>
           <RouterLink to="/free-agents" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
             Free Agents
@@ -95,6 +100,7 @@
           </li>
           <li><RouterLink to="/picks">My Picks</RouterLink></li>
           <li><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
           <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
           <li><hr class="my-1 opacity-20" /></li>
@@ -121,6 +127,7 @@
           <li><RouterLink to="/">Games</RouterLink></li>
           <li v-if="isFullyAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
           <li v-if="isFullyAuthenticated"><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
         </ul>
       </div>

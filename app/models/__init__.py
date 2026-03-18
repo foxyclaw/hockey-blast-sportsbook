@@ -21,6 +21,12 @@ from app.models.pred_notification import PredNotification
 from app.models.pred_sub_request import PredSubRequest
 from app.models.pred_sub_response import PredSubResponse
 from app.models.pred_roster_invite import PredRosterInvite
+from app.models.fantasy_league import FantasyLeague
+from app.models.fantasy_manager import FantasyManager
+from app.models.fantasy_roster import FantasyRoster
+from app.models.fantasy_draft_queue import FantasyDraftQueue
+from app.models.fantasy_game_scores import FantasyGameScores
+from app.models.fantasy_standings import FantasyStandings
 
 __all__ = [
     "PredUser",
@@ -40,4 +46,10 @@ __all__ = [
     "PredSubRequest",
     "PredSubResponse",
     "PredRosterInvite",
+    "FantasyLeague",
+    "FantasyManager",
+    "FantasyRoster",
+    "FantasyDraftQueue",
+    "FantasyGameScores",
+    "FantasyStandings",
 ]

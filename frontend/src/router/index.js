@@ -46,6 +46,18 @@ const router = createRouter({
       beforeEnter: authGuard,
     },
     {
+      path: '/fantasy',
+      name: 'fantasy',
+      component: () => import('@/views/FantasyView.vue'),
+      beforeEnter: authGuard,
+    },
+    {
+      path: '/fantasy/:id',
+      name: 'fantasy-league',
+      component: () => import('@/views/FantasyLeagueView.vue'),
+      beforeEnter: authGuard,
+    },
+    {
       path: '/free-agents',
       name: 'free-agents',
       component: () => import('@/views/FreeAgentsView.vue'),
