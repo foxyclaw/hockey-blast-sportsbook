@@ -282,14 +282,29 @@ def _get_pool(league_id: int) -> dict:
     return get_player_pool(league.level_id)
 
 
+def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None:
+    """Mark previous draft pick notifications for this league as read."""
+    from app.models.pred_notification import PredNotification
+    try:
+        pred.query(PredNotification).filter(
+            PredNotification.user_id == user_id,
+            PredNotification.link == f"/fantasy/{league_id}",
+            PredNotification.is_read == False,  # noqa: E712
+        ).update({"is_read": True})
+    except Exception:
+        pass
+
+
 def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: datetime, pred) -> None:
     """Create a push notification for a manager's draft turn."""
     try:
+        # Clear previous unread draft notifications for this league to avoid pileup
+        _clear_stale_draft_notifications(user_id, league_id, pred)
         notif = PredNotification(
             user_id=user_id,
             type="fantasy_draft",
-            title="⬆️ Fantasy Draft: Your Pick!",
-            body=f"Pick #{pick_number} is yours. You have until {deadline.astimezone().strftime('%b %d %I:%M %p %Z')} to pick.",
+            title="🏒 Your Pick!",
+            body=f"Pick #{pick_number} — draft until {deadline.astimezone().strftime('%b %d %I:%M %p %Z')}.",
             link=f"/fantasy/{league_id}",
         )
         pred.add(notif)

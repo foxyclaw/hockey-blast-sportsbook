@@ -71,17 +71,17 @@
             <div v-if="!notifications.length" class="p-4 text-center text-base-content/50 text-sm">
               No notifications yet
             </div>
-            <div
+            <button
               v-for="n in notifications"
               :key="n.id"
-              class="p-3 border-b border-base-content/5 hover:bg-base-300 cursor-pointer"
+              class="w-full text-left p-3 border-b border-base-content/5 hover:bg-base-300 cursor-pointer block"
               :class="{ 'opacity-60': n.is_read }"
-              @click="openNotification(n)"
+              @click.stop="openNotification(n)"
             >
               <div class="text-sm font-medium">{{ n.title }}</div>
               <div v-if="n.body" class="text-xs text-base-content/60 mt-0.5">{{ n.body }}</div>
               <div class="text-xs text-base-content/40 mt-1">{{ timeAgo(n.created_at) }}</div>
-            </div>
+            </button>
           </div>
         </div>
       </div>
