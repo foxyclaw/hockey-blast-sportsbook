@@ -27,9 +27,10 @@
           <SkillBar :skill="game.home_team?.avg_skill" />
         </div>
 
-        <!-- VS divider -->
-        <div class="text-center">
+        <!-- VS divider + matchup edge indicator -->
+        <div class="text-center flex flex-col items-center gap-1">
           <span class="text-base-content/40 font-bold text-lg">vs</span>
+          <span v-if="matchupLabel" class="text-xs px-1.5 py-0.5 rounded-full font-semibold" :class="matchupClass">{{ matchupLabel }}</span>
         </div>
 
         <!-- Away team -->
@@ -76,6 +77,26 @@ defineEmits(['pick'])
 const isLocked = computed(
   () => props.game.lock_deadline && new Date(props.game.lock_deadline) <= new Date()
 )
+
+const matchupLabel = computed(() => {
+  const h = props.game.home_team?.avg_skill
+  const v = props.game.visitor_team?.avg_skill
+  if (h == null || v == null) return null
+  const diff = Math.abs(h - v)
+  if (diff < 5) return '≈ Even'
+  if (diff < 15) return h < v ? '← Edge' : 'Edge →'
+  return h < v ? '← Favored' : 'Favored →'
+})
+
+const matchupClass = computed(() => {
+  const h = props.game.home_team?.avg_skill
+  const v = props.game.visitor_team?.avg_skill
+  if (h == null || v == null) return ''
+  const diff = Math.abs(h - v)
+  if (diff < 5) return 'bg-base-300 text-base-content/60'
+  if (diff < 15) return 'bg-warning/20 text-warning'
+  return 'bg-primary/20 text-primary'
+})
 
 const pickedTeamName = computed(() => {
   if (!props.game.user_pick) return ''
