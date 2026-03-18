@@ -63,6 +63,13 @@ const router = createRouter({
       component: () => import('@/views/FreeAgentsView.vue'),
     },
     {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminView.vue'),
+      beforeEnter: authGuard,
+      meta: { requiresAdmin: true },
+    },
+    {
       path: '/callback',
       name: 'callback',
       component: () => import('@/views/CallbackView.vue'),
@@ -80,7 +87,7 @@ const router = createRouter({
 
 // Onboarding guard — runs on every navigation
 // The user store is imported lazily to avoid circular deps
-const ONBOARDING_ROUTES = ['profile-setup', 'identity', 'player-prefs', 'callback', 'not-found', 'free-agents']
+const ONBOARDING_ROUTES = ['profile-setup', 'identity', 'player-prefs', 'callback', 'not-found', 'free-agents', 'admin']
 
 router.beforeEach(async (to) => {
   // Skip guard for onboarding routes themselves and public routes
@@ -104,6 +111,11 @@ router.beforeEach(async (to) => {
 
   if (userStore.needsNameSetup) return { name: 'profile-setup' }
   if (userStore.needsPrefsSetup) return { name: 'player-prefs' }
+
+  // Admin guard
+  if (to.meta?.requiresAdmin && !userStore.predUser?.is_admin) {
+    return { name: 'home' }
+  }
 
   return true
 })

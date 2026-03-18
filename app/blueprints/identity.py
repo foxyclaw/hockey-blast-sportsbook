@@ -169,7 +169,7 @@ def _build_human_profile(hb_session, human_id: int) -> dict:
 @require_auth
 def get_candidates():
     """
-    GET /api/identity/candidates
+    GET /api/identity/candidates[?q=<free-text>]
 
     Security model:
       - Both first_name and last_name are sourced exclusively from the user's
@@ -181,20 +181,22 @@ def get_candidates():
         Records that don't match on first name are excluded entirely.
       - Exact matches are pre-selected by default; synonyms are selectable.
 
+    Optional ?q= param: free-text search by first OR last name (top 10, sorted by name).
+    When q is provided the standard name-security model is bypassed — results are
+    returned as name_match="search" and the caller can pick any result.
+
     Returns:
-        candidates: list of profiles, each with name_match: "exact" | "synonym"
+        candidates: list of profiles, each with name_match: "exact" | "synonym" | "search"
         user_first: the first name we searched for
         user_last:  the last name we searched for (display only)
     """
     user = g.pred_user
+    q = (request.args.get("q") or "").strip()
 
     # ── Extract first / last from the user's Auth0-sourced display_name ─────
     display_parts = (user.display_name or "").rsplit(None, 1)
     user_last = display_parts[-1] if display_parts else ""
     user_first = display_parts[0] if len(display_parts) > 1 else ""
-
-    if not user_last:
-        return jsonify({"candidates": [], "user_first": user_first, "user_last": user_last})
 
     try:
         Human, HumanAlias, _, _, _, _, _ = _get_hb_models()
@@ -204,6 +206,50 @@ def get_candidates():
     hb_session = HBSession()
 
     try:
+        # ── Free-text search mode ────────────────────────────────────────────
+        if q:
+            like_q = f"%{q}%"
+            main_ids = [r[0] for r in hb_session.execute(
+                select(Human.id).where(
+                    or_(
+                        Human.first_name.ilike(like_q),
+                        Human.last_name.ilike(like_q),
+                    )
+                ).order_by(Human.last_name, Human.first_name).limit(50)
+            ).all()]
+            alias_ids = [r[0] for r in hb_session.execute(
+                select(HumanAlias.human_id).where(
+                    or_(
+                        HumanAlias.first_name.ilike(like_q),
+                        HumanAlias.last_name.ilike(like_q),
+                    )
+                ).limit(50)
+            ).all()]
+            all_ids = list(dict.fromkeys(main_ids + alias_ids))[:50]
+
+            candidates = []
+            for hid in all_ids:
+                profile = _build_human_profile(hb_session, hid)
+                if not profile:
+                    continue
+                profile["name_match"] = "search"
+                candidates.append(profile)
+
+            # Sort by last_date desc, limit 10
+            candidates.sort(key=lambda c: c.get("last_date") or "0000-00-00", reverse=True)
+            candidates = candidates[:10]
+
+            return jsonify({
+                "candidates": candidates,
+                "user_first": user_first,
+                "user_last": user_last,
+                "search_query": q,
+            })
+
+        # ── Name-security mode (default) ─────────────────────────────────────
+        if not user_last:
+            return jsonify({"candidates": [], "user_first": user_first, "user_last": user_last})
+
         # Step 1: all humans (and alias-linked humans) with matching last name
         main_ids = [r[0] for r in hb_session.execute(
             select(Human.id).where(Human.last_name.ilike(user_last))

@@ -146,6 +146,7 @@ def _register_blueprints(app: Flask) -> None:
     from app.blueprints.preferences import preferences_bp
     from app.blueprints.team_connect import team_connect_bp
     from app.blueprints.fantasy import fantasy_bp
+    from app.blueprints.admin import admin_bp
 
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(games_bp, url_prefix="/api/games")
@@ -157,3 +158,4 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(preferences_bp, url_prefix="/api/preferences")
     app.register_blueprint(team_connect_bp, url_prefix="")
     app.register_blueprint(fantasy_bp, url_prefix="/api/fantasy")
+    app.register_blueprint(admin_bp, url_prefix="/api/admin")

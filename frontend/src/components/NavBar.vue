@@ -33,6 +33,11 @@
             Free Agents
           </RouterLink>
         </li>
+        <li v-if="isFullyAuthenticated && predUser?.is_admin">
+          <RouterLink to="/admin" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
+            🛡️ Admin
+          </RouterLink>
+        </li>
       </ul>
     </div>
 
@@ -103,6 +108,7 @@
           <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
           <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
+          <li v-if="predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
           <li><hr class="my-1 opacity-20" /></li>
           <li>
             <button @click="logout({ logoutParams: { returnTo: window.location.origin } })" class="text-error">
@@ -129,6 +135,7 @@
           <li v-if="isFullyAuthenticated"><RouterLink to="/leagues">Leagues</RouterLink></li>
           <li v-if="isFullyAuthenticated"><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
+          <li v-if="isFullyAuthenticated && predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
         </ul>
       </div>
     </div>
@@ -146,6 +153,7 @@ const { isAuthenticated, isLoading, user, loginWithRedirect, logout } = useAuth0
 const userStore = useUserStore()
 // Only treat as truly logged in if Auth0 says so AND the backend confirmed the token
 const isFullyAuthenticated = computed(() => isAuthenticated.value && userStore.predUser !== null)
+const predUser = computed(() => userStore.predUser)
 const router = useRouter()
 const loginInProgress = ref(false)
 
