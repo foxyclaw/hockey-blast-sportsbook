@@ -21,6 +21,8 @@ class PredSubRequest(PredBase):
     )
     goalies_needed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     skaters_needed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sub_fee: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # sub_fee in cents (0 = free, 1500 = $15.00)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
     deadline: Mapped[datetime | None] = mapped_column(
@@ -45,6 +47,7 @@ class PredSubRequest(PredBase):
             "captain_user_id": self.captain_user_id,
             "goalies_needed": self.goalies_needed,
             "skaters_needed": self.skaters_needed,
+            "sub_fee": self.sub_fee,
             "message": self.message,
             "status": self.status,
             "deadline": self.deadline.isoformat() if self.deadline else None,

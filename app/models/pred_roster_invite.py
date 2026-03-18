@@ -27,6 +27,9 @@ class PredRosterInvite(PredBase):
     team_name: Mapped[str] = mapped_column(String(128), nullable=False)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    roster_fee_full: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    roster_fee_half: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # fees in cents (0 = free, 35000 = $350.00)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -44,6 +47,8 @@ class PredRosterInvite(PredBase):
             "hb_team_id": self.hb_team_id,
             "team_name": self.team_name,
             "message": self.message,
+            "roster_fee_full": self.roster_fee_full,
+            "roster_fee_half": self.roster_fee_half,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
         }
