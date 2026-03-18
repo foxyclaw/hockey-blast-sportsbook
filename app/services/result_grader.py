@@ -74,10 +74,27 @@ def grade_completed_games() -> dict:
             result = _grade_pick(pick, game, league)
             pred_session.add(result)
 
-            # Apply wager balance change if a wager was placed
-            if pick.wager is not None:
-                from app.models.pred_user import PredUser
-                pred_user = pred_session.get(PredUser, pick.user_id)
+            from app.models.pred_user import PredUser
+            pred_user = pred_session.get(PredUser, pick.user_id)
+
+            # Sportsbook model: wager was already deducted at pick time.
+            # On correct pick: award potential_payout to balance.
+            # On wrong pick: nothing more to do (wager already gone).
+            if pick.effective_wager is not None:
+                # New sportsbook model
+                if result.is_correct and pick.potential_payout is not None:
+                    payout = pick.potential_payout
+                    balance_delta = payout  # wager already deducted, so net is just the payout
+                else:
+                    payout = 0
+                    balance_delta = 0  # wager already gone, nothing to add
+                result.payout = payout
+                result.balance_delta = balance_delta
+                if pred_user is not None and payout > 0:
+                    pred_user.balance = max(0, pred_user.balance + payout)
+
+            # Legacy model: wager placed but no effective_wager (old picks)
+            elif pick.wager is not None:
                 if pred_user is not None:
                     balance_change = _compute_balance_change(pick, result)
                     result.balance_change = balance_change

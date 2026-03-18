@@ -144,12 +144,20 @@ def submit_pick(
     if picked_team_id not in (home_team_id, away_team_id):
         raise InvalidTeamError()
 
-    # Step 4: Validate wager if provided
-    if wager is not None:
-        if not isinstance(wager, int) or wager < 1 or wager > 500:
-            raise PickError("VALIDATION_ERROR", "Wager must be an integer between 1 and 500", 400)
-        if user.balance < wager:
-            raise PickError("INSUFFICIENT_BALANCE", "Insufficient balance", 400)
+    # Step 4: Validate and enforce wager (required, min 10)
+    # Reload user from pred_session to ensure we have the latest balance
+    db_user = pred_session.get(PredUser, user.id)
+    if db_user is None:
+        raise PickError("NOT_FOUND", "User not found", 404)
+
+    if db_user.balance < 10:
+        raise PickError("INSUFFICIENT_BALANCE", "Insufficient balance — need at least 10 pts to place a pick", 400)
+
+    # Default wager if not provided or too low
+    if wager is None or wager < 10:
+        wager = 10
+    max_wager = min(500, db_user.balance // 2) if db_user.balance > 20 else 10
+    wager = min(wager, max_wager)
 
     # Step 5: Skill snapshot
     snapshot = get_game_skill_snapshot(game_id)
@@ -161,18 +169,39 @@ def submit_pick(
         visitor_skill=snapshot["away_team_avg_skill"],
     )
 
+    # Compute odds and derived wager fields
+    from app.services.odds_service import get_pick_odds
+    odds = get_pick_odds(
+        picked_team_id=picked_team_id,
+        home_team_id=home_team_id,
+        home_avg_skill=snapshot["home_team_avg_skill"],
+        visitor_avg_skill=snapshot["away_team_avg_skill"],
+    )
+    effective_wager = wager * confidence
+    potential_payout = int(effective_wager * odds)
+
     # Step 6: Upsert
     stmt = select(PredPick).where(
-        PredPick.user_id == user.id,
+        PredPick.user_id == db_user.id,
         PredPick.game_id == game_id,
         PredPick.league_id == league_id,
     )
     existing = pred_session.execute(stmt).scalar_one_or_none()
 
     if existing is not None:
-        # Update existing pick
+        # Update existing pick — refund old effective_wager, deduct new one
         if existing.is_locked:
             raise PickLockedError("This pick is already locked")
+
+        # Refund old effective wager if it was deducted
+        old_effective_wager = existing.effective_wager or 0
+        db_user.balance += old_effective_wager
+
+        # Check balance again after refund
+        if db_user.balance < effective_wager:
+            # Undo refund and raise error
+            db_user.balance -= old_effective_wager
+            raise PickError("INSUFFICIENT_BALANCE", "Insufficient balance for this wager", 400)
 
         existing.picked_team_id = picked_team_id
         existing.confidence = confidence
@@ -185,11 +214,14 @@ def submit_pick(
         existing.skill_differential = skill_fields["skill_differential"]
         existing.is_upset_pick = skill_fields["is_upset_pick"]
         existing.wager = wager
+        existing.odds_at_pick = odds
+        existing.effective_wager = effective_wager
+        existing.potential_payout = potential_payout
         pick = existing
     else:
         # Create new pick
         pick = PredPick(
-            user_id=user.id,
+            user_id=db_user.id,
             league_id=league_id,
             game_id=game_id,
             game_scheduled_start=scheduled_start,
@@ -204,8 +236,14 @@ def submit_pick(
             skill_differential=skill_fields["skill_differential"],
             is_upset_pick=skill_fields["is_upset_pick"],
             wager=wager,
+            odds_at_pick=odds,
+            effective_wager=effective_wager,
+            potential_payout=potential_payout,
         )
         pred_session.add(pick)
+
+    # Deduct effective wager from user balance immediately
+    db_user.balance -= effective_wager
 
     return pick
 

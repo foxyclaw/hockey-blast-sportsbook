@@ -184,6 +184,10 @@ def create_pick():
     # Reload user to get fresh balance
     pred_session.refresh(user)
 
+    # Reload db_user to get fresh balance after wager deduction
+    from app.models.pred_user import PredUser as PredUserModel
+    fresh_user = pred_session.get(PredUserModel, user.id)
+
     return jsonify({
         "pick_id": pick.id,
         "game_id": pick.game_id,
@@ -191,13 +195,16 @@ def create_pick():
         "picked_team_id": pick.picked_team_id,
         "confidence": pick.confidence,
         "wager": pick.wager,
+        "odds_at_pick": float(pick.odds_at_pick) if pick.odds_at_pick is not None else None,
+        "effective_wager": pick.effective_wager,
+        "potential_payout": pick.potential_payout,
         "is_upset_pick": pick.is_upset_pick,
         "skill_differential": (
             float(pick.skill_differential) if pick.skill_differential is not None else None
         ),
         "projected_points": projected,
         "lock_deadline": lock_deadline.isoformat() if lock_deadline else None,
-        "balance": user.balance,
+        "balance": fresh_user.balance if fresh_user else user.balance,
     }), 201
 
 
@@ -277,7 +284,20 @@ def delete_pick(pick_id: int):
     user = g.pred_user
 
     try:
+        # Get pick before retracting to know if we need to refund
+        pick_to_retract = pred_session.get(PredPick, pick_id)
+        effective_wager_refund = (
+            pick_to_retract.effective_wager
+            if pick_to_retract and pick_to_retract.effective_wager is not None
+            else 0
+        )
         retract_pick(user, pick_id, pred_session)
+        # Refund effective wager on retraction
+        if effective_wager_refund > 0:
+            from app.models.pred_user import PredUser as PredUserModel
+            db_user = pred_session.get(PredUserModel, user.id)
+            if db_user:
+                db_user.balance += effective_wager_refund
         pred_session.commit()
     except PickError as exc:
         pred_session.rollback()

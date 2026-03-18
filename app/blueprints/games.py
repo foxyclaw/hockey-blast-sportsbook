@@ -45,6 +45,9 @@ def _serialize_game(game, hb_session, pred_user=None, pred_session=None) -> dict
     scheduled = _game_start_dt(game)
     is_live = getattr(game, "live_time", None) is not None
 
+    from app.services.odds_service import compute_odds
+    odds = compute_odds(home_skill, visitor_skill)
+
     data = {
         "game_id": game.id,
         "scheduled_start": scheduled.isoformat() if scheduled else None,
@@ -66,6 +69,7 @@ def _serialize_game(game, hb_session, pred_user=None, pred_session=None) -> dict
             "name": visitor_team.name if visitor_team else str(game.visitor_team_id),
             "avg_skill": visitor_skill,
         },
+        "odds": odds,
     }
 
     if pred_user and pred_session:

@@ -23,7 +23,8 @@
       <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
         <!-- Home team -->
         <div class="text-center">
-          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.home_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-2" @click.stop>{{ game.home_team?.name ?? 'Home' }}</a>
+          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.home_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-1" @click.stop>{{ game.home_team?.name ?? 'Home' }}</a>
+          <div class="text-xs font-semibold text-primary/80 mb-1">{{ homeOdds }}×</div>
           <SkillBar :skill="game.home_team?.avg_skill" />
         </div>
 
@@ -35,7 +36,8 @@
 
         <!-- Away team -->
         <div class="text-center">
-          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.visitor_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-2" @click.stop>{{ game.visitor_team?.name ?? 'Away' }}</a>
+          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.visitor_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-1" @click.stop>{{ game.visitor_team?.name ?? 'Away' }}</a>
+          <div class="text-xs font-semibold text-secondary/80 mb-1">{{ visitorOdds }}×</div>
           <SkillBar :skill="game.visitor_team?.avg_skill" />
         </div>
       </div>
@@ -71,6 +73,9 @@ const props = defineProps({
     required: true,
   },
 })
+
+const homeOdds = computed(() => props.game?.odds?.home_odds ?? 1.90)
+const visitorOdds = computed(() => props.game?.odds?.visitor_odds ?? 1.90)
 
 defineEmits(['pick'])
 
