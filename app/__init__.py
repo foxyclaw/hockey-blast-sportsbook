@@ -27,10 +27,7 @@ def create_app(config_name: str | None = None) -> Flask:
         config_name: "development" | "testing" | "production" | None
                      Defaults to FLASK_ENV environment variable, then "development".
     """
-    # SPA dist folder (served manually via catch-all route below)
-    _dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-    app = Flask(__name__, static_folder=None)
-    app.config["SPA_DIST"] = os.path.abspath(_dist)
+    app = Flask(__name__)
 
     # ── Load config ────────────────────────────────────────────────────────────
     if config_name is None:
@@ -99,7 +96,6 @@ def create_app(config_name: str | None = None) -> Flask:
             200 if all_ok else 503
         )
 
-    # ── Error handlers ─────────────────────────────────────────────────────────
     # ── SPA catch-all — serve index.html for all non-API routes ──────────────
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
@@ -107,21 +103,21 @@ def create_app(config_name: str | None = None) -> Flask:
         """Serve Vue SPA. API routes are matched before this catch-all."""
         from flask import send_from_directory
         import os as _os
-        dist = app.config["SPA_DIST"]
-        # Serve file directly if it exists (assets/, puck.svg, etc.)
+        dist = _os.path.join(_os.path.dirname(__file__), "..", "frontend", "dist")
+        dist = _os.path.abspath(dist)
         full = _os.path.join(dist, path)
         if path and _os.path.isfile(full):
             return send_from_directory(dist, path)
         return send_from_directory(dist, "index.html")
 
+    # ── Error handlers ─────────────────────────────────────────────────────────
     @app.errorhandler(404)
     def not_found(e):
-        # Only return JSON 404 for API routes; everything else falls to SPA
-        from flask import request as _req, send_from_directory
+        from flask import request as _req
         if _req.path.startswith("/api/") or _req.path.startswith("/auth/"):
             return jsonify({"error": "NOT_FOUND", "message": "Resource not found"}), 404
-        dist = app.config["SPA_DIST"]
-        return send_from_directory(dist, "index.html")
+        dist = _os.path.join(_os.path.dirname(__file__), "..", "frontend", "dist")
+        return send_from_directory(_os.path.abspath(dist), "index.html")
 
     @app.errorhandler(405)
     def method_not_allowed(e):
@@ -142,11 +138,6 @@ def _register_blueprints(app: Flask) -> None:
     from app.blueprints.leagues import leagues_bp
     from app.blueprints.standings import standings_bp
     from app.blueprints.identity import identity_bp
-    from app.blueprints.chat import chat_bp
-    from app.blueprints.preferences import preferences_bp
-    from app.blueprints.team_connect import team_connect_bp
-    from app.blueprints.fantasy import fantasy_bp
-    from app.blueprints.admin import admin_bp
 
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(games_bp, url_prefix="/api/games")
@@ -154,8 +145,3 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(leagues_bp, url_prefix="/api/leagues")
     app.register_blueprint(standings_bp, url_prefix="/api/standings")
     app.register_blueprint(identity_bp, url_prefix="/api/identity")
-    app.register_blueprint(chat_bp)
-    app.register_blueprint(preferences_bp, url_prefix="/api/preferences")
-    app.register_blueprint(team_connect_bp, url_prefix="")
-    app.register_blueprint(fantasy_bp, url_prefix="/api/fantasy")
-    app.register_blueprint(admin_bp, url_prefix="/api/admin")
