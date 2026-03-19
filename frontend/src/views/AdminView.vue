@@ -261,8 +261,14 @@
 
           <div v-if="launchError" class="alert alert-error text-sm mb-3">{{ launchError }}</div>
           <div v-if="launchResult" class="alert alert-success text-sm mb-3">
-            ✅ Launched {{ launchResult.count }} league(s):
-            <span v-for="l in launchResult.updated" :key="l.id" class="badge badge-sm ml-1">{{ l.name }}</span>
+            ✅ Done — {{ launchResult.created }} created, {{ launchResult.updated }} updated.
+            <div class="mt-1 flex flex-wrap gap-1">
+              <span v-for="l in launchResult.leagues" :key="l.id"
+                class="badge badge-sm"
+                :class="l.action === 'created' ? 'badge-primary' : 'badge-ghost'">
+                {{ l.name }} ({{ l.action }})
+              </span>
+            </div>
           </div>
 
           <button @click="launchSeason" class="btn btn-primary btn-sm"
@@ -270,6 +276,72 @@
             <span v-if="launching" class="loading loading-spinner loading-xs"></span>
             🚀 Launch Season
           </button>
+        </div>
+      </div>
+
+      <!-- ── League List & Delete ──────────────────────────────────────── -->
+      <div class="card bg-base-200 shadow-md mt-4">
+        <div class="card-body p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="card-title text-base">📋 All Leagues</h2>
+            <button @click="loadAdminLeagues" class="btn btn-xs btn-ghost" :disabled="adminLeaguesLoading">
+              <span v-if="adminLeaguesLoading" class="loading loading-spinner loading-xs"></span>
+              Refresh
+            </button>
+          </div>
+
+          <div v-if="!adminLeagues.length" class="text-sm text-base-content/50 py-4 text-center">
+            No leagues found. Change org or click Refresh.
+          </div>
+
+          <div v-else class="overflow-x-auto">
+            <table class="table table-xs w-full">
+              <thead>
+                <tr>
+                  <th>
+                    <input type="checkbox" class="checkbox checkbox-xs"
+                      :checked="selectedLeagueIds.length === adminLeagues.length && adminLeagues.length > 0"
+                      @change="e => selectedLeagueIds = e.target.checked ? adminLeagues.map(l => l.id) : []" />
+                  </th>
+                  <th>Name</th>
+                  <th>Level</th>
+                  <th>Status</th>
+                  <th>Managers</th>
+                  <th>Season Starts</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="l in adminLeagues" :key="l.id" class="hover">
+                  <td>
+                    <input type="checkbox" class="checkbox checkbox-xs"
+                      :value="l.id" v-model="selectedLeagueIds" />
+                  </td>
+                  <td class="font-medium">{{ l.name }}</td>
+                  <td>{{ l.level_name }}</td>
+                  <td><span class="badge badge-xs" :class="statusBadgeClass(l.status)">{{ l.status }}</span></td>
+                  <td>{{ l.manager_count ?? '—' }}</td>
+                  <td class="text-xs">{{ l.season_starts_at ? new Date(l.season_starts_at).toLocaleDateString() : '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Batch delete -->
+          <div v-if="selectedLeagueIds.length" class="flex items-center gap-3 mt-3">
+            <span class="text-sm text-base-content/70">{{ selectedLeagueIds.length }} selected</span>
+            <button v-if="!confirmBatchDelete" @click="confirmBatchDelete = true" class="btn btn-xs btn-error">
+              🗑 Delete selected
+            </button>
+            <template v-else>
+              <span class="text-sm text-error font-semibold">Delete {{ selectedLeagueIds.length }} league(s) and ALL their data?</span>
+              <button @click="batchDeleteLeagues" class="btn btn-xs btn-error" :disabled="deleting">
+                <span v-if="deleting" class="loading loading-spinner loading-xs"></span>
+                Yes, delete
+              </button>
+              <button @click="confirmBatchDelete = false" class="btn btn-xs btn-ghost">Cancel</button>
+            </template>
+          </div>
+          <div v-if="deleteResult" class="alert mt-2 text-sm" :class="deleteResult.startsWith('✅') ? 'alert-success' : 'alert-error'">{{ deleteResult }}</div>
         </div>
       </div>
 
@@ -384,6 +456,10 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function statusBadgeClass(s) {
+  return { forming: 'badge-info', draft_open: 'badge-warning', drafting: 'badge-warning', active: 'badge-success', completed: 'badge-neutral' }[s] || 'badge-ghost'
+}
+
 function statusBadge(status) {
   switch (status) {
     case 'confirmed': return 'badge-success'
@@ -409,6 +485,13 @@ watch(activeTab, (tab) => {
 const orgs = ref([])
 const launchOrgId = ref(1)
 
+watch(launchOrgId, () => {
+  if (activeTab.value === 'launch') {
+    loadLevels()
+    loadAdminLeagues()
+  }
+})
+
 async function loadOrgs() {
   try {
     const { data } = await api.get('/api/admin/fantasy/orgs')
@@ -416,6 +499,9 @@ async function loadOrgs() {
     if (orgs.value.length && !orgs.value.find(o => o.id === launchOrgId.value)) {
       launchOrgId.value = orgs.value[0].id
     }
+    // Auto-load levels and leagues for the default org
+    await loadLevels()
+    await loadAdminLeagues()
   } catch { /* ignore */ }
 }
 const launchStartDate = ref('')
@@ -426,6 +512,45 @@ const levelsLoading = ref(false)
 const launching = ref(false)
 const launchError = ref(null)
 const launchResult = ref(null)
+
+// ── Admin League List & Delete ─────────────────────────────────────────────
+const adminLeagues = ref([])
+const adminLeaguesLoading = ref(false)
+const selectedLeagueIds = ref([])
+const confirmBatchDelete = ref(false)
+const deleting = ref(false)
+const deleteResult = ref(null)
+
+async function loadAdminLeagues() {
+  adminLeaguesLoading.value = true
+  selectedLeagueIds.value = []
+  confirmBatchDelete.value = false
+  deleteResult.value = null
+  try {
+    const { data } = await api.get(`/api/admin/fantasy/leagues?org_id=${launchOrgId.value}`)
+    adminLeagues.value = data.leagues
+  } catch { /* ignore */ } finally {
+    adminLeaguesLoading.value = false
+  }
+}
+
+async function batchDeleteLeagues() {
+  if (!selectedLeagueIds.value.length) return
+  deleting.value = true
+  try {
+    const { data } = await api.post('/api/admin/fantasy/leagues/batch-delete', {
+      league_ids: selectedLeagueIds.value,
+    })
+    deleteResult.value = `✅ Deleted ${data.deleted} league(s): ${data.names.join(', ')}`
+    selectedLeagueIds.value = []
+    confirmBatchDelete.value = false
+    await loadAdminLeagues()
+  } catch (e) {
+    deleteResult.value = `❌ ${e.response?.data?.message || e.message}`
+  } finally {
+    deleting.value = false
+  }
+}
 
 async function loadLevels() {
   levelsLoading.value = true
