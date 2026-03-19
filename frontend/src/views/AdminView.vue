@@ -26,6 +26,13 @@
       >
         Users
       </button>
+      <button
+        class="tab"
+        :class="{ 'tab-active': activeTab === 'launch' }"
+        @click="activeTab = 'launch'"
+      >
+        🏒 Launch Season
+      </button>
     </div>
 
     <!-- ── Pending Claims ────────────────────────────────────────────────── -->
@@ -206,7 +213,10 @@
         <div class="text-sm text-base-content/50 mt-2">{{ users.length }} users</div>
       </div>
 
-      <!-- ── Launch Fantasy Season ─────────────────────────────────────── -->
+    </div>
+
+    <!-- ── Launch Season tab ──────────────────────────────────────────────── -->
+    <div v-if="activeTab === 'launch'">
       <div class="card bg-base-200 shadow-md">
         <div class="card-body p-4">
           <h2 class="card-title text-base mb-4">🏒 Launch Fantasy Season</h2>
