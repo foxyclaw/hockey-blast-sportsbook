@@ -419,9 +419,7 @@ async function loadLevels() {
   levels.value = []
   selectedLevelIds.value = []
   try {
-    const { data } = await api.get('/api/admin/fantasy/active-levels', {
-      params: { org_id: launchOrgId.value, active_only: launchActiveOnly.value }
-    })
+    const { data } = await api.get(`/api/admin/fantasy/active-levels?org_id=${launchOrgId.value}&active_only=${launchActiveOnly.value}`)
     levels.value = data.levels
   } catch (e) {
     launchError.value = e.response?.data?.message || e.message
