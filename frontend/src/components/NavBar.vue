@@ -13,14 +13,29 @@
             Games
           </RouterLink>
         </li>
-        <li v-if="isAuthenticated">
+        <li v-if="isFullyAuthenticated">
           <RouterLink to="/picks" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
             My Picks
           </RouterLink>
         </li>
-        <li v-if="isAuthenticated">
+        <li v-if="isFullyAuthenticated">
           <RouterLink to="/leagues" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
             Leagues
+          </RouterLink>
+        </li>
+        <li v-if="isFullyAuthenticated">
+          <RouterLink to="/fantasy" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
+            Fantasy
+          </RouterLink>
+        </li>
+        <li>
+          <RouterLink to="/free-agents" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
+            Free Agents
+          </RouterLink>
+        </li>
+        <li v-if="isFullyAuthenticated && predUser?.is_admin">
+          <RouterLink to="/admin" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
+            🛡️ Admin
           </RouterLink>
         </li>
       </ul>
@@ -28,15 +43,54 @@
 
     <div class="navbar-end gap-2">
       <!-- Balance badge -->
-      <div v-if="isAuthenticated && !isLoading" class="badge badge-outline badge-primary font-mono text-xs hidden sm:flex">
+      <div v-if="isFullyAuthenticated && !isLoading" class="badge badge-outline badge-primary font-mono text-xs hidden sm:flex">
         💰 {{ balance.toLocaleString() }} pts
+      </div>
+
+      <!-- Notification bell (authenticated users only) -->
+      <div v-if="isFullyAuthenticated && !isLoading" class="relative">
+        <button @click="toggleNotifications" class="btn btn-ghost btn-circle btn-sm relative">
+          <span class="text-lg">🔔</span>
+          <span
+            v-if="unreadCount > 0"
+            class="absolute -top-1 -right-1 bg-error text-white text-xs rounded-full w-4 h-4 flex items-center justify-center"
+          >
+            {{ unreadCount > 9 ? '9+' : unreadCount }}
+          </span>
+        </button>
+        <!-- Dropdown -->
+        <div
+          v-if="showNotifications"
+          class="absolute right-0 top-12 w-80 bg-base-200 rounded-box shadow-xl z-50 border border-base-content/10"
+        >
+          <div class="p-3 border-b border-base-content/10 flex justify-between">
+            <span class="font-semibold text-sm">Notifications</span>
+            <button v-if="notifications.length" @click="markAllRead" class="text-xs link">Mark all read</button>
+          </div>
+          <div class="max-h-80 overflow-y-auto">
+            <div v-if="!notifications.length" class="p-4 text-center text-base-content/50 text-sm">
+              No notifications yet
+            </div>
+            <button
+              v-for="n in notifications"
+              :key="n.id"
+              class="w-full text-left p-3 border-b border-base-content/5 hover:bg-base-300 cursor-pointer block"
+              :class="{ 'opacity-60': n.is_read }"
+              @click.stop="openNotification(n)"
+            >
+              <div class="text-sm font-medium">{{ n.title }}</div>
+              <div v-if="n.body" class="text-xs text-base-content/60 mt-0.5">{{ n.body }}</div>
+              <div class="text-xs text-base-content/40 mt-1">{{ timeAgo(n.created_at) }}</div>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Auth button -->
       <div v-if="isLoading">
         <span class="loading loading-spinner loading-sm text-primary"></span>
       </div>
-      <div v-else-if="isAuthenticated" class="dropdown dropdown-end">
+      <div v-else-if="isFullyAuthenticated" class="dropdown dropdown-end">
         <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
           <div class="w-9 rounded-full ring ring-primary ring-offset-base-100 ring-offset-1">
             <img v-if="user?.picture" :src="user.picture" :alt="user.name" />
@@ -51,7 +105,10 @@
           </li>
           <li><RouterLink to="/picks">My Picks</RouterLink></li>
           <li><RouterLink to="/leagues">Leagues</RouterLink></li>
-          <li><RouterLink to="/identity">Hockey Identity</RouterLink></li>
+          <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
+          <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
+          <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
+          <li v-if="predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
           <li><hr class="my-1 opacity-20" /></li>
           <li>
             <button @click="logout({ logoutParams: { returnTo: window.location.origin } })" class="text-error">
@@ -60,7 +117,8 @@
           </li>
         </ul>
       </div>
-      <button v-else @click="loginWithRedirect()" class="btn btn-primary btn-sm">
+      <button v-else @click="doLogin()" class="btn btn-primary btn-sm" :disabled="loginInProgress">
+        <span v-if="loginInProgress" class="loading loading-spinner loading-xs"></span>
         Sign In
       </button>
 
@@ -73,8 +131,11 @@
         </label>
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-200 rounded-box w-52">
           <li><RouterLink to="/">Games</RouterLink></li>
-          <li v-if="isAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
-          <li v-if="isAuthenticated"><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/fantasy">Fantasy</RouterLink></li>
+          <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
+          <li v-if="isFullyAuthenticated && predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
         </ul>
       </div>
     </div>
@@ -82,12 +143,83 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
+import { useApiClient } from '@/api/client'
 
 const { isAuthenticated, isLoading, user, loginWithRedirect, logout } = useAuth0()
 const userStore = useUserStore()
+// Only treat as truly logged in if Auth0 says so AND the backend confirmed the token
+const isFullyAuthenticated = computed(() => isAuthenticated.value && userStore.predUser !== null)
+const predUser = computed(() => userStore.predUser)
+const router = useRouter()
+const loginInProgress = ref(false)
 
 const balance = computed(() => userStore.balance)
+
+// ── Notifications ──────────────────────────────────────────────────────────
+const notifications = ref([])
+const unreadCount = ref(0)
+const showNotifications = ref(false)
+
+async function loadNotifications() {
+  if (!isAuthenticated.value) return
+  try {
+    const api = useApiClient()
+    const { data } = await api.get('/api/notifications')
+    notifications.value = data.notifications || []
+    unreadCount.value = notifications.value.filter(n => !n.is_read).length
+  } catch {
+    // silently ignore — bell just shows 0
+  }
+}
+
+function toggleNotifications() {
+  showNotifications.value = !showNotifications.value
+  if (showNotifications.value) loadNotifications()
+}
+
+async function markAllRead() {
+  const api = useApiClient()
+  for (const n of [...notifications.value]) {
+    await api.post(`/api/notifications/${n.id}/read`).catch(() => {})
+  }
+  notifications.value = []
+  unreadCount.value = 0
+  showNotifications.value = false
+}
+
+function openNotification(n) {
+  const api = useApiClient()
+  api.post(`/api/notifications/${n.id}/read`).catch(() => {})
+  // Remove from list immediately — delete on read
+  notifications.value = notifications.value.filter(x => x.id !== n.id)
+  unreadCount.value = Math.max(0, unreadCount.value - 1)
+  showNotifications.value = false
+  if (n.link) {
+    setTimeout(() => router.push(n.link), 50)
+  }
+}
+
+function timeAgo(iso) {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`
+  return `${Math.floor(mins / 1440)}d ago`
+}
+
+// Load notifications when user logs in
+watch(isAuthenticated, (v) => {
+  if (v) loadNotifications()
+}, { immediate: true })
+
+// ── Login ──────────────────────────────────────────────────────────────────
+async function doLogin() {
+  await loginWithRedirect()
+}
 </script>

@@ -4,6 +4,7 @@ PredUser — a registered user of the predictions platform, authenticated via Au
 
 from datetime import datetime, timezone
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,6 +43,11 @@ class PredUser(PredBase):
     # Virtual currency balance (paper money). Starts at 1000, modified by wagers on picks.
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    preferences_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=sa.false(), nullable=False
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -51,6 +57,9 @@ class PredUser(PredBase):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # ── Relationships ──────────────────────────────────────────────────────────
     league_memberships: Mapped[list["PredLeagueMember"]] = relationship(
@@ -58,6 +67,15 @@ class PredUser(PredBase):
     )
     picks: Mapped[list["PredPick"]] = relationship(
         "PredPick", back_populates="user", lazy="dynamic"
+    )
+    preferences: Mapped["PredUserPreferences | None"] = relationship(
+        "PredUserPreferences", back_populates="user", uselist=False
+    )
+    captain_claims: Mapped[list["PredUserCaptainClaim"]] = relationship(
+        "PredUserCaptainClaim", back_populates="user", lazy="dynamic"
+    )
+    notifications: Mapped[list["PredNotification"]] = relationship(
+        "PredNotification", back_populates="user", lazy="dynamic"
     )
 
     def __repr__(self) -> str:
@@ -72,4 +90,6 @@ class PredUser(PredBase):
             "hb_human_id": self.hb_human_id,
             "balance": self.balance,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "preferences_completed": self.preferences_completed,
+            "is_admin": self.is_admin,
         }

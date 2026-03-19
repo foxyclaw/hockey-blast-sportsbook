@@ -14,13 +14,19 @@ app.use(
     domain: 'dev-tqe4zxubkkg82828.us.auth0.com',
     clientId: 'qhV0rAn6CywncUVjR3tjOCc45qaeBpj3',
     authorizationParams: {
-      redirect_uri: 'http://localhost:5173/callback',
-      audience: 'https://api.hockey-blast-predictions.com',
+      redirect_uri: `${window.location.origin}/callback`,
       scope: 'openid profile email',
     },
     cacheLocation: 'localstorage',
+    useRefreshTokens: true,
   })
 )
+
+app.config.globalProperties.window = window
+
+app.config.errorHandler = (err, instance, info) => {
+  console.error('[Vue error]', err, info)
+}
 
 app.use(router)
 app.mount('#app')

@@ -32,6 +32,8 @@ class PredLeague(PredBase):
 
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    season_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Human-readable season label, e.g. "2024-25". Display-only; not a FK.
 
     join_code: Mapped[str] = mapped_column(
         String(16),
@@ -96,6 +98,7 @@ class PredLeague(PredBase):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "season_label": self.season_label,
             "join_code": self.join_code,
             "is_active": self.is_active,
             "is_public": self.is_public,

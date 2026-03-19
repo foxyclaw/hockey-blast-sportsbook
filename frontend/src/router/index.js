@@ -28,10 +28,46 @@ const router = createRouter({
       beforeEnter: authGuard,
     },
     {
+      path: '/profile-setup',
+      name: 'profile-setup',
+      component: () => import('@/views/ProfileSetupView.vue'),
+      beforeEnter: authGuard,
+    },
+    {
       path: '/identity',
       name: 'identity',
       component: () => import('@/views/IdentityView.vue'),
       beforeEnter: authGuard,
+    },
+    {
+      path: '/player-prefs',
+      name: 'player-prefs',
+      component: () => import('@/views/PlayerPrefsView.vue'),
+      beforeEnter: authGuard,
+    },
+    {
+      path: '/fantasy',
+      name: 'fantasy',
+      component: () => import('@/views/FantasyView.vue'),
+      beforeEnter: authGuard,
+    },
+    {
+      path: '/fantasy/:id',
+      name: 'fantasy-league',
+      component: () => import('@/views/FantasyLeagueView.vue'),
+      beforeEnter: authGuard,
+    },
+    {
+      path: '/free-agents',
+      name: 'free-agents',
+      component: () => import('@/views/FreeAgentsView.vue'),
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminView.vue'),
+      beforeEnter: authGuard,
+      meta: { requiresAdmin: true },
     },
     {
       path: '/callback',
@@ -39,7 +75,16 @@ const router = createRouter({
       component: () => import('@/views/CallbackView.vue'),
     },
     {
-      // Catch-all 404
+      path: '/privacy',
+      name: 'privacy',
+      component: () => import('@/views/PrivacyView.vue'),
+    },
+    {
+      path: '/terms',
+      name: 'terms',
+      component: () => import('@/views/TermsView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/views/NotFoundView.vue'),
@@ -48,6 +93,42 @@ const router = createRouter({
   scrollBehavior() {
     return { top: 0 }
   },
+})
+
+// Onboarding guard — runs on every navigation
+// The user store is imported lazily to avoid circular deps
+const ONBOARDING_ROUTES = ['profile-setup', 'identity', 'player-prefs', 'callback', 'not-found', 'free-agents', 'admin']
+
+router.beforeEach(async (to) => {
+  // Skip guard for onboarding routes themselves and public routes
+  if (ONBOARDING_ROUTES.includes(to.name)) return true
+
+  // Lazy import store to avoid circular dependency
+  const { useUserStore } = await import('@/stores/user')
+  const userStore = useUserStore()
+
+  // If store not loaded yet, wait for it
+  if (!userStore.predUser && !userStore.loading && !userStore.error) return true
+
+  // Wait for any in-flight fetch
+  let attempts = 0
+  while (userStore.loading && attempts < 20) {
+    await new Promise(r => setTimeout(r, 100))
+    attempts++
+  }
+
+  if (!userStore.predUser) return true  // not logged in, let auth0 handle it
+
+  if (userStore.needsNameSetup) return { name: 'profile-setup' }
+  // Prefs are optional — users can navigate freely. The Player Profile link
+  // in the nav dropdown is how they reach it when ready.
+
+  // Admin guard
+  if (to.meta?.requiresAdmin && !userStore.predUser?.is_admin) {
+    return { name: 'home' }
+  }
+
+  return true
 })
 
 export default router

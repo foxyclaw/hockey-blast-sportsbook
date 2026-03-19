@@ -1,42 +1,90 @@
 <template>
   <div class="min-h-screen bg-base-100 flex flex-col">
-    <NavBar />
-    <main class="flex-1 container mx-auto px-4 py-6 max-w-3xl">
-      <RouterView />
-    </main>
-    <footer class="footer footer-center p-4 bg-base-300 text-base-content text-xs opacity-60">
-      <span>🏒 Hockey Blast Predictions · Not gambling · Just fun</span>
-    </footer>
+    <NavBar v-if="appReady" />
+
+    <!-- Full-screen loading splash while we figure out who you are -->
+    <div v-if="!appReady" class="flex-1 flex items-center justify-center">
+      <div class="text-center space-y-4">
+        <div class="text-5xl">🏒</div>
+        <div class="loading loading-spinner loading-lg text-primary"></div>
+        <div class="text-base-content/50 text-sm">Loading...</div>
+      </div>
+    </div>
+
+    <template v-else>
+      <!-- DEBUG PANEL — hidden in prod via v-if="false" -->
+      <div v-if="false"></div>
+      <main class="flex-1 container mx-auto px-4 py-6 max-w-6xl">
+        <RouterView />
+      </main>
+      <footer class="footer footer-center p-4 bg-base-300 text-base-content text-xs opacity-60">
+        <span>🏒 Hockey Blast Predictions · Not gambling · Just fun</span>
+      </footer>
+      <ChatWidget v-if="isAuthenticated" />
+    </template>
   </div>
 </template>
 
 <script setup>
-import { watch } from 'vue'
+import { watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
+import { defineAsyncComponent } from 'vue'
 import NavBar from '@/components/NavBar.vue'
 import { useUserStore } from '@/stores/user'
 
-const { isAuthenticated, isLoading } = useAuth0()
+const ChatWidget = defineAsyncComponent(() => import('@/components/ChatWidget.vue'))
+
+const { isAuthenticated, isLoading, idTokenClaims } = useAuth0()
 const userStore = useUserStore()
 const router = useRouter()
+const debugToken = ref(null)
+const debugLastCall = ref(null)
+const debugLastStatus = ref(null)
+const debugLastError = ref(null)
 
-// Load pred user profile when Auth0 confirms authentication
+// Global axios interceptor to capture last API call for debug panel
+import axios from 'axios'
+axios.interceptors.request.use(config => {
+  debugLastCall.value = `${config.method?.toUpperCase()} ${config.url}`
+  debugLastStatus.value = '⏳ pending'
+  debugLastError.value = null
+  return config
+})
+axios.interceptors.response.use(
+  res => {
+    debugLastStatus.value = `✅ ${res.status}`
+    return res
+  },
+  err => {
+    debugLastStatus.value = `❌ ${err.response?.status || 'ERR'}`
+    debugLastError.value = err.response?.data?.message || err.message
+    return Promise.reject(err)
+  }
+)
+const appReady = ref(false)  // blocks rendering until we know user state
+
 watch(
   () => [isAuthenticated.value, isLoading.value],
   async ([authed, loading]) => {
-    if (authed && !loading) {
-      await userStore.fetchPredUser()
-      // Redirect to identity setup if no hockey profile linked
-      if (userStore.needsIdentitySetup) {
-        const current = router.currentRoute.value.name
-        if (current !== 'identity' && current !== 'callback') {
-          router.push({ name: 'identity' })
-        }
+    if (loading) return  // Auth0 still initializing
+
+    if (authed) {
+      try {
+        const token = idTokenClaims.value?.__raw
+        debugToken.value = token ? token.substring(0, 30) + '…' : 'MISSING'
+        await userStore.fetchPredUser(token)
+        // Trigger a navigation to current route so the router guard re-evaluates
+        await router.replace(router.currentRoute.value.fullPath)
+      } catch (e) {
+        debugToken.value = 'EXCEPTION: ' + e.message
+        console.error('[App] fetchPredUser failed:', e)
       }
-    } else if (!authed && !loading) {
+    } else {
       userStore.reset()
     }
+
+    appReady.value = true
   },
   { immediate: true }
 )

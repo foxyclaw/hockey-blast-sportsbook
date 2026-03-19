@@ -65,6 +65,13 @@ class PredResult(PredBase):
     balance_change: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Net change to user's balance. Positive if won, negative if lost. None if no wager.
 
+    # ── Sportsbook payout fields ───────────────────────────────────────────────
+    payout: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Actual pts awarded (potential_payout if correct, 0 if wrong). None = legacy pick.
+
+    balance_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Net change: +payout (wager already deducted at pick time) if correct, 0 if wrong.
+
     graded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -94,5 +101,7 @@ class PredResult(PredBase):
             "total_points": self.total_points,
             "wager": self.wager,
             "balance_change": self.balance_change,
+            "payout": self.payout,
+            "balance_delta": self.balance_delta,
             "graded_at": self.graded_at.isoformat() if self.graded_at else None,
         }

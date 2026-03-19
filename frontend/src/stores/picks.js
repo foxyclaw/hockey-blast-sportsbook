@@ -8,12 +8,14 @@ export const usePicksStore = defineStore('picks', () => {
   const error = ref(null)
   const total = ref(0)
 
+  // Create api client once at store setup time (inside composition context)
+  const api = useApiClient()
+
   async function fetchPicks(params = {}) {
-    const api = useApiClient()
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get('/api/picks', { params })
+      const { data } = await api.get('/api/picks/mine', { params })
       picks.value = data.picks ?? data
       total.value = data.total ?? picks.value.length
     } catch (e) {
@@ -24,13 +26,11 @@ export const usePicksStore = defineStore('picks', () => {
   }
 
   async function submitPick(payload) {
-    const api = useApiClient()
     const { data } = await api.post('/api/picks', payload)
     return data
   }
 
   async function retractPick(pickId) {
-    const api = useApiClient()
     await api.delete(`/api/picks/${pickId}`)
     picks.value = picks.value.filter((p) => p.pick_id !== pickId && p.id !== pickId)
   }

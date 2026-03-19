@@ -4,11 +4,16 @@ PredUserHbClaim — stores every hb_human_id a user has ever claimed as themselv
 Multiple rows allowed per user (different records across seasons/facilities).
 Merging/deduplication is a nightly-job concern in hockey_blast, not here.
 Two users can claim the same hb_human_id — we store both, flag for review later.
+
+claim_status values:
+    'confirmed'      — accepted (no conflict, or approved by admin)
+    'pending_review' — conflict detected; awaiting admin review
+    'rejected'       — admin rejected this claim
 """
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import PredBase as Base
@@ -34,6 +39,18 @@ class PredUserHbClaim(Base):
         nullable=False,
     )
 
+    # ── Admin review fields ──────────────────────────────────────────────────
+    claim_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="confirmed"
+    )  # 'confirmed' | 'pending_review' | 'rejected'
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("pred_users.id"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Prevent exact duplicate claims (same user + same hb_human_id)
     __table_args__ = (
         UniqueConstraint("user_id", "hb_human_id", name="uq_user_hb_claim"),
@@ -46,5 +63,10 @@ class PredUserHbClaim(Base):
             "hb_human_id": self.hb_human_id,
             "source": self.source,
             "is_primary": self.is_primary,
+            "claim_status": self.claim_status,
+            "admin_note": self.admin_note,
+            "reviewed_by": self.reviewed_by,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "claimed_at": self.claimed_at.isoformat() if self.claimed_at else None,
+            "profile_snapshot": self.profile_snapshot,
         }

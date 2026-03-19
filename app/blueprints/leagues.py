@@ -72,6 +72,7 @@ def create_league():
         league = PredLeague(
             name=name,
             description=data.get("description"),
+            season_label=data.get("season_label"),
             scope=scope,
             org_id=data.get("org_id"),
             division_id=data.get("division_id"),
@@ -99,14 +100,9 @@ def create_league():
         pred_session.rollback()
         return error_response("INTERNAL_ERROR", str(exc), 500)
 
-    return jsonify({
-        "league_id": league.id,
-        "name": league.name,
-        "join_code": league.join_code,
-        "commissioner_id": league.commissioner_id,
-        "scope": league.scope.value,
-        "created_at": league.created_at.isoformat() if league.created_at else None,
-    }), 201
+    data = league.to_dict()
+    data["member_count"] = 1
+    return jsonify(data), 201
 
 
 @leagues_bp.route("/join", methods=["POST"])
@@ -151,10 +147,7 @@ def join_league():
             # Re-activate
             existing.is_active = True
             pred_session.commit()
-            return jsonify({
-                "league_id": league.id,
-                "message": "Rejoined league successfully",
-            })
+            return jsonify(league.to_dict())
 
     # Check member limit
     active_member_stmt = select(PredLeagueMember).where(
@@ -178,11 +171,7 @@ def join_league():
         pred_session.rollback()
         return error_response("INTERNAL_ERROR", str(exc), 500)
 
-    return jsonify({
-        "league_id": league.id,
-        "message": "Joined league successfully",
-        "league_name": league.name,
-    })
+    return jsonify(league.to_dict())
 
 
 @leagues_bp.route("/<int:league_id>", methods=["GET"])

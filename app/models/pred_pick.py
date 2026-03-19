@@ -67,6 +67,16 @@ class PredPick(PredBase):
     wager: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Optional paper-money wager (1–500). None = no wager placed.
 
+    # ── Sportsbook odds snapshot (captured at pick submission time) ───────────
+    odds_at_pick: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    # Odds multiplier at the time of pick submission (e.g. 1.85)
+
+    effective_wager: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # wager × confidence — total pts at risk
+
+    potential_payout: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # floor(effective_wager × odds_at_pick) — max pts to win if correct
+
     # ── Skill snapshot (captured at pick submission time) ─────────────────────
     # skill_value: 0 = elite, 100 = worst
     home_team_avg_skill: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
@@ -123,6 +133,9 @@ class PredPick(PredBase):
             "picked_team_id": self.picked_team_id,
             "confidence": self.confidence,
             "wager": self.wager,
+            "odds_at_pick": float(self.odds_at_pick) if self.odds_at_pick is not None else None,
+            "effective_wager": self.effective_wager,
+            "potential_payout": self.potential_payout,
             "skill_differential": (
                 float(self.skill_differential) if self.skill_differential is not None else None
             ),

@@ -11,7 +11,7 @@ from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
 from app.auth.jwt_validator import require_auth
-from app.db import PredSession
+from app.db import HBSession, PredSession
 from app.models.pred_league import PredLeague
 from app.models.pred_pick import PredPick
 from app.models.pred_result import PredResult
@@ -24,7 +24,87 @@ from app.services.pick_service import (
 from app.services.lock_checker import get_lock_deadline
 from app.utils.response import error_response
 
+
+def _team_name(team_id: int, hb_session) -> str | None:
+    """Fetch team name from hockey_blast DB; returns None on failure."""
+    if not team_id:
+        return None
+    try:
+        from hockey_blast_common_lib.models import Team
+        team = hb_session.execute(select(Team).where(Team.id == team_id)).scalar_one_or_none()
+        return team.name if team else None
+    except Exception:
+        return None
+
+
+def _enrich_pick(pick, hb_session) -> dict:
+    """Serialize a PredPick with computed display fields."""
+    d = pick.to_dict()
+
+    # Team names
+    home_name = _team_name(pick.home_team_id, hb_session)
+    away_name = _team_name(pick.away_team_id, hb_session)
+    picked_name = _team_name(pick.picked_team_id, hb_session)
+    d["home_team_name"] = home_name
+    d["away_team_name"] = away_name
+    d["picked_team_name"] = picked_name
+
+    # Status + points
+    if pick.result:
+        d["result"] = pick.result.to_dict()
+        d["status"] = "graded"
+        d["points_earned"] = pick.result.total_points
+    else:
+        d["status"] = "pending"
+        d["points_earned"] = None
+
+    return d
+
 picks_bp = Blueprint("picks", __name__)
+
+GLOBAL_LEAGUE_NAME = "🌎 Global Picks"
+GLOBAL_LEAGUE_JOIN_CODE = "GLOBAL01"
+
+
+def _get_or_create_global_league(user, pred_session) -> int:
+    """Return (creating if needed) the global default league ID, auto-joining the user."""
+    from app.models.pred_league import PredLeague, LeagueScope
+    from app.models.pred_league_member import PredLeagueMember, MemberRole
+
+    # Find or create global league
+    league = pred_session.execute(
+        select(PredLeague).where(PredLeague.join_code == GLOBAL_LEAGUE_JOIN_CODE)
+    ).scalar_one_or_none()
+
+    if not league:
+        league = PredLeague(
+            name=GLOBAL_LEAGUE_NAME,
+            join_code=GLOBAL_LEAGUE_JOIN_CODE,
+            scope=LeagueScope.ALL_ORGS,
+            commissioner_id=user.id,
+            max_members=10000,
+            is_public=True,
+        )
+        pred_session.add(league)
+        pred_session.flush()
+
+    # Auto-join if not already a member
+    existing = pred_session.execute(
+        select(PredLeagueMember).where(
+            PredLeagueMember.user_id == user.id,
+            PredLeagueMember.league_id == league.id,
+        )
+    ).scalar_one_or_none()
+
+    if not existing:
+        pred_session.add(PredLeagueMember(
+            user_id=user.id,
+            league_id=league.id,
+            role=MemberRole.MEMBER,
+        ))
+        pred_session.flush()
+
+    return league.id
 
 
 @picks_bp.route("", methods=["POST"])
@@ -44,14 +124,13 @@ def create_pick():
     data = request.get_json(force=True, silent=True) or {}
 
     # Validate required fields
-    missing = [f for f in ("game_id", "league_id", "picked_team_id") if f not in data]
+    missing = [f for f in ("game_id", "picked_team_id") if f not in data]
     if missing:
         return error_response(
             "VALIDATION_ERROR", f"Missing required fields: {', '.join(missing)}", 400
         )
 
     game_id = data["game_id"]
-    league_id = data["league_id"]
     picked_team_id = data["picked_team_id"]
     confidence = data.get("confidence", 1)
     wager = data.get("wager", None)
@@ -65,6 +144,16 @@ def create_pick():
 
     pred_session = PredSession()
     user = g.pred_user
+
+    # If no league_id provided, auto-join the global default league
+    league_id = data.get("league_id")
+    if not league_id:
+        league_id = _get_or_create_global_league(user, pred_session)
+
+    import logging
+    logging.getLogger(__name__).info(
+        f"[Pick] user={user.id} game={game_id} team={picked_team_id} league={league_id} confidence={confidence}"
+    )
 
     try:
         pick = submit_pick(
@@ -95,6 +184,10 @@ def create_pick():
     # Reload user to get fresh balance
     pred_session.refresh(user)
 
+    # Reload db_user to get fresh balance after wager deduction
+    from app.models.pred_user import PredUser as PredUserModel
+    fresh_user = pred_session.get(PredUserModel, user.id)
+
     return jsonify({
         "pick_id": pick.id,
         "game_id": pick.game_id,
@@ -102,13 +195,16 @@ def create_pick():
         "picked_team_id": pick.picked_team_id,
         "confidence": pick.confidence,
         "wager": pick.wager,
+        "odds_at_pick": float(pick.odds_at_pick) if pick.odds_at_pick is not None else None,
+        "effective_wager": pick.effective_wager,
+        "potential_payout": pick.potential_payout,
         "is_upset_pick": pick.is_upset_pick,
         "skill_differential": (
             float(pick.skill_differential) if pick.skill_differential is not None else None
         ),
         "projected_points": projected,
         "lock_deadline": lock_deadline.isoformat() if lock_deadline else None,
-        "balance": user.balance,
+        "balance": fresh_user.balance if fresh_user else user.balance,
     }), 201
 
 
@@ -153,12 +249,8 @@ def my_picks():
     offset = (page - 1) * per_page
     picks = pred_session.execute(stmt.offset(offset).limit(per_page)).scalars().all()
 
-    picks_data = []
-    for pick in picks:
-        pick_dict = pick.to_dict()
-        if pick.result:
-            pick_dict["result"] = pick.result.to_dict()
-        picks_data.append(pick_dict)
+    hb_session = HBSession()
+    picks_data = [_enrich_pick(pick, hb_session) for pick in picks]
 
     return jsonify({
         "picks": picks_data,
@@ -180,11 +272,8 @@ def get_pick(pick_id: int):
     if pick is None or pick.user_id != user.id:
         return error_response("NOT_FOUND", "Pick not found", 404)
 
-    pick_dict = pick.to_dict()
-    if pick.result:
-        pick_dict["result"] = pick.result.to_dict()
-
-    return jsonify(pick_dict)
+    hb_session = HBSession()
+    return jsonify(_enrich_pick(pick, hb_session))
 
 
 @picks_bp.route("/<int:pick_id>", methods=["DELETE"])
@@ -195,7 +284,20 @@ def delete_pick(pick_id: int):
     user = g.pred_user
 
     try:
+        # Get pick before retracting to know if we need to refund
+        pick_to_retract = pred_session.get(PredPick, pick_id)
+        effective_wager_refund = (
+            pick_to_retract.effective_wager
+            if pick_to_retract and pick_to_retract.effective_wager is not None
+            else 0
+        )
         retract_pick(user, pick_id, pred_session)
+        # Refund effective wager on retraction
+        if effective_wager_refund > 0:
+            from app.models.pred_user import PredUser as PredUserModel
+            db_user = pred_session.get(PredUserModel, user.id)
+            if db_user:
+                db_user.balance += effective_wager_refund
         pred_session.commit()
     except PickError as exc:
         pred_session.rollback()

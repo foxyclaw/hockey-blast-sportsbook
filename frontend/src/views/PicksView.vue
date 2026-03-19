@@ -67,19 +67,19 @@
             <!-- Game info -->
             <div class="flex-1 min-w-0">
               <div class="font-semibold text-sm truncate">
-                {{ pick.game?.home_team_name ?? 'Home' }} vs {{ pick.game?.away_team_name ?? 'Away' }}
+                {{ pick.home_team_name ?? 'Home' }} vs {{ pick.away_team_name ?? 'Away' }}
               </div>
               <div class="text-xs text-base-content/50 mt-0.5">
-                {{ formatDate(pick.game?.scheduled_at) }}
+                {{ formatDate(pick.game_scheduled_start) }}
               </div>
             </div>
 
             <!-- Status badge -->
             <span
               class="badge badge-sm shrink-0"
-              :class="pick.status === 'graded' ? (pick.points_earned > 0 ? 'badge-success' : 'badge-error') : 'badge-ghost'"
+              :class="pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? 'badge-success' : 'badge-error') : 'badge-ghost'"
             >
-              {{ pick.status === 'graded' ? (pick.points_earned > 0 ? `+${pick.points_earned} pts` : 'No pts') : 'Pending' }}
+              {{ pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? `+${pick.points_earned} pts` : 'No pts') : 'Pending' }}
             </span>
           </div>
 

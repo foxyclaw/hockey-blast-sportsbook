@@ -6,6 +6,7 @@ JWKS keys are cached in memory to avoid fetching on every request.
 """
 
 import time
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Any
 
@@ -63,7 +64,8 @@ def validate_token(token: str) -> dict[str, Any]:
     public_key = _get_public_key(kid)
 
     domain = current_app.config["AUTH0_DOMAIN"]
-    audience = current_app.config["AUTH0_AUDIENCE"]
+    # ID token audience is always the Auth0 client ID
+    audience = current_app.config["AUTH0_CLIENT_ID"]
 
     payload = jwt.decode(
         token,
@@ -110,7 +112,14 @@ def require_auth(f):
         from app.services.user_service import get_or_create_pred_user
         from app.db import PredSession
 
-        g.pred_user = get_or_create_pred_user(payload, PredSession())
+        db = PredSession()
+        g.pred_user = get_or_create_pred_user(payload, db)
+
+        # Touch last_seen_at on every authenticated request
+        if g.pred_user:
+            g.pred_user.last_seen_at = datetime.now(timezone.utc)
+            db.flush()
+
         return f(*args, **kwargs)
 
     return decorated
@@ -134,7 +143,13 @@ def optional_auth(f):
                 g.jwt_payload = payload
                 from app.services.user_service import get_or_create_pred_user
                 from app.db import PredSession
-                g.pred_user = get_or_create_pred_user(payload, PredSession())
+                db = PredSession()
+                g.pred_user = get_or_create_pred_user(payload, db)
+
+                # Touch last_seen_at on every authenticated request
+                if g.pred_user:
+                    g.pred_user.last_seen_at = datetime.now(timezone.utc)
+                    db.flush()
             except Exception:
                 pass  # Silently ignore bad tokens in optional auth
 

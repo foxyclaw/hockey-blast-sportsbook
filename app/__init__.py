@@ -96,10 +96,28 @@ def create_app(config_name: str | None = None) -> Flask:
             200 if all_ok else 503
         )
 
+    # ── SPA catch-all — serve index.html for all non-API routes ──────────────
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def spa(path):
+        """Serve Vue SPA. API routes are matched before this catch-all."""
+        from flask import send_from_directory
+        import os as _os
+        dist = _os.path.join(_os.path.dirname(__file__), "..", "frontend", "dist")
+        dist = _os.path.abspath(dist)
+        full = _os.path.join(dist, path)
+        if path and _os.path.isfile(full):
+            return send_from_directory(dist, path)
+        return send_from_directory(dist, "index.html")
+
     # ── Error handlers ─────────────────────────────────────────────────────────
     @app.errorhandler(404)
     def not_found(e):
-        return jsonify({"error": "NOT_FOUND", "message": "Resource not found"}), 404
+        from flask import request as _req
+        if _req.path.startswith("/api/") or _req.path.startswith("/auth/"):
+            return jsonify({"error": "NOT_FOUND", "message": "Resource not found"}), 404
+        dist = _os.path.join(_os.path.dirname(__file__), "..", "frontend", "dist")
+        return send_from_directory(_os.path.abspath(dist), "index.html")
 
     @app.errorhandler(405)
     def method_not_allowed(e):

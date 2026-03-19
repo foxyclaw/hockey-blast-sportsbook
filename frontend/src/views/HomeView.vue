@@ -26,7 +26,7 @@
     </div>
 
     <!-- Loading skeleton -->
-    <div v-if="loading && !games.length" class="space-y-4">
+    <div v-if="loading && !games.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div v-for="i in 3" :key="i" class="card bg-base-200 shadow-md animate-pulse">
         <div class="card-body p-4 gap-3">
           <div class="h-4 bg-base-300 rounded w-1/3"></div>
@@ -60,7 +60,7 @@
     </div>
 
     <!-- Games list -->
-    <div v-else class="space-y-4">
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <GameCard
         v-for="game in games"
         :key="game.game_id"
@@ -91,7 +91,11 @@
 import { ref, onMounted } from 'vue'
 import GameCard from '@/components/GameCard.vue'
 import PickModal from '@/components/PickModal.vue'
-import { publicClient } from '@/api/client'
+import { publicClient, useApiClient } from '@/api/client'
+import { useAuth0 } from '@auth0/auth0-vue'
+
+const { isAuthenticated } = useAuth0()
+const authApi = useApiClient()
 
 const games = ref([])
 const orgs = ref([])
@@ -102,6 +106,11 @@ const selectedOrg = ref(null)
 const page = ref(1)
 const total = ref(0)
 const perPage = 20
+
+// Use authenticated client when logged in so user_pick is included in response
+function gamesClient() {
+  return isAuthenticated.value ? authApi : publicClient
+}
 
 const selectedGame = ref(null)
 const modalOpen = ref(false)
@@ -117,7 +126,7 @@ async function loadGames() {
   try {
     const params = { page: 1, per_page: perPage }
     if (selectedOrg.value) params.org_id = selectedOrg.value
-    const { data } = await publicClient.get('/api/games', { params })
+    const { data } = await gamesClient().get('/api/games', { params })
     games.value = data.games ?? data
     total.value = data.total ?? games.value.length
     // Extract unique orgs for filter
@@ -141,7 +150,7 @@ async function loadMore() {
   try {
     const params = { page: page.value, per_page: perPage }
     if (selectedOrg.value) params.org_id = selectedOrg.value
-    const { data } = await publicClient.get('/api/games', { params })
+    const { data } = await gamesClient().get('/api/games', { params })
     games.value.push(...(data.games ?? data))
     total.value = data.total ?? games.value.length
   } catch (e) {
@@ -161,11 +170,14 @@ function closePickModal() {
   selectedGame.value = null
 }
 
-function onPicked({ gameId, teamId }) {
-  // Update the game in the list to show the pick
-  const game = games.value.find((g) => g.game_id === gameId)
-  if (game) {
-    game.user_pick = { picked_team_id: teamId, confidence: 1 }
+function onPicked({ gameId, teamId, confidence }) {
+  // Update the game in the list to show the pick — use index splice to force reactivity
+  const idx = games.value.findIndex((g) => g.game_id === gameId)
+  if (idx !== -1) {
+    games.value[idx] = {
+      ...games.value[idx],
+      user_pick: { picked_team_id: teamId, confidence: confidence ?? 1 },
+    }
   }
   closePickModal()
 }

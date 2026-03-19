@@ -60,6 +60,9 @@ def get_standings(league_id: int):
 
     for standings, standings_user in rows:
         entry = standings.to_dict()
+        entry["display_name"] = standings_user.display_name
+        entry["avatar_url"] = standings_user.avatar_url
+        entry["balance"] = standings_user.balance
         entry["user"] = {
             "id": standings_user.id,
             "display_name": standings_user.display_name,

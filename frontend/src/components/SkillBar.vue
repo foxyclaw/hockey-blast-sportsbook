@@ -1,17 +1,13 @@
 <template>
-  <!--
-    skill: 0 = elite (green), 100 = worst (red)
-    We invert for display: fill% = 100 - skill
-  -->
-  <div class="flex items-center gap-2" :title="`Skill rating: ${skill ?? 'N/A'} (0=elite, 100=worst)`">
-    <div class="flex-1 bg-base-300 rounded-full h-2 overflow-hidden min-w-[60px]">
+  <div class="flex items-center gap-1.5" :title="`Skill: ${skill ?? 'N/A'} — lower = stronger team`">
+    <div class="flex-1 bg-base-300 rounded-full h-2.5 overflow-hidden w-full">
       <div
-        class="h-full rounded-full skill-bar-fill"
+        class="h-full rounded-full transition-all duration-300"
         :class="barColor"
         :style="{ width: fillPercent + '%' }"
       ></div>
     </div>
-    <span class="text-xs font-mono w-6 text-right opacity-70">{{ displaySkill }}</span>
+    <span class="text-xs font-bold w-7 text-right" :class="labelColor">{{ displaySkill }}</span>
   </div>
 </template>
 
@@ -27,8 +23,7 @@ const props = defineProps({
 
 const fillPercent = computed(() => {
   if (props.skill === null || props.skill === undefined) return 50
-  // Invert: skill 0 = 100% fill (elite), skill 100 = 0% fill (weak)
-  return Math.max(0, Math.min(100, 100 - props.skill))
+  return Math.max(5, Math.min(100, 100 - props.skill))
 })
 
 const displaySkill = computed(() => {
@@ -36,12 +31,19 @@ const displaySkill = computed(() => {
   return Math.round(props.skill)
 })
 
-// Color: green for elite (low skill value), red for weak (high skill value)
 const barColor = computed(() => {
   const s = props.skill
   if (s === null || s === undefined) return 'bg-base-content/30'
   if (s < 30) return 'bg-success'
   if (s < 55) return 'bg-warning'
   return 'bg-error'
+})
+
+const labelColor = computed(() => {
+  const s = props.skill
+  if (s === null || s === undefined) return 'text-base-content/50'
+  if (s < 30) return 'text-success'
+  if (s < 55) return 'text-warning'
+  return 'text-error'
 })
 </script>
