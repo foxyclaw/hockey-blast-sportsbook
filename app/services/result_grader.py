@@ -39,25 +39,14 @@ def grade_completed_games() -> dict:
 
     now = datetime.now(timezone.utc)
 
-    # Step 1: Lock any picks whose game start has passed but aren't locked yet
-    unlocked_past = pred_session.execute(
-        select(PredPick).where(
-            PredPick.is_locked == False,  # noqa: E712
-            PredPick.game_scheduled_start <= now,
-        )
-    ).scalars().all()
-    for p in unlocked_past:
-        p.is_locked = True
-    if unlocked_past:
-        pred_session.commit()
-
-    # Step 2: Find locked picks with no result yet
+    # Find all picks with no result yet where game start has passed
+    # Lock logic is purely time-based — no is_locked flag needed
     stmt = (
         select(PredPick)
         .outerjoin(PredResult, PredPick.id == PredResult.pick_id)
         .where(
             PredResult.id.is_(None),
-            PredPick.is_locked == True,  # noqa: E712
+            PredPick.game_scheduled_start <= now,
         )
     )
     ungraded_picks = pred_session.execute(stmt).scalars().all()

@@ -49,11 +49,14 @@ def _enrich_pick(pick, hb_session) -> dict:
     d["away_team_name"] = away_name
     d["picked_team_name"] = picked_name
 
-    # Status + points
+    # Status + points — time-based: pending → live (started) → graded
     if pick.result:
         d["result"] = pick.result.to_dict()
         d["status"] = "graded"
         d["points_earned"] = pick.result.total_points
+    elif d.get("is_started"):
+        d["status"] = "live"
+        d["points_earned"] = None
     else:
         d["status"] = "pending"
         d["points_earned"] = None

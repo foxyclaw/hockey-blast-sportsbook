@@ -77,9 +77,9 @@
             <!-- Status badge -->
             <span
               class="badge badge-sm shrink-0"
-              :class="pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? 'badge-success' : 'badge-error') : 'badge-ghost'"
+              :class="pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? 'badge-success' : 'badge-error') : pick.status === 'live' ? 'badge-warning animate-pulse' : 'badge-ghost'"
             >
-              {{ pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? `+${pick.points_earned} pts` : 'No pts') : 'Pending' }}
+              {{ pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? `+${pick.points_earned} pts` : 'No pts') : pick.status === 'live' ? '🔴 Live' : 'Pending' }}
             </span>
           </div>
 
@@ -120,6 +120,7 @@ const activeTab = ref('all')
 const tabs = [
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending' },
+  { key: 'live', label: '🔴 Live' },
   { key: 'graded', label: 'Graded' },
 ]
 
