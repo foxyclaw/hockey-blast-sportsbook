@@ -200,11 +200,12 @@ def get_active_levels():
     """
     GET /api/admin/fantasy/active-levels?org_id=1&active_only=true
     Returns levels that have recent/active season dates.
-    active_only=true (default): end_date >= today - 180 days
+    Uses Season table (up to date) joined to Division → Level.
+    active_only=true (default): Season.end_date >= today - 30 days
     """
     from datetime import date, timedelta
-    from sqlalchemy import select, distinct as sa_distinct
-    from hockey_blast_common_lib.models import OrgLeagueSeasonDates, Division, Level
+    from sqlalchemy import select
+    from hockey_blast_common_lib.models import Season, Division, Level
     from app.db import HBSession
 
     org_id = request.args.get("org_id", 1, type=int)
@@ -214,21 +215,15 @@ def get_active_levels():
 
     stmt = (
         select(Division.level_id, Level.level_name, Level.short_name)
-        .join(
-            OrgLeagueSeasonDates,
-            (OrgLeagueSeasonDates.league_number == Division.league_number) &
-            (OrgLeagueSeasonDates.season_number == Division.season_number) &
-            (OrgLeagueSeasonDates.org_id == Division.org_id),
-        )
+        .join(Season, Season.id == Division.season_id)
         .join(Level, Level.id == Division.level_id)
-        .where(Division.org_id == org_id)
+        .where(Season.org_id == org_id)
         .distinct()
     )
 
     if active_only:
-        # Use the most recent season available (within last 2 years)
-        cutoff = date.today() - timedelta(days=730)
-        stmt = stmt.where(OrgLeagueSeasonDates.end_date >= cutoff)
+        cutoff = date.today() - timedelta(days=30)
+        stmt = stmt.where(Season.end_date >= cutoff)
 
     rows = hb.execute(stmt).all()
 
