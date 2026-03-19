@@ -127,6 +127,7 @@ def grade_completed_games() -> dict:
                     title=title,
                     body=body,
                     url="/picks",
+                    bell_only=True,  # pick results are informational — no SMS/email
                 )
             except Exception as notify_exc:
                 logger.warning(f"[grader] Failed to notify user {pick.user_id}: {notify_exc}")
