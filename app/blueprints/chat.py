@@ -43,13 +43,15 @@ def send_message():
     user_id = g.pred_user.id if g.pred_user else ANONYMOUS_USER_ID
     db = PredSession()
 
-    # 1. Check if user is currently banned
-    status = check_user_allowed(user_id, db)
-    if not status["allowed"]:
-        return jsonify({"error": "CHAT_DISABLED", "message": status["message"]}), 403
+    # 1. Check if user is currently banned (admins are exempt)
+    is_admin = g.pred_user and getattr(g.pred_user, 'is_admin', False)
+    if not is_admin:
+        status = check_user_allowed(user_id, db)
+        if not status["allowed"]:
+            return jsonify({"error": "CHAT_DISABLED", "message": status["message"]}), 403
 
-    # 2. Topic guard
-    if not is_hockey_question(query):
+    # 2. Topic guard (admins are exempt)
+    if not is_admin and not is_hockey_question(query):
         violation = record_violation(user_id, query, db)
         # Log the off-topic attempt
         msg = ChatMessage(

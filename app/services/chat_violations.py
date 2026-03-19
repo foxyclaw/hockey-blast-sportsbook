@@ -3,16 +3,18 @@ Chat violation tracker — exponential disable for off-topic repeat offenders.
 
 Disable schedule:
   1st offense: warning only
-  2nd:  1 hour
-  3rd:  24 hours
-  4th:  7 days
-  5th+: 30 days
+  2nd offense: second warning (stronger)
+  3rd:  1 hour
+  4th:  24 hours
+  5th:  7 days
+  6th+: 30 days
 """
 from datetime import datetime, timezone, timedelta
 from app.models.chat_violation import ChatViolation
 
 DISABLE_SCHEDULE = [
-    None,           # 1st: warn only
+    None,               # 1st: warn only
+    None,               # 2nd: second warning (stronger)
     timedelta(hours=1),
     timedelta(hours=24),
     timedelta(days=7),
@@ -58,11 +60,16 @@ def record_violation(user_id: int, query: str, session) -> dict:
             f"⚠️ This is not a general-purpose AI — it's for hockey stats only. "
             f"Your chat access has been suspended for {_fmt_duration(disable_for)}."
         )
-    else:
+    elif v.violation_count == 1:
         msg = (
             "⚠️ This assistant is for hockey stats questions only. "
             "Please ask about players, teams, games, or stats. "
-            "Repeated off-topic use will result in a temporary ban."
+            "Continued off-topic use will result in a temporary suspension."
+        )
+    else:
+        msg = (
+            "⚠️ Final warning — this assistant is for hockey stats only. "
+            "Your next off-topic message will result in a temporary suspension."
         )
 
     session.commit()

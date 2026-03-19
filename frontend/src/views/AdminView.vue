@@ -26,6 +26,13 @@
       >
         Users
       </button>
+      <button
+        class="tab"
+        :class="{ 'tab-active': activeTab === 'launch' }"
+        @click="activeTab = 'launch'"
+      >
+        🏒 Fantasy
+      </button>
     </div>
 
     <!-- ── Pending Claims ────────────────────────────────────────────────── -->
@@ -205,6 +212,65 @@
         </div>
         <div class="text-sm text-base-content/50 mt-2">{{ users.length }} users</div>
       </div>
+
+    </div>
+
+    <!-- ── Launch Season tab ──────────────────────────────────────────────── -->
+    <div v-if="activeTab === 'launch'">
+      <div class="card bg-base-200 shadow-md">
+        <div class="card-body p-4">
+          <h2 class="card-title text-base mb-4">🏒 Launch Fantasy Season</h2>
+
+          <div class="flex flex-wrap gap-3 mb-4 items-end">
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Org ID</span></label>
+              <input v-model.number="launchOrgId" type="number" class="input input-bordered input-sm w-24" min="1" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Season Start Date</span></label>
+              <input v-model="launchStartDate" type="date" class="input input-bordered input-sm" />
+            </div>
+            <div class="form-control">
+              <label class="label cursor-pointer gap-2 py-1">
+                <span class="label-text text-xs">Active levels only</span>
+                <input type="checkbox" v-model="launchActiveOnly" class="checkbox checkbox-sm" />
+              </label>
+            </div>
+            <button @click="loadLevels" class="btn btn-sm btn-outline mt-5" :disabled="levelsLoading">
+              <span v-if="levelsLoading" class="loading loading-spinner loading-xs"></span>
+              Load Levels
+            </button>
+          </div>
+
+          <div v-if="levels.length" class="mb-4">
+            <div class="text-xs text-base-content/60 mb-2">Select levels to launch ({{ selectedLevelIds.length }} selected):</div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+              <label v-for="lvl in levels" :key="lvl.level_id" class="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-base-300">
+                <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
+                  :value="lvl.level_id" v-model="selectedLevelIds" />
+                <span class="text-sm">{{ lvl.short_name || lvl.level_name }}</span>
+              </label>
+            </div>
+            <div class="flex gap-2 mt-2">
+              <button @click="selectedLevelIds = levels.map(l => l.level_id)" class="btn btn-xs btn-ghost">Select all</button>
+              <button @click="selectedLevelIds = []" class="btn btn-xs btn-ghost">Clear</button>
+            </div>
+          </div>
+
+          <div v-if="launchError" class="alert alert-error text-sm mb-3">{{ launchError }}</div>
+          <div v-if="launchResult" class="alert alert-success text-sm mb-3">
+            ✅ Launched {{ launchResult.count }} league(s):
+            <span v-for="l in launchResult.updated" :key="l.id" class="badge badge-sm ml-1">{{ l.name }}</span>
+          </div>
+
+          <button @click="launchSeason" class="btn btn-primary btn-sm"
+            :disabled="!selectedLevelIds.length || !launchStartDate || launching">
+            <span v-if="launching" class="loading loading-spinner loading-xs"></span>
+            🚀 Launch Season
+          </button>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
@@ -335,4 +401,51 @@ watch(activeTab, (tab) => {
   else if (tab === 'all-claims') loadAllClaims()
   else if (tab === 'users') loadUsers()
 })
+
+// ── Launch Fantasy Season ──────────────────────────────────────────────────
+const launchOrgId = ref(1)
+const launchStartDate = ref('')
+const launchActiveOnly = ref(true)
+const levels = ref([])
+const selectedLevelIds = ref([])
+const levelsLoading = ref(false)
+const launching = ref(false)
+const launchError = ref(null)
+const launchResult = ref(null)
+
+async function loadLevels() {
+  levelsLoading.value = true
+  launchError.value = null
+  levels.value = []
+  selectedLevelIds.value = []
+  try {
+    const { data } = await api.get('/api/admin/fantasy/active-levels', {
+      params: { org_id: launchOrgId.value, active_only: launchActiveOnly.value }
+    })
+    levels.value = data.levels
+  } catch (e) {
+    launchError.value = e.response?.data?.message || e.message
+  } finally {
+    levelsLoading.value = false
+  }
+}
+
+async function launchSeason() {
+  launching.value = true
+  launchError.value = null
+  launchResult.value = null
+  try {
+    const { data } = await api.post('/api/admin/fantasy/launch-season', {
+      org_id: launchOrgId.value,
+      level_ids: selectedLevelIds.value,
+      season_start_date: launchStartDate.value,
+    })
+    launchResult.value = data
+    selectedLevelIds.value = []
+  } catch (e) {
+    launchError.value = e.response?.data?.message || e.message
+  } finally {
+    launching.value = false
+  }
+}
 </script>

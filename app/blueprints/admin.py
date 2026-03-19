@@ -190,3 +190,104 @@ def toggle_admin(user_id: int):
     target.is_admin = not target.is_admin
     pred_session.commit()
     return jsonify({"ok": True, "user_id": user_id, "is_admin": target.is_admin})
+
+
+# ── Fantasy Season Launch ──────────────────────────────────────────────────
+
+@admin_bp.route("/fantasy/active-levels", methods=["GET"])
+@require_admin
+def get_active_levels():
+    """
+    GET /api/admin/fantasy/active-levels?org_id=1&active_only=true
+    Returns levels that have recent/active season dates.
+    active_only=true (default): end_date >= today - 30 days
+    """
+    from datetime import date, timedelta
+    from sqlalchemy import select, distinct as sa_distinct
+    from hockey_blast_common_lib.models import OrgLeagueSeasonDates, Division, Level
+    from app.db import HBSession
+
+    org_id = request.args.get("org_id", 1, type=int)
+    active_only = request.args.get("active_only", "true").lower() != "false"
+
+    hb = HBSession()
+
+    stmt = (
+        select(Division.level_id, Level.level_name, Level.short_name)
+        .join(
+            OrgLeagueSeasonDates,
+            (OrgLeagueSeasonDates.league_number == Division.league_number) &
+            (OrgLeagueSeasonDates.season_number == Division.season_number) &
+            (OrgLeagueSeasonDates.org_id == Division.org_id),
+        )
+        .join(Level, Level.id == Division.level_id)
+        .where(Division.org_id == org_id)
+        .distinct()
+    )
+
+    if active_only:
+        cutoff = date.today() - timedelta(days=30)
+        stmt = stmt.where(OrgLeagueSeasonDates.end_date >= cutoff)
+
+    rows = hb.execute(stmt).all()
+
+    # Deduplicate by level_id and sort by level_name
+    seen = {}
+    for row in rows:
+        if row.level_id not in seen:
+            seen[row.level_id] = {
+                "level_id": row.level_id,
+                "level_name": row.level_name,
+                "short_name": row.short_name,
+            }
+
+    levels = sorted(seen.values(), key=lambda x: x["level_name"] or "")
+    return jsonify({"levels": levels})
+
+
+@admin_bp.route("/fantasy/launch-season", methods=["POST"])
+@require_admin
+def launch_fantasy_season():
+    """
+    POST /api/admin/fantasy/launch-season
+    Body: { org_id, level_ids: [], season_start_date: "YYYY-MM-DD" }
+    Sets season_started_at on matching fantasy leagues and marks them active.
+    """
+    from datetime import date
+    from sqlalchemy import select
+    from app.models.fantasy_league import FantasyLeague
+    from app.db import PredSession
+
+    data = request.get_json(silent=True) or {}
+    org_id = data.get("org_id", 1)
+    level_ids = data.get("level_ids", [])
+    season_start_date = data.get("season_start_date")
+
+    if not level_ids:
+        return jsonify({"error": "VALIDATION_ERROR", "message": "level_ids required"}), 400
+    if not season_start_date:
+        return jsonify({"error": "VALIDATION_ERROR", "message": "season_start_date required"}), 400
+
+    try:
+        from datetime import datetime
+        start_dt = datetime.strptime(season_start_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "VALIDATION_ERROR", "message": "season_start_date must be YYYY-MM-DD"}), 400
+
+    pred = PredSession()
+    stmt = select(FantasyLeague).where(
+        FantasyLeague.org_id == org_id,
+        FantasyLeague.level_id.in_(level_ids),
+        FantasyLeague.status.in_(["forming", "active"]),
+    )
+    leagues = pred.execute(stmt).scalars().all()
+
+    updated = []
+    for league in leagues:
+        league.season_started_at = start_dt
+        if league.status == "forming":
+            league.status = "active"
+        updated.append({"id": league.id, "name": league.name, "status": league.status})
+
+    pred.commit()
+    return jsonify({"updated": updated, "count": len(updated)})
