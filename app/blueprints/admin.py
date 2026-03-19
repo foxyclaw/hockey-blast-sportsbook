@@ -13,6 +13,7 @@ Routes (all require is_admin):
 from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify, request
+import sqlalchemy as sa
 from sqlalchemy import select, func
 
 from app.auth.admin_required import require_admin
@@ -199,12 +200,13 @@ def toggle_admin(user_id: int):
 def get_active_levels():
     """
     GET /api/admin/fantasy/active-levels?org_id=1&active_only=true
-    Returns levels that have recent/active season dates.
-    active_only=true (default): end_date >= today - 30 days
+    Returns levels that have active seasons.
+    Uses Season table (kept up to date) joined to Division → Level.
+    active_only=true (default): Season.end_date >= today - 30 days
     """
     from datetime import date, timedelta
-    from sqlalchemy import select, distinct as sa_distinct
-    from hockey_blast_common_lib.models import OrgLeagueSeasonDates, Division, Level
+    from sqlalchemy import select
+    from hockey_blast_common_lib.models import Season, Division, Level
     from app.db import HBSession
 
     org_id = request.args.get("org_id", 1, type=int)
@@ -214,20 +216,15 @@ def get_active_levels():
 
     stmt = (
         select(Division.level_id, Level.level_name, Level.short_name)
-        .join(
-            OrgLeagueSeasonDates,
-            (OrgLeagueSeasonDates.league_number == Division.league_number) &
-            (OrgLeagueSeasonDates.season_number == Division.season_number) &
-            (OrgLeagueSeasonDates.org_id == Division.org_id),
-        )
+        .join(Season, Season.id == Division.season_id)
         .join(Level, Level.id == Division.level_id)
-        .where(Division.org_id == org_id)
+        .where(Season.org_id == org_id)
         .distinct()
     )
 
     if active_only:
         cutoff = date.today() - timedelta(days=30)
-        stmt = stmt.where(OrgLeagueSeasonDates.end_date >= cutoff)
+        stmt = stmt.where(Season.end_date >= cutoff)
 
     rows = hb.execute(stmt).all()
 
@@ -241,8 +238,36 @@ def get_active_levels():
                 "short_name": row.short_name,
             }
 
-    levels = sorted(seen.values(), key=lambda x: x["level_name"] or "")
+    import re
+
+    def _natural_sort_key(x):
+        name = x["short_name"] or x["level_name"] or ""
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', name)]
+
+    # Filter out levels with no display name
+    levels = sorted(
+        [v for v in seen.values() if v["short_name"] or v["level_name"]],
+        key=_natural_sort_key,
+    )
     return jsonify({"levels": levels})
+
+
+@admin_bp.route("/fantasy/orgs", methods=["GET"])
+@require_admin
+def get_fantasy_orgs():
+    """GET /api/admin/fantasy/orgs — list all orgs for the org selector."""
+    from sqlalchemy import select
+    from hockey_blast_common_lib.models import Organization
+    from app.db import HBSession
+
+    hb = HBSession()
+    orgs = hb.execute(
+        select(Organization.id, Organization.organization_name)
+        .where(Organization.id > 0)
+        .order_by(Organization.id)
+    ).all()
+
+    return jsonify({"orgs": [{"id": o.id, "name": o.organization_name} for o in orgs]})
 
 
 @admin_bp.route("/fantasy/launch-season", methods=["POST"])
@@ -251,7 +276,7 @@ def launch_fantasy_season():
     """
     POST /api/admin/fantasy/launch-season
     Body: { org_id, level_ids: [], season_start_date: "YYYY-MM-DD" }
-    Sets season_started_at on matching fantasy leagues and marks them active.
+    Sets season_starts_at on matching fantasy leagues and marks them active.
     """
     from datetime import date
     from sqlalchemy import select
@@ -274,20 +299,158 @@ def launch_fantasy_season():
     except ValueError:
         return jsonify({"error": "VALIDATION_ERROR", "message": "season_start_date must be YYYY-MM-DD"}), 400
 
-    pred = PredSession()
-    stmt = select(FantasyLeague).where(
-        FantasyLeague.org_id == org_id,
-        FantasyLeague.level_id.in_(level_ids),
-        FantasyLeague.status.in_(["forming", "active"]),
-    )
-    leagues = pred.execute(stmt).scalars().all()
+    from hockey_blast_common_lib.models import Level
+    from app.db import HBSession, PredSession
+    from app.models.fantasy_league import FantasyLeague
+    from app.services.fantasy_pool_service import get_player_pool
 
+    hb = HBSession()
+    pred = PredSession()
+
+    created = []
     updated = []
-    for league in leagues:
-        league.season_started_at = start_dt
-        if league.status == "forming":
-            league.status = "active"
-        updated.append({"id": league.id, "name": league.name, "status": league.status})
+
+    for level_id in level_ids:
+        # Get level name
+        level = hb.get(Level, level_id)
+        level_name = level.level_name if level else str(level_id)
+
+        # Check if league already exists for this level/org
+        existing = pred.execute(
+            select(FantasyLeague).where(
+                FantasyLeague.org_id == org_id,
+                FantasyLeague.level_id == level_id,
+                FantasyLeague.status.in_(["forming", "active", "drafting", "draft_open"]),
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            # Update existing league
+            existing.season_starts_at = start_dt
+            if existing.status == "forming":
+                existing.status = "active"
+            updated.append({"id": existing.id, "name": existing.name, "action": "updated"})
+        else:
+            # Create new league — get pool info for sizing
+            try:
+                pool = get_player_pool(level_id, org_id)
+                max_managers = pool.get("max_managers", 8)
+                roster_skaters = pool.get("roster_skaters", 6)
+            except Exception:
+                max_managers = 8
+                roster_skaters = 6
+
+            display_level = level.short_name or level_name if level else str(level_id)
+            league_name = f"Level {display_level} — Spring 2026"
+            new_league = FantasyLeague(
+                name=league_name,
+                level_id=level_id,
+                level_name=level_name,
+                org_id=org_id,
+                season_label="Spring 2026",
+                status="active",
+                max_managers=max_managers,
+                roster_skaters=roster_skaters,
+                roster_goalies=1,
+                draft_pick_hours=24,
+                season_starts_at=start_dt,
+            )
+            pred.add(new_league)
+            pred.flush()
+            created.append({"id": new_league.id, "name": new_league.name, "action": "created"})
 
     pred.commit()
-    return jsonify({"updated": updated, "count": len(updated)})
+    all_results = created + updated
+    return jsonify({
+        "created": len(created),
+        "updated": len(updated),
+        "count": len(all_results),
+        "leagues": all_results,
+    })
+
+
+@admin_bp.route("/fantasy/leagues", methods=["GET"])
+@require_admin
+def list_fantasy_leagues():
+    """GET /api/admin/fantasy/leagues?org_id=1 — list all leagues for an org."""
+    from sqlalchemy import select
+    from app.models.fantasy_league import FantasyLeague
+    from app.db import PredSession
+
+    org_id = request.args.get("org_id", 1, type=int)
+    pred = PredSession()
+    leagues = pred.execute(
+        select(FantasyLeague)
+        .where(FantasyLeague.org_id == org_id)
+        .order_by(
+            sa.case(
+                {"active": 0, "drafting": 1, "draft_open": 2, "forming": 3, "completed": 4},
+                value=FantasyLeague.status,
+                else_=5,
+            ).asc(),
+            FantasyLeague.name.asc(),
+        )
+    ).scalars().all()
+
+    return jsonify({"leagues": [l.to_dict() for l in leagues]})
+
+
+@admin_bp.route("/fantasy/leagues/<int:league_id>", methods=["DELETE"])
+@require_admin
+def delete_fantasy_league(league_id: int):
+    """DELETE /api/admin/fantasy/leagues/<id> — delete a league and all related data."""
+    from sqlalchemy import select, delete as sa_delete
+    from app.models.fantasy_league import FantasyLeague
+    from app.models.fantasy_manager import FantasyManager
+    from app.models.fantasy_roster import FantasyRoster
+    from app.models.fantasy_draft_queue import FantasyDraftQueue
+    from app.models.fantasy_standings import FantasyStandings
+    from app.db import PredSession
+
+    pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    if not league:
+        return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
+
+    name = league.name
+
+    # Delete all related data in order
+    pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id == league_id))
+    pred.execute(sa_delete(FantasyDraftQueue).where(FantasyDraftQueue.league_id == league_id))
+    pred.execute(sa_delete(FantasyRoster).where(FantasyRoster.league_id == league_id))
+    pred.execute(sa_delete(FantasyManager).where(FantasyManager.league_id == league_id))
+    pred.delete(league)
+    pred.commit()
+
+    return jsonify({"ok": True, "deleted": name})
+
+
+@admin_bp.route("/fantasy/leagues/batch-delete", methods=["POST"])
+@require_admin
+def batch_delete_fantasy_leagues():
+    """POST /api/admin/fantasy/leagues/batch-delete — delete multiple leagues and all their data."""
+    from sqlalchemy import delete as sa_delete
+    from app.models.fantasy_league import FantasyLeague
+    from app.models.fantasy_manager import FantasyManager
+    from app.models.fantasy_roster import FantasyRoster
+    from app.models.fantasy_draft_queue import FantasyDraftQueue
+    from app.models.fantasy_standings import FantasyStandings
+    from app.db import PredSession
+
+    data = request.get_json(silent=True) or {}
+    league_ids = data.get("league_ids", [])
+    if not league_ids:
+        return jsonify({"error": "VALIDATION_ERROR", "message": "league_ids required"}), 400
+
+    pred = PredSession()
+    leagues = pred.execute(select(FantasyLeague).where(FantasyLeague.id.in_(league_ids))).scalars().all()
+    names = [l.name for l in leagues]
+
+    pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id.in_(league_ids)))
+    pred.execute(sa_delete(FantasyDraftQueue).where(FantasyDraftQueue.league_id.in_(league_ids)))
+    pred.execute(sa_delete(FantasyRoster).where(FantasyRoster.league_id.in_(league_ids)))
+    pred.execute(sa_delete(FantasyManager).where(FantasyManager.league_id.in_(league_ids)))
+    pred.execute(sa_delete(FantasyLeague).where(FantasyLeague.id.in_(league_ids)))
+    pred.commit()
+
+    return jsonify({"ok": True, "deleted": len(names), "names": names})

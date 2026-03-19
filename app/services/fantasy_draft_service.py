@@ -143,7 +143,7 @@ def advance_draft(league_id: int) -> None:
     if current is None:
         # Draft complete
         league.status = "active"
-        league.season_started_at = now
+        league.season_starts_at = now
         pred.commit()
         return
 

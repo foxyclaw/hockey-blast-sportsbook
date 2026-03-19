@@ -610,7 +610,7 @@ def start_season(league_id: int):
         return error_response("CONFLICT", f"Cannot start season from status: {league.status}", 409)
 
     league.status = "active"
-    league.season_started_at = datetime.now(timezone.utc)
+    league.season_starts_at = datetime.now(timezone.utc)
     pred.commit()
 
     return jsonify(league.to_dict())
