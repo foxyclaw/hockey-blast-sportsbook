@@ -30,8 +30,12 @@ def get_player_pool(level_id: int, org_id: int = 1) -> dict:
     """
     from hockey_blast_common_lib.stats_models import DivisionStatsSkater, DivisionStatsGoalie
     from hockey_blast_common_lib.models import Human, Division, Season
+    from hockey_blast_common_lib.utils import get_non_human_ids
 
     hb = HBSession()
+
+    # Exclude fake/placeholder players
+    non_human_ids = get_non_human_ids(hb)
 
     # Find the most recent season_id for this level and org
     season_subq = (
@@ -64,6 +68,7 @@ def get_player_pool(level_id: int, org_id: int = 1) -> dict:
         )
         .join(Human, Human.id == DivisionStatsSkater.human_id)
         .where(DivisionStatsSkater.division_id.in_(div_ids_stmt))
+        .where(DivisionStatsSkater.human_id.not_in(non_human_ids) if non_human_ids else True)
         .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.last_name)
         .having(func.sum(DivisionStatsSkater.games_played) >= 3)
     )
@@ -109,6 +114,7 @@ def get_player_pool(level_id: int, org_id: int = 1) -> dict:
         )
         .join(Human, Human.id == DivisionStatsGoalie.human_id)
         .where(DivisionStatsGoalie.division_id.in_(div_ids_stmt))
+        .where(DivisionStatsGoalie.human_id.not_in(non_human_ids) if non_human_ids else True)
         .group_by(DivisionStatsGoalie.human_id, Human.first_name, Human.last_name)
         .having(func.sum(DivisionStatsGoalie.games_played) >= 2)
     )
