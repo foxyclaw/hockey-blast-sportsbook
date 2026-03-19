@@ -37,13 +37,16 @@ def grade_completed_games() -> dict:
     pred_session = PredSession()
     summary = {"graded": 0, "skipped": 0, "errors": 0}
 
-    # Find locked picks with no result yet
+    now = datetime.now(timezone.utc)
+
+    # Find picks with no result yet where game start has passed
+    # (is_locked may not be set — use game_scheduled_start as fallback)
     stmt = (
         select(PredPick)
         .outerjoin(PredResult, PredPick.id == PredResult.pick_id)
         .where(
             PredResult.id.is_(None),
-            PredPick.is_locked == True,  # noqa: E712
+            (PredPick.is_locked == True) | (PredPick.game_scheduled_start <= now),  # noqa: E712
         )
     )
     ungraded_picks = pred_session.execute(stmt).scalars().all()

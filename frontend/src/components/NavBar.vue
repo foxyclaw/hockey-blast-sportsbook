@@ -1,12 +1,12 @@
 <template>
-  <div class="navbar bg-base-300 shadow-lg sticky top-0 z-50 border-b border-base-content/10">
-    <div class="navbar-start">
+  <div class="navbar bg-base-300 shadow-lg sticky top-0 z-50 border-b border-base-content/10 px-2">
+    <div class="navbar-start w-auto shrink-0">
       <RouterLink to="/" class="btn btn-ghost text-xl font-bold tracking-tight">
         🏒 <span class="text-primary">HB</span><span class="text-base-content/80">Picks</span>
       </RouterLink>
     </div>
 
-    <div class="navbar-center hidden sm:flex">
+    <div class="navbar-center hidden sm:flex flex-1">
       <ul class="menu menu-horizontal px-1 gap-1">
         <li>
           <RouterLink to="/" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
@@ -41,7 +41,7 @@
       </ul>
     </div>
 
-    <div class="navbar-end gap-2">
+    <div class="navbar-end gap-2 w-auto shrink-0">
       <!-- Balance badge -->
       <div v-if="isFullyAuthenticated && !isLoading" class="badge badge-outline badge-primary font-mono text-xs hidden sm:flex">
         💰 {{ balance.toLocaleString() }} pts
@@ -104,7 +104,7 @@
             <span class="text-xs opacity-60">{{ user?.email }}</span>
           </li>
           <li><RouterLink to="/picks">My Picks</RouterLink></li>
-          <li><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li><RouterLink to="/leagues">Groups</RouterLink></li>
           <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
           <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
@@ -132,7 +132,7 @@
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-200 rounded-box w-52">
           <li><RouterLink to="/">Games</RouterLink></li>
           <li v-if="isFullyAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
-          <li v-if="isFullyAuthenticated"><RouterLink to="/leagues">Leagues</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/leagues">Groups</RouterLink></li>
           <li v-if="isFullyAuthenticated"><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li><RouterLink to="/free-agents">Free Agents</RouterLink></li>
           <li v-if="isFullyAuthenticated && predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
