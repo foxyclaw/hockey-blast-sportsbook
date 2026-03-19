@@ -226,7 +226,8 @@ def get_active_levels():
     )
 
     if active_only:
-        cutoff = date.today() - timedelta(days=180)
+        # Use the most recent season available (within last 2 years)
+        cutoff = date.today() - timedelta(days=730)
         stmt = stmt.where(OrgLeagueSeasonDates.end_date >= cutoff)
 
     rows = hb.execute(stmt).all()
