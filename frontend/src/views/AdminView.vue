@@ -31,7 +31,7 @@
         :class="{ 'tab-active': activeTab === 'launch' }"
         @click="activeTab = 'launch'"
       >
-        🏒 Launch Season
+        🏒 Fantasy
       </button>
     </div>
 
