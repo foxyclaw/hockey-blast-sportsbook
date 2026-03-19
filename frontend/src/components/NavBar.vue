@@ -158,6 +158,7 @@ const router = useRouter()
 const loginInProgress = ref(false)
 
 const balance = computed(() => userStore.balance)
+const api = useApiClient()
 
 // ── Notifications ──────────────────────────────────────────────────────────
 const notifications = ref([])
@@ -167,7 +168,6 @@ const showNotifications = ref(false)
 async function loadNotifications() {
   if (!isAuthenticated.value) return
   try {
-    const api = useApiClient()
     const { data } = await api.get('/api/notifications')
     notifications.value = data.notifications || []
     unreadCount.value = notifications.value.filter(n => !n.is_read).length
@@ -182,7 +182,6 @@ function toggleNotifications() {
 }
 
 async function markAllRead() {
-  const api = useApiClient()
   for (const n of [...notifications.value]) {
     await api.post(`/api/notifications/${n.id}/read`).catch(() => {})
   }
@@ -192,7 +191,6 @@ async function markAllRead() {
 }
 
 function openNotification(n) {
-  const api = useApiClient()
   api.post(`/api/notifications/${n.id}/read`).catch(() => {})
   // Remove from list immediately — delete on read
   notifications.value = notifications.value.filter(x => x.id !== n.id)
