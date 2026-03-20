@@ -46,8 +46,19 @@ if [ -n "$FRONTEND_CHANGED" ] || [ -z "$CHANGED_FILES" ]; then
 
   export PATH="/opt/homebrew/bin:$PATH"
   cd "$BUILD_DIR"
-  npm install --silent 2>&1 | tail -3
+  echo "   Installing dependencies..."
+  npm install 2>&1 | tail -3
+  if [ $? -ne 0 ]; then
+    echo "   ❌ npm install failed — aborting deploy."
+    exit 1
+  fi
+
+  echo "   Building..."
   npm run build 2>&1 | tail -5
+  if [ $? -ne 0 ]; then
+    echo "   ❌ npm build failed — aborting deploy."
+    exit 1
+  fi
 
   # Copy built dist to prod (requires sudoers entry)
   sudo /bin/cp -r "$BUILD_DIR/dist" "$SCRIPT_DIR/frontend/"
