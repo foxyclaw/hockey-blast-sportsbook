@@ -30,8 +30,8 @@
         class="tab"
         :class="{ 'tab-active': activeTab === 'chat' }"
         @click="activeTab = 'chat'; loadChatQuestions()"
-      >💬 Chat Questions</div>
-      <div
+      >💬 Chat Questions</button>
+      <button
         class="tab"
         :class="{ 'tab-active': activeTab === 'launch' }"
         @click="activeTab = 'launch'"
