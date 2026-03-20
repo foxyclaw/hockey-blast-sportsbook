@@ -142,4 +142,9 @@ class PredPick(PredBase):
             "is_upset_pick": self.is_upset_pick,
             "is_locked": self.is_locked,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            # Computed: game started but not graded yet = "live", past start with result = "graded", else "pending"
+            "is_started": (
+                self.game_scheduled_start is not None and
+                self.game_scheduled_start <= datetime.now(timezone.utc)
+            ),
         }

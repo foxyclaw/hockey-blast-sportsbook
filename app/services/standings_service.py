@@ -42,6 +42,12 @@ def update_standings_for_result(
         standings = PredLeagueStandings(
             user_id=pick.user_id,
             league_id=pick.league_id,
+            total_points=0,
+            total_picks=0,
+            correct_picks=0,
+            upset_picks_correct=0,
+            high_conf_correct=0,
+            pick_accuracy=0.0,
         )
         pred_session.add(standings)
 

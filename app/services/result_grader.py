@@ -37,13 +37,16 @@ def grade_completed_games() -> dict:
     pred_session = PredSession()
     summary = {"graded": 0, "skipped": 0, "errors": 0}
 
-    # Find locked picks with no result yet
+    now = datetime.now(timezone.utc)
+
+    # Find all picks with no result yet where game start has passed
+    # Lock logic is purely time-based — no is_locked flag needed
     stmt = (
         select(PredPick)
         .outerjoin(PredResult, PredPick.id == PredResult.pick_id)
         .where(
             PredResult.id.is_(None),
-            PredPick.is_locked == True,  # noqa: E712
+            PredPick.game_scheduled_start <= now,
         )
     )
     ungraded_picks = pred_session.execute(stmt).scalars().all()
@@ -103,6 +106,31 @@ def grade_completed_games() -> dict:
             # Update standings for this user in this league
             from app.services.standings_service import update_standings_for_result
             update_standings_for_result(result, pick, league, pred_session)
+
+            # Notify user of pick outcome
+            try:
+                from app.services.notify_service import notify_user
+                from hockey_blast_common_lib.models import Team
+                hb = HBSession()
+                picked_team = hb.get(Team, pick.picked_team_id)
+                team_name = picked_team.name if picked_team else f"Team {pick.picked_team_id}"
+                if result.is_correct:
+                    pts = result.total_points
+                    title = "✅ Correct pick!"
+                    body = f"{team_name} won — you earned {pts} pt{'s' if pts != 1 else ''}."
+                else:
+                    title = "❌ Wrong pick"
+                    body = f"{team_name} didn't win this one. Better luck next time!"
+                notify_user(
+                    db=pred_session,
+                    user_id=pick.user_id,
+                    title=title,
+                    body=body,
+                    url="/picks",
+                    bell_only=True,  # pick results are informational — no SMS/email
+                )
+            except Exception as notify_exc:
+                logger.warning(f"[grader] Failed to notify user {pick.user_id}: {notify_exc}")
 
             summary["graded"] += 1
 

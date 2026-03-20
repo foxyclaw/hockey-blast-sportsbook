@@ -274,7 +274,7 @@ async function scrollToBottom() {
 .chat-root {
   position: fixed;
   bottom: 24px;
-  right: 24px;
+  right: max(24px, calc((100vw - 72rem) / 2));
   z-index: 9999;
 }
 .chat-fab {
@@ -297,7 +297,7 @@ async function scrollToBottom() {
 .chat-panel.maximized {
   position: fixed;
   bottom: 80px;
-  right: 24px;
+  right: max(24px, calc((100vw - 72rem) / 2));
   width: min(860px, calc(100vw - 48px));
   height: calc(100vh - 180px);
   border-radius: 1rem;

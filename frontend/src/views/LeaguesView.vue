@@ -2,7 +2,7 @@
   <div>
     <!-- Header -->
     <div class="mb-6">
-      <h1 class="text-2xl font-extrabold tracking-tight">Leagues</h1>
+      <h1 class="text-2xl font-extrabold tracking-tight">Groups</h1>
       <p class="text-base-content/60 text-sm mt-1">Compete with friends. Create or join a league.</p>
     </div>
 
@@ -72,9 +72,9 @@
       </div>
     </div>
 
-    <!-- My Leagues -->
+    <!-- My Groups -->
     <div>
-      <h2 class="text-lg font-bold mb-4">My Leagues</h2>
+      <h2 class="text-lg font-bold mb-4">My Groups</h2>
 
       <!-- Loading -->
       <div v-if="loading" class="space-y-3">
@@ -98,7 +98,7 @@
       <!-- Empty state -->
       <div v-else-if="!loading && leagues.length === 0" class="text-center py-12 text-base-content/40">
         <div class="text-4xl mb-3">🏒</div>
-        <div class="font-semibold">No leagues yet</div>
+        <div class="font-semibold">No groups yet</div>
         <div class="text-sm mt-1">Create one or ask a friend for a join code.</div>
       </div>
 

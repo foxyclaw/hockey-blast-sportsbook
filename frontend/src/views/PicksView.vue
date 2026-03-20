@@ -77,9 +77,10 @@
             <!-- Status badge -->
             <span
               class="badge badge-sm shrink-0"
-              :class="pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? 'badge-success' : 'badge-error') : 'badge-ghost'"
+              :class="pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? 'badge-success' : 'badge-error') : pick.status === 'live' ? 'badge-warning' : 'badge-ghost'"
             >
-              {{ pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? `+${pick.points_earned} pts` : 'No pts') : 'Pending' }}
+              <span v-if="pick.status === 'live'" class="inline-block w-2 h-2 rounded-full bg-error animate-pulse mr-1"></span>
+              {{ pick.status === 'graded' ? ((pick.points_earned ?? 0) > 0 ? `+${pick.points_earned} pts` : 'No pts') : pick.status === 'live' ? 'Live' : 'Pending' }}
             </span>
           </div>
 
@@ -115,23 +116,21 @@ const api = useApiClient()
 const picks = ref([])
 const loading = ref(false)
 const error = ref(null)
-const activeTab = ref('all')
+const activeTab = ref('current')
 
 const tabs = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'graded', label: 'Graded' },
+  { key: 'current', label: 'Current' },
+  { key: 'past', label: 'Past' },
 ]
 
 const filteredPicks = computed(() => {
-  if (activeTab.value === 'all') return picks.value
-  return picks.value.filter((p) => p.status === activeTab.value)
+  if (activeTab.value === 'current') return picks.value.filter(p => p.status !== 'graded')
+  return picks.value.filter(p => p.status === 'graded')
 })
 
 function tabCount(key) {
-  if (key === 'all') return picks.value.length || null
-  const count = picks.value.filter((p) => p.status === key).length
-  return count || null
+  if (key === 'current') return picks.value.filter(p => p.status !== 'graded').length || null
+  return picks.value.filter(p => p.status === 'graded').length || null
 }
 
 function formatDate(iso) {

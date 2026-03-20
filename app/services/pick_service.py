@@ -190,8 +190,9 @@ def submit_pick(
 
     if existing is not None:
         # Update existing pick — refund old effective_wager, deduct new one
-        if existing.is_locked:
-            raise PickLockedError("This pick is already locked")
+        # Lock is based on game start time, not is_locked flag
+        if existing.game_scheduled_start and existing.game_scheduled_start <= datetime.now(timezone.utc):
+            raise PickLockedError("This pick is already locked — game has started")
 
         # Refund old effective wager if it was deducted
         old_effective_wager = existing.effective_wager or 0
@@ -260,8 +261,8 @@ def retract_pick(user: PredUser, pick_id: int, pred_session: Session) -> None:
     if pick is None or pick.user_id != user.id:
         raise PickError("NOT_FOUND", "Pick not found", 404)
 
-    if pick.is_locked:
-        raise PickLockedError("Cannot retract a locked pick")
+    if pick.game_scheduled_start and pick.game_scheduled_start <= datetime.now(timezone.utc):
+        raise PickLockedError("Cannot retract — game has already started")
 
     # Re-check game lock just to be safe
     ok, reason = is_game_pickable(pick.game_id)

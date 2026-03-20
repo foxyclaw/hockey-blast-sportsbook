@@ -84,13 +84,16 @@ def _send_delayed_external(
 
 
 def notify_user(
-    db, user_id: int, title: str, body: str = None, url: str = None, notif_type: str = "info"
+    db, user_id: int, title: str, body: str = None, url: str = None,
+    notif_type: str = "info", bell_only: bool = False,
 ) -> None:
     """
     Send a notification to a user via all configured channels:
       1. In-app bell (always — inserts pred_notification row immediately)
       2. SMS (if user has notify_phone set) — delayed 10 min, skipped if user was active
       3. Email (if user has notify_email=True) — delayed 10 min, skipped if user was active
+
+    bell_only=True: only creates the in-app bell, no SMS/email (e.g. pick result info).
     """
     from app.models.pred_notification import PredNotification
 
@@ -119,10 +122,11 @@ def notify_user(
     if url:
         html += f'<p><a href="{site}{url}">Open Hockey Blast →</a></p>'
 
-    # 3. Fire delayed SMS/email in a background thread
-    t = threading.Thread(
-        target=_send_delayed_external,
-        args=(user_id, sms_text, f"🏒 {title}", sms_text, html, notif_created_at),
-        daemon=True,
-    )
-    t.start()
+    # 3. Fire delayed SMS/email in a background thread (unless bell_only)
+    if not bell_only:
+        t = threading.Thread(
+            target=_send_delayed_external,
+            args=(user_id, sms_text, f"🏒 {title}", sms_text, html, notif_created_at),
+            daemon=True,
+        )
+        t.start()
