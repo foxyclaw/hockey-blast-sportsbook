@@ -1,6 +1,6 @@
 #!/bin/bash
-# deploy.sh — pull latest code, rebuild frontend if needed, restart service
-# Usage: ./deploy.sh
+# pull_and_deploy.sh — pull latest code, rebuild frontend if needed, restart service
+# Usage: ./pull_and_deploy.sh
 
 set -e
 
@@ -42,12 +42,24 @@ if [ -n "$FRONTEND_CHANGED" ] || [ -z "$CHANGED_FILES" ]; then
   # Build in temp dir to avoid permission issues
   BUILD_DIR="/tmp/sb-frontend-deploy"
   rm -rf "$BUILD_DIR"
-  cp -r "$SCRIPT_DIR/frontend" "$BUILD_DIR"
+  # Copy frontend source excluding node_modules and dist (always do clean install)
+  rsync -a --exclude=node_modules --exclude=dist "$SCRIPT_DIR/frontend/" "$BUILD_DIR/"
 
   export PATH="/opt/homebrew/bin:$PATH"
   cd "$BUILD_DIR"
-  npm install --silent 2>&1 | tail -3
+  echo "   Installing dependencies..."
+  npm install 2>&1 | tail -3
+  if [ $? -ne 0 ]; then
+    echo "   ❌ npm install failed — aborting deploy."
+    exit 1
+  fi
+
+  echo "   Building..."
   npm run build 2>&1 | tail -5
+  if [ $? -ne 0 ]; then
+    echo "   ❌ npm build failed — aborting deploy."
+    exit 1
+  fi
 
   # Copy built dist to prod (requires sudoers entry)
   sudo /bin/cp -r "$BUILD_DIR/dist" "$SCRIPT_DIR/frontend/"

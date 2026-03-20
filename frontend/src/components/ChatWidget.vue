@@ -5,7 +5,7 @@
     <button
       class="btn btn-circle btn-lg chat-fab shadow-xl"
       :class="open ? 'btn-error' : 'btn-primary'"
-      @click="open = !open"
+      @click="isLoggedIn ? (open = !open) : (open = true)"
       title="AI Blast"
     >
       <span v-if="!open">🏒</span>
@@ -111,8 +111,9 @@
               :disabled="loading || !input.trim() || !isLoggedIn"
             >Send</button>
           </form>
-          <div v-if="!isLoggedIn" class="text-xs text-base-content/50 mt-1 text-center">
-            Log in to use the chat
+          <div v-if="!isLoggedIn" class="text-center py-2">
+            <p class="text-xs text-base-content/60 mb-2">Sign in to chat with the AI Blast assistant 🏒</p>
+            <button @click="loginWithRedirect()" class="btn btn-primary btn-sm">Sign In</button>
           </div>
         </div>
       </div>
@@ -134,7 +135,7 @@ import { useAuth0 } from '@auth0/auth0-vue'
 import { useChatApi } from '@/api/chat'
 import DislikeModal from '@/components/DislikeModal.vue'
 
-const { isAuthenticated } = useAuth0()
+const { isAuthenticated, loginWithRedirect } = useAuth0()
 const isLoggedIn = computed(() => isAuthenticated.value)
 
 const chatApi = useChatApi()

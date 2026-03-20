@@ -54,9 +54,10 @@
       </div>
 
       <!-- Existing pick indicator -->
-      <div v-if="game.user_pick" class="badge badge-primary badge-outline badge-sm self-start">
-        ✓ Picked: {{ pickedTeamName }}
-        <span class="ml-1 opacity-70">{{ game.user_pick.confidence }}x</span>
+      <div v-if="game.user_pick" class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/20 border border-primary/50 text-primary text-xs font-bold self-start">
+        <span class="text-primary">✓</span>
+        <span>{{ pickedTeamName }}</span>
+        <span class="bg-primary text-primary-content rounded-full px-1.5 py-0.5 text-xs">{{ game.user_pick.confidence }}x</span>
       </div>
     </div>
   </div>

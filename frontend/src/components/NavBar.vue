@@ -1,6 +1,10 @@
 <template>
   <div class="navbar bg-base-300 shadow-lg sticky top-0 z-50 border-b border-base-content/10 px-2">
-    <div class="navbar-start w-auto shrink-0">
+    <div class="navbar-start w-auto shrink-0 gap-1">
+      <a href="https://hockey-blast.com" class="btn btn-ghost text-xl font-bold tracking-tight hidden sm:flex">
+        🏒 <span class="text-base-content/50">HB</span><span class="text-base-content/30">Stats</span>
+      </a>
+      <span class="text-base-content/20 hidden sm:flex">|</span>
       <RouterLink to="/" class="btn btn-ghost text-xl font-bold tracking-tight">
         🏒 <span class="text-primary">HB</span><span class="text-base-content/80">Picks</span>
       </RouterLink>

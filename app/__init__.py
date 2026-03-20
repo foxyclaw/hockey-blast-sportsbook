@@ -73,6 +73,35 @@ def create_app(config_name: str | None = None) -> Flask:
         """Liveness probe endpoint."""
         return jsonify({"status": "ok", "service": "hockey-blast-predictions"})
 
+    @app.route("/version")
+    def version():
+        """Show running git commit info."""
+        import subprocess
+        try:
+            commit_hash = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=os.path.dirname(__file__),
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            commit_msg = subprocess.check_output(
+                ["git", "log", "-1", "--pretty=%s"],
+                cwd=os.path.dirname(__file__),
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+            commit_date = subprocess.check_output(
+                ["git", "log", "-1", "--format=%cd", "--date=short"],
+                cwd=os.path.dirname(__file__),
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+        except Exception:
+            commit_hash = commit_msg = commit_date = "unknown"
+        return jsonify({
+            "service": "hockey-blast-sportsbook",
+            "commit": commit_hash,
+            "message": commit_msg,
+            "date": commit_date,
+        })
+
     @app.route("/api/health/db")
     def health_db():
         """Readiness probe — checks both DB connections."""
