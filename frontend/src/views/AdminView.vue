@@ -52,23 +52,21 @@
           <div class="card-body">
             <div class="flex flex-wrap gap-4 justify-between">
               <!-- Left: claim info -->
-              <div>
-                <div class="font-semibold text-lg">
-                  {{ claim.user_display_name }}
-                  <span class="text-sm text-base-content/50 ml-2">{{ claim.user_email }}</span>
+              <div class="space-y-1">
+                <div class="text-sm">
+                  <span class="font-bold">{{ claim.review_context?.login_name || claim.user_display_name }}</span>
+                  <span class="text-base-content/40 ml-1">({{ claim.user_email }})</span>
+                  wants to be
+                  <span class="font-bold text-primary">{{ claim.review_context?.claimed_name || (claim.profile_snapshot?.first_name + ' ' + claim.profile_snapshot?.last_name) }}</span>
+                  <span v-if="claim.profile_snapshot?.orgs?.length" class="text-base-content/40 ml-1">@ {{ claim.profile_snapshot.orgs[0] }}</span>
                 </div>
-                <div class="text-sm mt-1">
-                  🏒 Claims:
-                  <span class="font-medium">
-                    {{ claim.profile_snapshot?.first_name }} {{ claim.profile_snapshot?.last_name }}
-                  </span>
-                  <span v-if="claim.profile_snapshot?.orgs?.length" class="text-base-content/60 ml-2">
-                    @ {{ claim.profile_snapshot.orgs.join(', ') }}
-                  </span>
+                <div v-if="claim.review_context && !claim.review_context.name_matches_login" class="text-xs text-warning">
+                  ⚠️ Name mismatch
                 </div>
-                <div class="text-xs text-base-content/40 mt-1">
-                  Claimed {{ formatDate(claim.claimed_at) }} · HB ID: {{ claim.hb_human_id }}
+                <div v-if="claim.review_context?.conflict_with" class="text-xs text-error">
+                  🔴 Already claimed by {{ claim.review_context.conflict_with.user_display_name }}
                 </div>
+                <div class="text-xs text-base-content/30">{{ formatDate(claim.claimed_at) }} · HB ID {{ claim.hb_human_id }}</div>
               </div>
               <!-- Right: status badge -->
               <div>
