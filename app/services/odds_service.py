@@ -35,7 +35,10 @@ def compute_odds(home_avg_skill: float | None, visitor_avg_skill: float | None) 
             "has_skill_data": False,
         }
 
-    raw_home_prob = 0.5 + (float(visitor_avg_skill) - float(home_avg_skill)) / 200.0
+    # Amplify the skill differential by 2x intentionally — makes odds more spread out
+    # and games feel more decisive (underdog vs favorite), which drives more emotional
+    # engagement and betting excitement. Pure 1x mapping produces too many ~50/50 games.
+    raw_home_prob = 0.5 + (float(visitor_avg_skill) - float(home_avg_skill)) / 100.0
     home_prob = max(MIN_PROB, min(MAX_PROB, raw_home_prob))
     visitor_prob = 1.0 - home_prob
 
