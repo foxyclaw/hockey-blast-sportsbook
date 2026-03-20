@@ -192,41 +192,11 @@
         </div>
       </div>
 
-      <!-- Section 2: Locations -->
-      <div class="card bg-base-200 shadow">
-        <div class="card-body">
-          <h2 class="card-title text-lg">📍 Where do you play?</h2>
-          <p class="text-sm text-base-content/60 mb-3">Select all rinks / facilities you skate at.</p>
-          <div v-if="locations.length === 0" class="text-sm text-base-content/40 italic">No locations available.</div>
-          <div v-else class="space-y-5">
-            <div v-for="group in locations" :key="group.state">
-              <div class="text-xs font-bold text-base-content/50 uppercase tracking-wider mb-3">{{ group.state }}</div>
-              <div class="space-y-3">
-                <div v-for="cityGroup in group.cities" :key="cityGroup.city">
-                  <div class="text-xs text-base-content/40 mb-1 pl-1">{{ cityGroup.city }}</div>
-                  <div class="flex flex-wrap gap-2">
-                    <span
-                      v-for="loc in cityGroup.locations"
-                      :key="loc.id"
-                      @click="toggleLocation(loc.id)"
-                      class="badge badge-lg cursor-pointer transition-all"
-                      :class="form.interested_location_ids.includes(loc.id)
-                        ? 'bg-primary text-primary-content border-primary'
-                        : 'badge-outline'"
-                    >{{ loc.name }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 3: Availability -->
+      <!-- Section 2: Availability (moved up) -->
       <div class="card bg-base-200 shadow">
         <div class="card-body">
           <h2 class="card-title text-lg">📅 Availability</h2>
-          <p class="text-sm text-base-content/60 mb-3">Let teams know you're available.</p>
+          <p class="text-sm text-base-content/60 mb-3">Are you looking to play? Let teams know.</p>
           <div class="grid grid-cols-2 gap-3">
             <label
               class="cursor-pointer rounded-xl border-2 p-4 flex flex-col gap-2 transition-all"
@@ -248,6 +218,34 @@
               </div>
               <p class="text-xs text-base-content/50">I'm open to subbing when teams need players.</p>
             </label>
+          </div>
+
+          <!-- Rinks: only shown if they toggled availability -->
+          <div v-if="form.is_free_agent || form.wants_to_sub" class="mt-5">
+            <p class="text-sm font-semibold mb-1">📍 Which rinks are you available at?</p>
+            <p class="text-xs text-base-content/50 mb-3">Select the facilities you're willing to skate at.</p>
+            <div v-if="locations.length === 0" class="text-sm text-base-content/40 italic">No locations available.</div>
+            <div v-else class="space-y-5">
+              <div v-for="group in locations" :key="group.state">
+                <div class="text-xs font-bold text-base-content/50 uppercase tracking-wider mb-3">{{ group.state }}</div>
+                <div class="space-y-3">
+                  <div v-for="cityGroup in group.cities" :key="cityGroup.city">
+                    <div class="text-xs text-base-content/40 mb-1 pl-1">{{ cityGroup.city }}</div>
+                    <div class="flex flex-wrap gap-2">
+                      <span
+                        v-for="loc in cityGroup.locations"
+                        :key="loc.id"
+                        @click="toggleLocation(loc.id)"
+                        class="badge badge-lg cursor-pointer transition-all"
+                        :class="form.interested_location_ids.includes(loc.id)
+                          ? 'bg-primary text-primary-content border-primary'
+                          : 'badge-outline'"
+                      >{{ loc.name }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
