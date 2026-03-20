@@ -179,9 +179,12 @@ def _get_captain_candidates(user):
 
     pred_session = PredSession()
 
-    # Fetch all claims
+    # Only use confirmed claims — pending/rejected claims don't grant captain rights
     claims = pred_session.execute(
-        select(PredUserHbClaim).where(PredUserHbClaim.user_id == user.id)
+        select(PredUserHbClaim).where(
+            PredUserHbClaim.user_id == user.id,
+            PredUserHbClaim.claim_status == "confirmed",
+        )
     ).scalars().all()
 
     # Existing captain claim team IDs
