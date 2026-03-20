@@ -36,9 +36,9 @@
 
         <!-- Away team -->
         <div class="text-center">
-          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.visitor_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-1" @click.stop>{{ game.visitor_team?.name ?? 'Away' }}</a>
+          <a :href="'https://hockey-blast.com/team_stats?team_id=' + game.away_team?.id" target="_blank" class="link link-primary font-bold text-sm leading-tight mb-1" @click.stop>{{ game.away_team?.name ?? 'Away' }}</a>
           <div class="text-xs font-semibold text-secondary/80 mb-1">{{ visitorOdds }}×</div>
-          <SkillBar :skill="game.visitor_team?.avg_skill" />
+          <SkillBar :skill="game.away_team?.avg_skill" />
         </div>
       </div>
 
@@ -85,7 +85,7 @@ const isLocked = computed(
 
 const matchupLabel = computed(() => {
   const h = props.game.home_team?.avg_skill
-  const v = props.game.visitor_team?.avg_skill
+  const v = props.game.away_team?.avg_skill
   if (h == null || v == null) return null
   const diff = Math.abs(h - v)
   if (diff < 5) return '≈ Even'
@@ -95,7 +95,7 @@ const matchupLabel = computed(() => {
 
 const matchupClass = computed(() => {
   const h = props.game.home_team?.avg_skill
-  const v = props.game.visitor_team?.avg_skill
+  const v = props.game.away_team?.avg_skill
   if (h == null || v == null) return ''
   const diff = Math.abs(h - v)
   if (diff < 5) return 'bg-base-300 text-base-content/60'
@@ -107,7 +107,7 @@ const pickedTeamName = computed(() => {
   if (!props.game.user_pick) return ''
   const pick = props.game.user_pick
   if (pick.picked_team_id === props.game.home_team?.id) return props.game.home_team?.name
-  return props.game.visitor_team?.name
+  return props.game.away_team?.name
 })
 
 function formatTime(iso) {

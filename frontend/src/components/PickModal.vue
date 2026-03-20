@@ -46,20 +46,20 @@
         <!-- Away team -->
         <div
           class="card cursor-pointer transition-all duration-200 border-2"
-          :class="selectedTeam === game?.visitor_team?.id
+          :class="selectedTeam === game?.away_team?.id
             ? 'border-secondary bg-secondary/10 shadow-lg shadow-secondary/20'
             : 'border-base-content/10 bg-base-200 hover:border-secondary/40'"
-          @click="selectTeam(game?.visitor_team?.id)"
+          @click="selectTeam(game?.away_team?.id)"
         >
           <div class="card-body p-4 text-center">
             <div class="text-xs text-base-content/50 mb-1">AWAY</div>
-            <div class="font-bold text-sm leading-tight mb-2">{{ game?.visitor_team?.name }}</div>
+            <div class="font-bold text-sm leading-tight mb-2">{{ game?.away_team?.name }}</div>
             <!-- Odds badge -->
             <div class="text-lg font-bold text-secondary mb-2">{{ visitorOdds }}×</div>
-            <SkillBar :skill="game?.visitor_team?.avg_skill" />
+            <SkillBar :skill="game?.away_team?.avg_skill" />
             <div class="mt-2">
-              <span v-if="isUnderdog(game?.visitor_team)" class="badge badge-warning badge-sm">underdog</span>
-              <span v-else-if="isFavorite(game?.visitor_team)" class="badge badge-success badge-sm">favorite</span>
+              <span v-if="isUnderdog(game?.away_team)" class="badge badge-warning badge-sm">underdog</span>
+              <span v-else-if="isFavorite(game?.away_team)" class="badge badge-success badge-sm">favorite</span>
             </div>
           </div>
         </div>
@@ -145,12 +145,12 @@
             Pick Home · {{ homeOdds }}×
           </button>
           <button
-            @click="submitPick(game?.visitor_team?.id)"
+            @click="submitPick(game?.away_team?.id)"
             class="btn btn-secondary"
-            :class="{ 'btn-outline': selectedTeam !== game?.visitor_team?.id }"
+            :class="{ 'btn-outline': selectedTeam !== game?.away_team?.id }"
             :disabled="submitting || isGameLocked"
           >
-            <span v-if="submitting && selectedTeam === game?.visitor_team?.id" class="loading loading-spinner loading-xs"></span>
+            <span v-if="submitting && selectedTeam === game?.away_team?.id" class="loading loading-spinner loading-xs"></span>
             Pick Away · {{ visitorOdds }}×
           </button>
         </div>
@@ -248,9 +248,9 @@ const isUpsetPick = computed(() => {
   if (!selectedTeam.value || !props.game) return false
   const picked = selectedTeam.value === props.game.home_team?.id
     ? props.game.home_team
-    : props.game.visitor_team
+    : props.game.away_team
   const opp = selectedTeam.value === props.game.home_team?.id
-    ? props.game.visitor_team
+    ? props.game.away_team
     : props.game.home_team
   if (!picked?.avg_skill || !opp?.avg_skill) return false
   return picked.avg_skill > opp.avg_skill
@@ -259,7 +259,7 @@ const isUpsetPick = computed(() => {
 function isUnderdog(team) {
   if (!team?.avg_skill || !props.game) return false
   const other = team.id === props.game.home_team?.id
-    ? props.game.visitor_team
+    ? props.game.away_team
     : props.game.home_team
   return team.avg_skill > (other?.avg_skill ?? 50)
 }
@@ -267,7 +267,7 @@ function isUnderdog(team) {
 function isFavorite(team) {
   if (!team?.avg_skill || !props.game) return false
   const other = team.id === props.game.home_team?.id
-    ? props.game.visitor_team
+    ? props.game.away_team
     : props.game.home_team
   return team.avg_skill < (other?.avg_skill ?? 50)
 }
@@ -303,7 +303,7 @@ async function submitPick(teamId) {
     }
     if (props.leagueId) payload.league_id = props.leagueId
     console.log('[Pick] submitting payload:', JSON.stringify(payload))
-    console.log('[Pick] game:', props.game?.game_id, 'home:', props.game?.home_team?.id, 'visitor:', props.game?.visitor_team?.id)
+    console.log('[Pick] game:', props.game?.game_id, 'home:', props.game?.home_team?.id, 'visitor:', props.game?.away_team?.id)
     const result = await picksStore.submitPick(payload)
     console.log('[Pick] success:', result)
     // Update balance from API response
