@@ -318,14 +318,17 @@ async function scrollToBottom() {
 .chat-messages {
   scrollbar-width: thin;
 }
-/* Mobile: anchor panel to viewport + prevent iOS auto-zoom on input focus */
+/* Mobile: fullscreen panel + prevent iOS auto-zoom on input focus */
 @media (max-width: 640px) {
   .chat-panel {
     position: fixed;
-    width: calc(100vw - 16px);
-    left: 8px;
-    right: 8px;
-    bottom: 90px;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
   }
   .chat-panel input, .chat-panel textarea {
     font-size: 16px !important;
