@@ -11,10 +11,23 @@
     </div>
 
     <template v-else>
+      <!-- Skip for now — top for lazy scrollers -->
+      <div class="flex justify-end">
+        <button class="btn btn-ghost btn-sm text-base-content/40" @click="skip">
+          Skip for now →
+        </button>
+      </div>
+
       <!-- Section 0: Hockey Profile / Identity Linking -->
       <div class="card bg-base-200 shadow">
         <div class="card-body">
           <h2 class="card-title text-lg">🏒 Your Hockey Profile</h2>
+
+          <!-- Context blurb -->
+          <div class="rounded-xl bg-base-100 border border-base-300 p-3 text-sm text-base-content/70 space-y-1 mb-2">
+            <p>⛸️ <strong>If you skate in Hockey Blast leagues</strong> — link your player record below. It unlocks personalized stats, skill-based picks, and smarter AI answers.</p>
+            <p>👀 <strong>Just here to watch or bet?</strong> — No worries, skip this part. You can always come back later.</p>
+          </div>
 
           <!-- Loading claims -->
           <div v-if="claimsLoading" class="flex items-center gap-2 text-sm text-base-content/50">
@@ -34,6 +47,7 @@
                   <div class="font-semibold text-sm">
                     {{ claim.profile?.first_name }} {{ claim.profile?.last_name }}
                     <span v-if="claim.is_primary" class="badge badge-xs badge-success ml-1">Primary</span>
+                    <span v-if="claim.claim_status === 'pending_review'" class="badge badge-xs badge-warning ml-1">Pending Review</span>
                   </div>
                   <div v-if="claim.profile?.orgs?.length" class="text-xs text-base-content/50 truncate">
                     {{ claim.profile.orgs.join(' · ') }}
@@ -47,7 +61,7 @@
 
             <!-- No claims -->
             <p v-if="existingClaims.length === 0 && !showIdentitySearch" class="text-sm text-base-content/60 mb-3">
-              Link your Hockey Blast player record to personalize your experience.
+              We'll try to find your player record automatically, or you can search by name.
             </p>
 
             <!-- Add profile button -->
@@ -66,12 +80,27 @@
                 <button class="btn btn-ghost btn-xs" @click="showIdentitySearch = false">✕ Close</button>
               </div>
 
-              <div v-if="candidatesLoading" class="flex items-center gap-2 text-sm text-base-content/50">
+              <!-- Manual name search -->
+              <div class="flex gap-2">
+                <input
+                  v-model="manualSearchQuery"
+                  type="text"
+                  placeholder="Search by name (e.g. Pavel K)"
+                  class="input input-bordered input-sm flex-1"
+                  @keyup.enter="searchByName"
+                />
+                <button class="btn btn-sm btn-outline" :disabled="candidatesLoading" @click="searchByName">
+                  <span v-if="candidatesLoading" class="loading loading-spinner loading-xs"></span>
+                  <span v-else>Search</span>
+                </button>
+              </div>
+
+              <div v-if="candidatesLoading && identityCandidates.length === 0" class="flex items-center gap-2 text-sm text-base-content/50">
                 <span class="loading loading-spinner loading-xs"></span> Searching...
               </div>
 
-              <div v-else-if="identityCandidates.length === 0" class="text-sm text-base-content/50 italic">
-                No matching player records found.
+              <div v-else-if="searchAttempted && identityCandidates.length === 0" class="text-sm text-base-content/50 italic">
+                No matching player records found. Try a different spelling or ask an admin.
               </div>
 
               <div v-else class="space-y-2">
@@ -92,13 +121,18 @@
                   <div class="flex-1 min-w-0">
                     <div class="font-semibold text-sm">
                       {{ cand.first_name }} {{ cand.last_name }}
-                      <span v-if="cand.name_match" class="badge badge-xs badge-warning ml-1">Name Match</span>
+                      <span v-if="cand.name_match === 'search'" class="badge badge-xs badge-info ml-1">Search Result</span>
+                      <span v-else-if="cand.name_match" class="badge badge-xs badge-warning ml-1">Name Match</span>
                     </div>
                     <div v-if="cand.orgs?.length" class="text-xs text-base-content/50 truncate">{{ cand.orgs.join(' · ') }}</div>
                     <div v-if="cand.skill_value" class="text-xs text-base-content/40">Skill: {{ cand.skill_value }}</div>
                   </div>
                 </label>
               </div>
+
+              <p v-if="identityCandidates.length > 0" class="text-xs text-base-content/40 italic">
+                If you pick a record already claimed by someone else, it'll be sent for admin review.
+              </p>
 
               <div v-if="identityConfirmError" class="alert alert-error text-xs py-2">{{ identityConfirmError }}</div>
 
@@ -301,9 +335,6 @@
           <span v-if="saving" class="loading loading-spinner loading-sm"></span>
           Save Profile
         </button>
-        <button class="btn btn-ghost btn-sm w-full" @click="skip">
-          Skip for now
-        </button>
       </div>
     </template>
   </div>
@@ -337,6 +368,8 @@ const candidatesLoading = ref(false)
 const selectedCandidateIds = ref([])
 const confirmingIdentity = ref(false)
 const identityConfirmError = ref(null)
+const manualSearchQuery = ref('')
+const searchAttempted = ref(false)
 
 const form = reactive({
   skill_level: null,
@@ -387,17 +420,39 @@ async function openIdentitySearch() {
   showIdentitySearch.value = true
   selectedCandidateIds.value = []
   identityConfirmError.value = null
+  searchAttempted.value = false
+  // Auto-search by display name on open
   if (identityCandidates.value.length === 0) {
     candidatesLoading.value = true
     try {
       const { data } = await api.get('/api/identity/candidates')
       identityCandidates.value = (data.candidates || []).slice(0, 5)
+      searchAttempted.value = true
     } catch (e) {
       console.error('[PlayerPrefs] failed to load identity candidates', e)
       identityCandidates.value = []
     } finally {
       candidatesLoading.value = false
     }
+  }
+}
+
+async function searchByName() {
+  const q = manualSearchQuery.value.trim()
+  if (!q) return
+  candidatesLoading.value = true
+  searchAttempted.value = false
+  selectedCandidateIds.value = []
+  try {
+    const { data } = await api.get('/api/identity/candidates', { params: { q } })
+    identityCandidates.value = (data.candidates || []).slice(0, 10)
+    searchAttempted.value = true
+  } catch (e) {
+    console.error('[PlayerPrefs] manual search failed', e)
+    identityCandidates.value = []
+    searchAttempted.value = true
+  } finally {
+    candidatesLoading.value = false
   }
 }
 
