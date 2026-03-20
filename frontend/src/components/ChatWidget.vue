@@ -30,6 +30,11 @@
             <span v-if="maximized">⊙</span>
             <span v-else>⛶</span>
           </button>
+          <button
+            @click="open = false"
+            class="btn btn-ghost btn-xs btn-circle text-primary-content opacity-80 hover:opacity-100"
+            title="Close"
+          >✕</button>
         </div>
 
         <!-- Messages -->
