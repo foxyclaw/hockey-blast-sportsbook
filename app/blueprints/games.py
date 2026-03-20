@@ -138,18 +138,6 @@ def list_games():
     """GET /api/games — main game list, tracked as a visit event."""
     from app.services.event_tracker import track
     track("visit", user_id=g.pred_user.id if g.pred_user else None, ip_address=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())
-    # original docstring content follows:
-    # Query params:
-    #   org_id, division_id, from_date, to_date, page, per_page
-
-    Query params:
-        org_id       — filter by organization
-        division_id  — filter by division
-        from_date    — ISO date string YYYY-MM-DD (default: today)
-        to_date      — ISO date string YYYY-MM-DD (default: today + 7 days)
-        page         — page number (default: 1)
-        per_page     — page size (default: 20, max: 100)
-    """
     try:
         from hockey_blast_common_lib.models import Game
     except ImportError:
