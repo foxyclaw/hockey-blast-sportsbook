@@ -31,11 +31,31 @@ admin_bp = Blueprint("admin", __name__)
 # ── Helper ──────────────────────────────────────────────────────────────────
 
 def _claim_detail(claim: PredUserHbClaim, pred_session) -> dict:
-    """Enrich a claim dict with the claimant's display info."""
+    """Enrich a claim dict with the claimant's display info and conflict info."""
     d = claim.to_dict()
     user = pred_session.get(PredUser, claim.user_id)
     d["user_display_name"] = user.display_name if user else None
     d["user_email"] = user.email if user else None
+
+    # For pending_review claims, show who already holds a confirmed claim on this HB ID
+    if claim.claim_status == "pending_review":
+        conflicting = pred_session.execute(
+            select(PredUserHbClaim).where(
+                PredUserHbClaim.hb_human_id == claim.hb_human_id,
+                PredUserHbClaim.user_id != claim.user_id,
+                PredUserHbClaim.claim_status == "confirmed",
+            )
+        ).scalars().first()
+        if conflicting:
+            existing_user = pred_session.get(PredUser, conflicting.user_id)
+            d["conflict_with"] = {
+                "user_display_name": existing_user.display_name if existing_user else None,
+                "user_email": existing_user.email if existing_user else None,
+                "claimed_at": conflicting.claimed_at.isoformat() if conflicting.claimed_at else None,
+            }
+        else:
+            d["conflict_with"] = None
+
     return d
 
 
