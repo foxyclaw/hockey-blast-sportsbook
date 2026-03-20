@@ -70,7 +70,17 @@ else
   echo "⏭️  No frontend changes — skipping dist rebuild."
 fi
 
-# ── 3. Restart the service ─────────────────────────────────────────────────
+# ── 3. Run DB migrations ───────────────────────────────────────────────────
+echo ""
+echo "🗄️  Running DB migrations..."
+DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
+if "$DEPLOY_DIR/.venv/bin/flask" db upgrade 2>&1 | grep -v "INFO\|apscheduler\|grader\|Scheduler"; then
+  echo "   ✅ Migrations complete"
+else
+  echo "   ⚠️  Migration step failed or no flask-migrate — continuing"
+fi
+
+# ── 4. Restart the service ─────────────────────────────────────────────────
 echo ""
 echo "🔄 Restarting sportsbook service..."
 sudo launchctl kickstart -k system/com.pavelkletskov.flask_sportsbook

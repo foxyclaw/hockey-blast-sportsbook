@@ -238,6 +238,12 @@
             <div class="stat-value text-warning text-2xl">{{ analyticsTotal.chat }}</div>
           </div>
         </div>
+        <!-- Chart -->
+        <div class="card bg-base-200 shadow mb-4">
+          <div class="card-body p-4">
+            <canvas ref="analyticsCanvas" height="120"></canvas>
+          </div>
+        </div>
         <!-- Daily table -->
         <div class="overflow-x-auto">
           <table class="table table-sm text-xs">
@@ -417,7 +423,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useApiClient } from '@/api/client'
 
@@ -429,6 +435,9 @@ const activeTab = ref('pending')
 
 const analyticsData = ref(null)
 const analyticsLoading = ref(false)
+const analyticsCanvas = ref(null)
+let analyticsChart = null
+
 const analyticsTotal = computed(() => {
   if (!analyticsData.value) return { visit: 0, pick: 0, chat: 0 }
   return Object.values(analyticsData.value).reduce(
@@ -436,12 +445,50 @@ const analyticsTotal = computed(() => {
     { visit: 0, pick: 0, chat: 0 }
   )
 })
+
+function renderAnalyticsChart(data) {
+  nextTick(() => {
+    if (!analyticsCanvas.value || !window.Chart) return
+    if (analyticsChart) analyticsChart.destroy()
+    const labels = Object.keys(data).sort()
+    analyticsChart = new window.Chart(analyticsCanvas.value, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Visits',  data: labels.map(d => data[d]?.visit || 0), borderColor: '#38bdf8', backgroundColor: '#38bdf820', tension: 0.3, fill: true },
+          { label: 'Picks',   data: labels.map(d => data[d]?.pick  || 0), borderColor: '#4ade80', backgroundColor: '#4ade8020', tension: 0.3, fill: true },
+          { label: 'Chat',    data: labels.map(d => data[d]?.chat  || 0), borderColor: '#fbbf24', backgroundColor: '#fbbf2420', tension: 0.3, fill: true },
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#94a3b8' } } },
+        scales: {
+          x: { ticks: { color: '#64748b', maxTicksLimit: 10 }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, beginAtZero: true }
+        }
+      }
+    })
+  })
+}
+
 async function loadAnalytics() {
   if (analyticsData.value) return
   analyticsLoading.value = true
   try {
+    // Load Chart.js from CDN if not already loaded
+    if (!window.Chart) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js'
+        s.onload = resolve; s.onerror = reject
+        document.head.appendChild(s)
+      })
+    }
     const { data } = await api.get('/api/admin/analytics?days=30')
     analyticsData.value = data.data || {}
+    renderAnalyticsChart(analyticsData.value)
   } catch (e) {
     console.error('Failed to load analytics', e)
   } finally {
