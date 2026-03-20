@@ -191,6 +191,9 @@ def create_pick():
     from app.models.pred_user import PredUser as PredUserModel
     fresh_user = pred_session.get(PredUserModel, user.id)
 
+    from app.services.event_tracker import track
+    track("pick", user_id=user.id, ip_address=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())
+
     return jsonify({
         "pick_id": pick.id,
         "game_id": pick.game_id,

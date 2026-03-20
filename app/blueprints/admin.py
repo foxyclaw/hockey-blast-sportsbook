@@ -526,3 +526,36 @@ def chat_questions():
         })
 
     return jsonify({"questions": result, "count": len(result)})
+
+
+@admin_bp.route("/analytics", methods=["GET"])
+@require_admin
+def analytics():
+    """GET /api/admin/analytics — daily event counts for the last 30 days."""
+    from app.models.site_event import SiteEvent
+    from sqlalchemy import func, cast, Date
+
+    days = int(request.args.get("days", 30))
+    pred_session = PredSession()
+
+    rows = pred_session.execute(
+        select(
+            cast(SiteEvent.created_at, Date).label("day"),
+            SiteEvent.event_type,
+            func.count(SiteEvent.id).label("count"),
+            func.count(func.distinct(SiteEvent.ip_address)).label("unique_ips"),
+        )
+        .where(SiteEvent.created_at >= sa.func.now() - sa.text(f"interval '{days} days'"))
+        .group_by("day", SiteEvent.event_type)
+        .order_by("day")
+    ).all()
+
+    # Pivot into {day: {visit: n, pick: n, chat: n, unique_users: n}}
+    data: dict = {}
+    for row in rows:
+        day = str(row.day)
+        if day not in data:
+            data[day] = {"visit": 0, "pick": 0, "chat": 0}
+        data[day][row.event_type] = row.count
+
+    return jsonify({"days": days, "data": data})

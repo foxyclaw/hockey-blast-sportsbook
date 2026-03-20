@@ -135,8 +135,12 @@ def _get_org(org_id: int | None, hb_session) -> dict | None:
 @games_bp.route("", methods=["GET"])
 @optional_auth
 def list_games():
-    """
-    GET /api/games
+    """GET /api/games — main game list, tracked as a visit event."""
+    from app.services.event_tracker import track
+    track("visit", user_id=g.pred_user.id if g.pred_user else None, ip_address=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())
+    # original docstring content follows:
+    # Query params:
+    #   org_id, division_id, from_date, to_date, page, per_page
 
     Query params:
         org_id       — filter by organization

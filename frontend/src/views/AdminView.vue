@@ -28,6 +28,11 @@
       </button>
       <button
         class="tab"
+        :class="{ 'tab-active': activeTab === 'analytics' }"
+        @click="activeTab = 'analytics'; loadAnalytics()"
+      >📊 Analytics</button>
+      <button
+        class="tab"
         :class="{ 'tab-active': activeTab === 'chat' }"
         @click="activeTab = 'chat'; loadChatQuestions()"
       >💬 Chat Questions</button>
@@ -211,6 +216,47 @@
     </div>
 
     <!-- ── Launch Season tab ──────────────────────────────────────────────── -->
+    <!-- ── Analytics ─────────────────────────────────────────────────────── -->
+    <div v-if="activeTab === 'analytics'">
+      <div v-if="analyticsLoading" class="flex justify-center py-12">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+      <div v-else-if="!analyticsData" class="text-center py-12 text-base-content/50">No data yet.</div>
+      <template v-else>
+        <!-- Summary cards -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div class="stat bg-base-200 rounded-xl">
+            <div class="stat-title text-xs">Visits (30d)</div>
+            <div class="stat-value text-primary text-2xl">{{ analyticsTotal.visit }}</div>
+          </div>
+          <div class="stat bg-base-200 rounded-xl">
+            <div class="stat-title text-xs">Picks (30d)</div>
+            <div class="stat-value text-success text-2xl">{{ analyticsTotal.pick }}</div>
+          </div>
+          <div class="stat bg-base-200 rounded-xl">
+            <div class="stat-title text-xs">Chat msgs (30d)</div>
+            <div class="stat-value text-warning text-2xl">{{ analyticsTotal.chat }}</div>
+          </div>
+        </div>
+        <!-- Daily table -->
+        <div class="overflow-x-auto">
+          <table class="table table-sm text-xs">
+            <thead>
+              <tr><th>Date</th><th class="text-primary">Visits</th><th class="text-success">Picks</th><th class="text-warning">Chat</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, day) in analyticsData" :key="day">
+                <td class="font-mono">{{ day }}</td>
+                <td>{{ row.visit || 0 }}</td>
+                <td>{{ row.pick || 0 }}</td>
+                <td>{{ row.chat || 0 }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </div>
+
     <!-- ── Chat Questions ─────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'chat'">
       <div v-if="chatLoading" class="flex justify-center py-12">
@@ -380,6 +426,28 @@ const api = useApiClient()
 
 const isSuperAdmin = computed(() => userStore.predUser?.id === 17)
 const activeTab = ref('pending')
+
+const analyticsData = ref(null)
+const analyticsLoading = ref(false)
+const analyticsTotal = computed(() => {
+  if (!analyticsData.value) return { visit: 0, pick: 0, chat: 0 }
+  return Object.values(analyticsData.value).reduce(
+    (acc, row) => ({ visit: acc.visit + (row.visit||0), pick: acc.pick + (row.pick||0), chat: acc.chat + (row.chat||0) }),
+    { visit: 0, pick: 0, chat: 0 }
+  )
+})
+async function loadAnalytics() {
+  if (analyticsData.value) return
+  analyticsLoading.value = true
+  try {
+    const { data } = await api.get('/api/admin/analytics?days=30')
+    analyticsData.value = data.data || {}
+  } catch (e) {
+    console.error('Failed to load analytics', e)
+  } finally {
+    analyticsLoading.value = false
+  }
+}
 
 const chatQuestions = ref([])
 const chatLoading = ref(false)
