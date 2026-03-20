@@ -24,12 +24,18 @@
           </div>
           <button
             @click="maximized = !maximized"
-            class="btn btn-ghost btn-xs btn-circle text-primary-content opacity-80 hover:opacity-100"
+            class="btn btn-ghost btn-xs btn-circle text-primary-content opacity-80 hover:opacity-100 hidden sm:flex"
             :title="maximized ? 'Minimize' : 'Maximize'"
           >
             <span v-if="maximized">⊙</span>
             <span v-else>⛶</span>
           </button>
+          <!-- Close button: mobile only (replaces maximize) -->
+          <button
+            @click="open = false"
+            class="btn btn-ghost btn-xs btn-circle text-primary-content opacity-80 hover:opacity-100 flex sm:hidden"
+            title="Close"
+          >✕</button>
         </div>
 
         <!-- Messages -->
