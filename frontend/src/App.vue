@@ -26,7 +26,7 @@
 </template>
 
 <script setup>
-import { watch, ref } from 'vue'
+import { watch, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { defineAsyncComponent } from 'vue'
@@ -35,9 +35,20 @@ import { useUserStore } from '@/stores/user'
 
 const ChatWidget = defineAsyncComponent(() => import('@/components/ChatWidget.vue'))
 
-const { isAuthenticated, isLoading, idTokenClaims } = useAuth0()
+const { isAuthenticated, isLoading, idTokenClaims, getAccessTokenSilently, checkSession } = useAuth0()
 const userStore = useUserStore()
 const router = useRouter()
+
+// Attempt silent auth on mount — picks up active session from stats site (same Auth0 tenant)
+onMounted(async () => {
+  if (!isAuthenticated.value && !isLoading.value) {
+    try {
+      await checkSession()
+    } catch (e) {
+      // No active session — user is not logged in
+    }
+  }
+})
 const debugToken = ref(null)
 const debugLastCall = ref(null)
 const debugLastStatus = ref(null)
