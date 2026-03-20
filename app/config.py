@@ -101,7 +101,7 @@ class ProductionConfig(BaseConfig):
     SQLALCHEMY_MAX_OVERFLOW: int = 20
 
     CORS_ORIGINS: list[str] = os.environ.get(
-        "CORS_ORIGINS", "https://predictions.hockey-blast.com"
+        "CORS_ORIGINS", "https://sportsbook.hockey-blast.com,https://hockey-blast.com,https://www.hockey-blast.com"
     ).split(",")
 
 
