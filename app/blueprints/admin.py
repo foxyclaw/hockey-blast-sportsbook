@@ -151,13 +151,27 @@ def reject_claim(claim_id: int):
     data = request.get_json(force=True, silent=True) or {}
     note = data.get("note") or None
 
-    claim.claim_status = "rejected"
-    claim.admin_note = note
-    claim.reviewed_by = g.pred_user.id
-    claim.reviewed_at = datetime.now(timezone.utc)
+    claimant = pred_session.get(PredUser, claim.user_id)
 
+    # If this was the user's primary claim, clear hb_human_id from the user record
+    if claim.is_primary and claimant and claimant.hb_human_id == claim.hb_human_id:
+        claimant.hb_human_id = None
+        # Promote another confirmed claim to primary if one exists
+        other = pred_session.execute(
+            select(PredUserHbClaim).where(
+                PredUserHbClaim.user_id == claim.user_id,
+                PredUserHbClaim.id != claim.id,
+                PredUserHbClaim.claim_status == "confirmed",
+            )
+        ).scalars().first()
+        if other:
+            other.is_primary = True
+            claimant.hb_human_id = other.hb_human_id
+
+    # Delete the claim entirely — no trace left
+    pred_session.delete(claim)
     pred_session.commit()
-    return jsonify({"ok": True, "claim": _claim_detail(claim, pred_session)})
+    return jsonify({"ok": True, "deleted": True})
 
 
 # ── Users ────────────────────────────────────────────────────────────────────
