@@ -13,7 +13,7 @@
       <p class="text-xs text-base-content/40">Didn't get it? Check your spam folder.</p>
       <div class="flex flex-col gap-2 mt-2 w-full max-w-xs">
         <button @click="loginWithGoogle" class="btn btn-primary">Sign in with Google instead</button>
-        <button @click="loginWithEmail" class="btn btn-ghost btn-sm">Try a different email account</button>
+        <button @click="loginWithEmail" class="btn btn-ghost btn-sm">← Back to home</button>
       </div>
     </template>
   </div>
@@ -32,7 +32,7 @@ const authError = ref(null)
 const authErrorDetail = ref(null)
 
 const loginWithGoogle = () => loginWithRedirect({ authorizationParams: { connection: 'google-oauth2' } })
-const loginWithEmail = () => loginWithRedirect()
+const loginWithEmail = () => { window.location.href = '/' }
 
 // Check URL params immediately — access.deny() comes back as ?error=access_denied
 onMounted(() => {
