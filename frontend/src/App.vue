@@ -20,7 +20,7 @@
       <footer class="footer footer-center p-4 bg-base-300 text-base-content text-xs opacity-60">
         <span>🏒 Hockey Blast Predictions · Not gambling · Just fun</span>
       </footer>
-      <ChatWidget v-if="isAuthenticated" />
+      <ChatWidget />
     </template>
   </div>
 </template>
