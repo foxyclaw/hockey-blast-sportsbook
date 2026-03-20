@@ -42,7 +42,8 @@ if [ -n "$FRONTEND_CHANGED" ] || [ -z "$CHANGED_FILES" ]; then
   # Build in temp dir to avoid permission issues
   BUILD_DIR="/tmp/sb-frontend-deploy"
   rm -rf "$BUILD_DIR"
-  cp -r "$SCRIPT_DIR/frontend" "$BUILD_DIR"
+  # Copy frontend source excluding node_modules and dist (always do clean install)
+  rsync -a --exclude=node_modules --exclude=dist "$SCRIPT_DIR/frontend/" "$BUILD_DIR/"
 
   export PATH="/opt/homebrew/bin:$PATH"
   cd "$BUILD_DIR"
