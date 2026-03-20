@@ -209,11 +209,15 @@ def get_candidates():
         # ── Free-text search mode ────────────────────────────────────────────
         if q:
             like_q = f"%{q}%"
+            from sqlalchemy import func
             main_ids = [r[0] for r in hb_session.execute(
                 select(Human.id).where(
                     or_(
                         Human.first_name.ilike(like_q),
                         Human.last_name.ilike(like_q),
+                        # full name match: "Dean Paganelis"
+                        func.concat(Human.first_name, ' ', Human.last_name).ilike(like_q),
+                        func.concat(Human.last_name, ' ', Human.first_name).ilike(like_q),
                     )
                 ).order_by(Human.last_name, Human.first_name).limit(50)
             ).all()]
@@ -222,6 +226,8 @@ def get_candidates():
                     or_(
                         HumanAlias.first_name.ilike(like_q),
                         HumanAlias.last_name.ilike(like_q),
+                        func.concat(HumanAlias.first_name, ' ', HumanAlias.last_name).ilike(like_q),
+                        func.concat(HumanAlias.last_name, ' ', HumanAlias.first_name).ilike(like_q),
                     )
                 ).limit(50)
             ).all()]
