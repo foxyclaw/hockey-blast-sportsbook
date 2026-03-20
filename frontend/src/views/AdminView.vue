@@ -69,12 +69,21 @@
                 <div class="text-xs text-base-content/40 mt-1">
                   Claimed {{ formatDate(claim.claimed_at) }} · HB ID: {{ claim.hb_human_id }}
                 </div>
-                <!-- Conflict info -->
-                <div v-if="claim.conflict_with" class="mt-2 rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-xs">
-                  ⚠️ <span class="font-semibold">Already claimed by:</span>
-                  {{ claim.conflict_with.user_display_name }}
-                  <span class="text-base-content/50 ml-1">{{ claim.conflict_with.user_email }}</span>
-                  <span class="text-base-content/40 ml-2">({{ formatDate(claim.conflict_with.claimed_at) }})</span>
+                <!-- Review context -->
+                <div v-if="claim.review_context" class="mt-2 space-y-1">
+                  <!-- Name mismatch warning -->
+                  <div v-if="!claim.review_context.name_matches_login" class="rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 text-xs">
+                    ⚠️ <span class="font-semibold">Name mismatch:</span>
+                    logged in as <span class="font-mono font-bold">{{ claim.review_context.login_name }}</span>
+                    but claimed <span class="font-mono font-bold">{{ claim.review_context.claimed_name }}</span>
+                  </div>
+                  <!-- Duplicate claim warning -->
+                  <div v-if="claim.review_context.conflict_with" class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-xs">
+                    🔴 <span class="font-semibold">Already claimed by:</span>
+                    {{ claim.review_context.conflict_with.user_display_name }}
+                    <span class="text-base-content/50 ml-1">{{ claim.review_context.conflict_with.user_email }}</span>
+                    <span class="text-base-content/40 ml-2">({{ formatDate(claim.review_context.conflict_with.claimed_at) }})</span>
+                  </div>
                 </div>
               </div>
               <!-- Right: status badge -->

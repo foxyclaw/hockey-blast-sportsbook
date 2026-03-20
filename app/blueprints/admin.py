@@ -37,8 +37,19 @@ def _claim_detail(claim: PredUserHbClaim, pred_session) -> dict:
     d["user_display_name"] = user.display_name if user else None
     d["user_email"] = user.email if user else None
 
-    # For pending_review claims, show who already holds a confirmed claim on this HB ID
+    # For pending_review claims, show full context for admin decision
     if claim.claim_status == "pending_review":
+        snapshot = claim.profile_snapshot or {}
+        claimed_name = f"{snapshot.get('first_name', '')} {snapshot.get('last_name', '')}".strip()
+        login_name = user.display_name if user else None
+
+        # Name mismatch: does the claimed profile name match their login name?
+        name_matches = (
+            claimed_name.lower() == (login_name or "").lower()
+            if claimed_name and login_name else None
+        )
+
+        # Who else has a confirmed claim on this same HB ID?
         conflicting = pred_session.execute(
             select(PredUserHbClaim).where(
                 PredUserHbClaim.hb_human_id == claim.hb_human_id,
@@ -46,15 +57,20 @@ def _claim_detail(claim: PredUserHbClaim, pred_session) -> dict:
                 PredUserHbClaim.claim_status == "confirmed",
             )
         ).scalars().first()
-        if conflicting:
-            existing_user = pred_session.get(PredUser, conflicting.user_id)
-            d["conflict_with"] = {
+
+        existing_user = pred_session.get(PredUser, conflicting.user_id) if conflicting else None
+
+        d["review_context"] = {
+            "login_name": login_name,
+            "claimed_name": claimed_name,
+            "name_matches_login": name_matches,
+            "reason": "name_mismatch" if not name_matches else "duplicate_claim",
+            "conflict_with": {
                 "user_display_name": existing_user.display_name if existing_user else None,
                 "user_email": existing_user.email if existing_user else None,
-                "claimed_at": conflicting.claimed_at.isoformat() if conflicting.claimed_at else None,
-            }
-        else:
-            d["conflict_with"] = None
+                "claimed_at": conflicting.claimed_at.isoformat() if conflicting and conflicting.claimed_at else None,
+            } if conflicting else None,
+        }
 
     return d
 
