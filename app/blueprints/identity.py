@@ -342,6 +342,9 @@ def confirm_identity():
     if raw is None:
         return error_response("VALIDATION_ERROR", "Must provide 'hb_human_id' or 'skip: true'", 400)
     ids_to_claim = raw if isinstance(raw, list) else [raw]
+    # If claim came from a manual name search (not auto-matched to user's own name),
+    # always require admin review regardless of conflicts
+    force_pending = bool(data.get("manual_search", False))
 
     if not all(isinstance(i, int) and i > 0 for i in ids_to_claim):
         return error_response("VALIDATION_ERROR", "hb_human_id must be positive integer(s)", 400)
@@ -379,7 +382,7 @@ def confirm_identity():
             )
         ).scalars().first()
 
-        if conflicting:
+        if conflicting or force_pending:
             claim_status = "pending_review"
             pending_review_ids.append(hid)
         else:

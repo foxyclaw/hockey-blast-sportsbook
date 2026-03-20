@@ -461,7 +461,14 @@ async function confirmIdentity() {
   confirmingIdentity.value = true
   identityConfirmError.value = null
   try {
-    await api.post('/api/identity/confirm', { hb_human_id: selectedCandidateIds.value })
+    // If any selected candidate came from a manual search, flag for admin review
+    const isManualSearch = identityCandidates.value
+      .filter(c => selectedCandidateIds.value.includes(c.hb_human_id))
+      .some(c => c.name_match === 'search')
+    await api.post('/api/identity/confirm', {
+      hb_human_id: selectedCandidateIds.value,
+      manual_search: isManualSearch,
+    })
     showIdentitySearch.value = false
     identityCandidates.value = []
     await loadClaims()
