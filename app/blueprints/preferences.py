@@ -34,52 +34,90 @@ def _skill_from_value(skill_value) -> str | None:
     return "beginner"
 
 
-# Known state groupings for rinks in the HB database.
-# Derived from city/rink knowledge since the DB has no address column populated.
-_LOCATION_STATE: dict[str, str] = {
-    # California — Bay Area
-    "Sharks Ice At San Jose": "CA", "Sharks Ice At Oakland": "CA", "Sharks Ice At Fremont": "CA",
-    "SAP Center at San Jose": "CA", "Bridgepointe Ice Arena": "CA", "Snoopy's Home Ice": "CA",
-    "Livermore Ice Arena": "CA", "San Francisco Ice Arena": "CA", "Yerba Buena Ice Skating Center": "CA",
-    "Skatetown Ice Arena": "CA", "Tri-Valley Ice": "CA", "Vacaville Ice Sports": "CA",
-    "Redwood City Ice Lodge": "CA", "Vallco Ice Arena": "CA",
-    # California — SoCal
-    "Anaheim Ice": "CA", "Toyota Sports Performance Center": "CA", "Citizens Bank Arena": "CA",
-    "Toyota Arena": "CA", "The Rinks - Lake Forest": "CA", "Aliso Viejo Ice Palace": "CA",
-    "Yorba Linda Ice": "CA", "Ontario Center Ice": "CA", "Ontario Ice Skating Center": "CA",
-    "Artesia Ice Rink": "CA", "Paramount Iceland": "CA", "Lakewood Ice": "CA",
-    "Poway Ice": "CA", "Carlsbad Ice Center": "CA", "San Diego Ice Arena": "CA",
-    "Kroc Center Ice Arena": "CA", "Escondido Ice Plex": "CA",
-    "University of California San Diego Ice Arena": "CA", "Westminster Ice Palace": "CA",
-    "Pasadena Ice Skating Center": "CA", "Pickwick Ice": "CA",
-    "Ice Station Valencia": "CA", "Iceoplex Simi Valley": "CA",
-    "Oak Park Ice Arena": "CA", "Bakersfield Ice Sports Center": "CA",
-    "Palm Desert Ice Castle": "CA", "Riverside Ice": "CA",
-    "Mechanics Bank Arena": "CA", "Selland Arena": "CA",
-    "America First Field at Heart of Hacienda Heights": "CA",
-    "Highland Ice Arena": "CA",
-    # California — NorCal other
-    "South Lake Tahoe Ice Arena": "CA", "Mammoth Ice Rink": "CA",
-    "Ice in Paradise": "CA", "Bay Harbor Ice Rink": "CA",
+# State + city for each rink
+_LOCATION_META: dict[str, tuple[str, str]] = {
+    # (state, city)
+    # Bay Area
+    "Sharks Ice At San Jose":           ("CA", "San Jose"),
+    "SAP Center at San Jose":           ("CA", "San Jose"),
+    "Bridgepointe Ice Arena":           ("CA", "San Jose"),
+    "Sharks Ice At Fremont":            ("CA", "Fremont"),
+    "Sharks Ice At Oakland":            ("CA", "Oakland"),
+    "San Francisco Ice Arena":          ("CA", "San Francisco"),
+    "Yerba Buena Ice Skating Center":   ("CA", "San Francisco"),
+    "Redwood City Ice Lodge":           ("CA", "Redwood City"),
+    "Skatetown Ice Arena":              ("CA", "Roseville"),
+    "Snoopy's Home Ice":                ("CA", "Santa Rosa"),
+    "Livermore Ice Arena":              ("CA", "Livermore"),
+    "Tri-Valley Ice":                   ("CA", "Dublin"),
+    "Vacaville Ice Sports":             ("CA", "Vacaville"),
+    "Vallco Ice Arena":                 ("CA", "Cupertino"),
+    "Bay Harbor Ice Rink":              ("CA", "San Mateo"),
+    # NorCal other
+    "Ice in Paradise":                  ("CA", "Grass Valley"),
+    "South Lake Tahoe Ice Arena":       ("CA", "South Lake Tahoe"),
+    "Mammoth Ice Rink":                 ("CA", "Mammoth Lakes"),
+    # SoCal — LA / OC
+    "Anaheim Ice":                      ("CA", "Anaheim"),
+    "Toyota Sports Performance Center": ("CA", "El Segundo"),
+    "Citizens Bank Arena":              ("CA", "Ontario"),
+    "Toyota Arena":                     ("CA", "Ontario"),
+    "Ontario Center Ice":               ("CA", "Ontario"),
+    "Ontario Ice Skating Center":       ("CA", "Ontario"),
+    "The Rinks - Lake Forest":          ("CA", "Lake Forest"),
+    "Aliso Viejo Ice Palace":           ("CA", "Aliso Viejo"),
+    "Yorba Linda Ice":                  ("CA", "Yorba Linda"),
+    "Artesia Ice Rink":                 ("CA", "Artesia"),
+    "Paramount Iceland":                ("CA", "Paramount"),
+    "Lakewood Ice":                     ("CA", "Lakewood"),
+    "Pasadena Ice Skating Center":      ("CA", "Pasadena"),
+    "Pickwick Ice":                     ("CA", "Burbank"),
+    "Ice Station Valencia":             ("CA", "Valencia"),
+    "Iceoplex Simi Valley":             ("CA", "Simi Valley"),
+    "Oak Park Ice Arena":               ("CA", "Oak Park"),
+    "Highland Ice Arena":               ("CA", "Highland"),
+    "America First Field at Heart of Hacienda Heights": ("CA", "Hacienda Heights"),
+    # SoCal — San Diego
+    "Poway Ice":                        ("CA", "Poway"),
+    "Carlsbad Ice Center":              ("CA", "Carlsbad"),
+    "San Diego Ice Arena":              ("CA", "San Diego"),
+    "Kroc Center Ice Arena":            ("CA", "San Diego"),
+    "Escondido Ice Plex":               ("CA", "Escondido"),
+    "University of California San Diego Ice Arena": ("CA", "San Diego"),
+    "Westminster Ice Palace":           ("CA", "Westminster"),
+    # SoCal — Inland / Central Valley
+    "Bakersfield Ice Sports Center":    ("CA", "Bakersfield"),
+    "Mechanics Bank Arena":             ("CA", "Bakersfield"),
+    "Selland Arena":                    ("CA", "Fresno"),
+    "Palm Desert Ice Castle":           ("CA", "Palm Desert"),
+    "Riverside Ice":                    ("CA", "Riverside"),
     # Nevada
-    "Las Vegas Ice Center": "NV", "City National Arena": "NV", "Reno Ice": "NV",
-    "Tahoe Blue Center": "NV",
+    "Las Vegas Ice Center":             ("NV", "Las Vegas"),
+    "City National Arena":              ("NV", "Las Vegas"),
+    "Reno Ice":                         ("NV", "Reno"),
+    "Tahoe Blue Center":                ("NV", "Stateline"),
     # Oregon
-    "Winterhawks Skating Center": "OR",
+    "Winterhawks Skating Center":       ("OR", "Portland"),
+    "Sherwood Ice Arena":               ("OR", "Sherwood"),
     # Washington
-    "Tacoma Twin Rinks": "WA", "Kent Highland Ice Arena": "WA",
-    "Kent Valley Ice Centre": "WA", "Sprinker Recreation Center": "WA",
-    "Bremerton Ice Center": "WA", "Olympic View Arena": "WA",
-    "Snoqualmie Ice Arena": "WA", "Inline Hockey Club of Kirkland": "WA",
-    "accesso ShoWare Center": "WA",
-    # Other / unknown
-    "Sherwood Ice Arena": "OR",
+    "Tacoma Twin Rinks":                ("WA", "Tacoma"),
+    "Sprinker Recreation Center":       ("WA", "Tacoma"),
+    "Kent Highland Ice Arena":          ("WA", "Kent"),
+    "Kent Valley Ice Centre":           ("WA", "Kent"),
+    "accesso ShoWare Center":           ("WA", "Kent"),
+    "Bremerton Ice Center":             ("WA", "Bremerton"),
+    "Olympic View Arena":               ("WA", "Bremerton"),
+    "Snoqualmie Ice Arena":             ("WA", "Snoqualmie"),
+    "Inline Hockey Club of Kirkland":   ("WA", "Kirkland"),
 }
 
 _STATE_NAMES = {
     "CA": "California", "NV": "Nevada", "OR": "Oregon", "WA": "Washington",
     "Other": "Other",
 }
+
+# Backwards compat
+_LOCATION_STATE: dict[str, str] = {k: v[0] for k, v in _LOCATION_META.items()}
 
 
 def _get_locations():
@@ -110,19 +148,28 @@ def _get_locations():
             if r.location_name not in seen and r.location_name not in skip_names:
                 seen[r.location_name] = r.id
 
-        # Group by state
-        groups: dict[str, list] = {}
+        # Group by state → city
+        # structure: { state_label: { city: [ {id, name} ] } }
+        groups: dict[str, dict[str, list]] = {}
         for name, lid in seen.items():
-            state = _LOCATION_STATE.get(name, "Other")
-            state_label = _STATE_NAMES.get(state, state)
+            state_code, city = _LOCATION_META.get(name, ("Other", "Other"))
+            state_label = _STATE_NAMES.get(state_code, state_code)
             if state_label not in groups:
-                groups[state_label] = []
-            groups[state_label].append({"id": lid, "name": name})
+                groups[state_label] = {}
+            if city not in groups[state_label]:
+                groups[state_label][city] = []
+            groups[state_label][city].append({"id": lid, "name": name})
 
-        # Return as sorted list of {state, locations[]}
+        # Return as sorted list of {state, cities: [{city, locations[]}]}
         return [
-            {"state": state, "locations": locs}
-            for state, locs in sorted(groups.items())
+            {
+                "state": state,
+                "cities": [
+                    {"city": city, "locations": sorted(locs, key=lambda x: x["name"])}
+                    for city, locs in sorted(cities.items())
+                ]
+            }
+            for state, cities in sorted(groups.items())
         ]
     except Exception:
         return []
