@@ -43,6 +43,9 @@ def send_message():
     user_id = g.pred_user.id if g.pred_user else ANONYMOUS_USER_ID
     db = PredSession()
 
+    from app.services.event_tracker import track
+    track("chat", user_id=g.pred_user.id if g.pred_user else None)
+
     # 1. Check if user is currently banned (admins are exempt)
     is_admin = g.pred_user and getattr(g.pred_user, 'is_admin', False)
     if not is_admin:

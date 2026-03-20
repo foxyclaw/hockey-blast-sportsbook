@@ -66,6 +66,8 @@ def create_app(config_name: str | None = None) -> Flask:
         if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
             from app.jobs.grade_results import start_scheduler
             start_scheduler(app)
+            from app.services.event_tracker import start_tracker
+            start_tracker(app)
 
     # ── Health check ───────────────────────────────────────────────────────────
     @app.route("/api/health")
