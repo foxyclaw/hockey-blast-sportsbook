@@ -11,7 +11,10 @@
         Click it to activate your account, then try signing in again.
       </p>
       <p class="text-xs text-base-content/40">Didn't get it? Check your spam folder.</p>
-      <a href="/" class="btn btn-primary mt-2">← Back to Sign In</a>
+      <div class="flex flex-col gap-2 mt-2 w-full max-w-xs">
+        <button @click="loginWithGoogle" class="btn btn-primary">Sign in with Google instead</button>
+        <button @click="loginWithEmail" class="btn btn-ghost btn-sm">Try a different email account</button>
+      </div>
     </template>
   </div>
 </template>
@@ -22,11 +25,14 @@ import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
 
-const { isAuthenticated, isLoading, error, idTokenClaims } = useAuth0()
+const { isAuthenticated, isLoading, error, idTokenClaims, loginWithRedirect } = useAuth0()
 const userStore = useUserStore()
 const router = useRouter()
 const authError = ref(null)
 const authErrorDetail = ref(null)
+
+const loginWithGoogle = () => loginWithRedirect({ authorizationParams: { connection: 'google-oauth2' } })
+const loginWithEmail = () => loginWithRedirect()
 
 // Check URL params immediately — access.deny() comes back as ?error=access_denied
 onMounted(() => {
