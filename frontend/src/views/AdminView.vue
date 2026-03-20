@@ -74,32 +74,24 @@
               </div>
             </div>
 
-            <!-- Note + action buttons -->
-            <div class="mt-4 flex flex-wrap gap-3 items-end">
-              <textarea
-                v-model="reviewNotes[claim.id]"
-                class="textarea textarea-bordered text-sm flex-1 min-w-48"
-                rows="2"
-                placeholder="Optional admin note..."
-              ></textarea>
-              <div class="flex gap-2">
-                <button
-                  class="btn btn-success btn-sm"
-                  :disabled="reviewLoading[claim.id]"
-                  @click="approve(claim.id)"
-                >
-                  <span v-if="reviewLoading[claim.id]" class="loading loading-spinner loading-xs"></span>
-                  ✅ Approve
-                </button>
-                <button
-                  class="btn btn-error btn-sm"
-                  :disabled="reviewLoading[claim.id]"
-                  @click="reject(claim.id)"
-                >
-                  <span v-if="reviewLoading[claim.id]" class="loading loading-spinner loading-xs"></span>
-                  ❌ Reject
-                </button>
-              </div>
+            <!-- Action buttons -->
+            <div class="mt-4 flex gap-2">
+              <button
+                class="btn btn-success btn-sm"
+                :disabled="reviewLoading[claim.id]"
+                @click="approve(claim.id)"
+              >
+                <span v-if="reviewLoading[claim.id]" class="loading loading-spinner loading-xs"></span>
+                ✅ Approve
+              </button>
+              <button
+                class="btn btn-error btn-sm"
+                :disabled="reviewLoading[claim.id]"
+                @click="reject(claim.id)"
+              >
+                <span v-if="reviewLoading[claim.id]" class="loading loading-spinner loading-xs"></span>
+                ❌ Reject
+              </button>
             </div>
           </div>
         </div>
