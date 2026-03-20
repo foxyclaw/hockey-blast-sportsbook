@@ -60,8 +60,8 @@
                   <span class="font-bold text-primary">{{ claim.review_context?.claimed_name || (claim.profile_snapshot?.first_name + ' ' + claim.profile_snapshot?.last_name) }}</span>
                   <span v-if="claim.profile_snapshot?.orgs?.length" class="text-base-content/40 ml-1">@ {{ claim.profile_snapshot.orgs[0] }}</span>
                 </div>
-                <div v-if="claim.review_context && !claim.review_context.name_matches_login" class="text-xs text-warning">
-                  ⚠️ Name mismatch
+                <div v-if="claim.review_context?.is_manual_search" class="text-xs text-warning">
+                  ⚠️ Searched by name — login didn't match
                 </div>
                 <div v-if="claim.review_context?.conflict_with" class="text-xs text-error">
                   🔴 Already claimed by {{ claim.review_context.conflict_with.user_display_name }}

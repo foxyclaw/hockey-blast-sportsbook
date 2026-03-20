@@ -391,7 +391,7 @@ def confirm_identity():
         claim = PredUserHbClaim(
             user_id=user.id,
             hb_human_id=hid,
-            source="self_reported",
+            source="manual_search" if force_pending else "self_reported",
             is_primary=is_primary and claim_status == "confirmed",
             profile_snapshot=snapshot,
             claim_status=claim_status,
