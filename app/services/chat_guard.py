@@ -13,10 +13,19 @@ REGION = os.getenv("AWS_REGION", "us-east-1")
 MODEL = os.getenv("BEDROCK_MODEL", "us.anthropic.claude-sonnet-4-6")
 BEDROCK_URL = f"https://bedrock-runtime.{REGION}.amazonaws.com/model/{MODEL}/invoke"
 
-GUARD_PROMPT = """You are a topic classifier for a hockey statistics platform.
-Determine if the user's question is about hockey, hockey players, hockey teams, hockey games, hockey stats, ice rinks, or hockey-related topics.
-Be GENEROUS in your interpretation — questions about people (by name), games, scores, seasons, rinks, or anything that could plausibly relate to hockey should be YES.
-Only answer NO for questions that are clearly about a completely unrelated topic (cooking, politics, math homework, etc).
+GUARD_PROMPT = """You are a topic classifier for a hockey statistics platform called Hockey Blast.
+Users ask about players, teams, games, stats, scores, seasons, rinks, and leagues.
+
+Answer YES if the question could plausibly be about:
+- A person's name (they might be a hockey player)
+- Hockey stats, scores, games, teams, seasons, rinks, leagues
+- Anything sports or athlete related
+- Short or ambiguous queries (single names, short phrases)
+
+Answer NO ONLY if the question is CLEARLY about a completely unrelated topic like cooking recipes, political news, math homework, or non-sports entertainment.
+
+When in doubt, answer YES.
+
 Answer with ONLY the word YES or NO.
 
 Question: {query}"""
