@@ -35,6 +35,14 @@
           </div>
 
           <template v-else>
+            <!-- Toast notification -->
+            <div
+              v-if="primaryToast"
+              class="alert alert-success text-sm py-2 mb-2 transition-all"
+            >
+              ✅ Primary identity updated!
+            </div>
+
             <!-- Existing claims -->
             <div v-if="existingClaims.length > 0" class="space-y-2 mb-3">
               <div
@@ -56,6 +64,16 @@
                     </template>
                   </div>
                 </div>
+                <!-- Set as primary button — only shown for non-primary confirmed claims -->
+                <button
+                  v-if="!claim.is_primary && claim.claim_status === 'confirmed' && existingClaims.length > 1"
+                  class="btn btn-xs btn-outline btn-primary shrink-0 mt-0.5"
+                  :disabled="settingPrimary === claim.hb_human_id"
+                  @click="setPrimary(claim.hb_human_id)"
+                >
+                  <span v-if="settingPrimary === claim.hb_human_id" class="loading loading-spinner loading-xs"></span>
+                  <span v-else>Set primary</span>
+                </button>
               </div>
             </div>
 
@@ -373,6 +391,8 @@ const confirmingIdentity = ref(false)
 const identityConfirmError = ref(null)
 const manualSearchQuery = ref('')
 const searchAttempted = ref(false)
+const settingPrimary = ref(null)
+const primaryToast = ref(false)
 
 const form = reactive({
   skill_level: null,
@@ -489,6 +509,20 @@ async function skipIdentity() {
     await api.post('/api/identity/confirm', { skip: true })
   } catch (e) {
     // skip is best-effort
+  }
+}
+
+async function setPrimary(hbHumanId) {
+  settingPrimary.value = hbHumanId
+  try {
+    await api.post('/api/identity/set-primary', { hb_human_id: hbHumanId })
+    await loadClaims()
+    primaryToast.value = true
+    setTimeout(() => { primaryToast.value = false }, 3000)
+  } catch (e) {
+    console.error('[PlayerPrefs] set-primary failed', e)
+  } finally {
+    settingPrimary.value = null
   }
 }
 

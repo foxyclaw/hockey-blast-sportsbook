@@ -148,7 +148,15 @@ def approve_claim(claim_id: int):
         if len(confirmed_claims) >= 2:
             primary_claim = next((c for c in confirmed_claims if c.is_primary), None)
             if primary_claim:
-                hb_session = HBSession()
+                import os as _os
+                from sqlalchemy import create_engine as _create_engine
+                from sqlalchemy.orm import sessionmaker as _sessionmaker
+                _boss_url = _os.environ.get("HB_BOSS_DATABASE_URL")
+                if _boss_url:
+                    _boss_engine = _create_engine(_boss_url)
+                    hb_session = _sessionmaker(bind=_boss_engine)()
+                else:
+                    hb_session = HBSession()
                 merged_secondary_claims = []
                 for secondary_claim in confirmed_claims:
                     if secondary_claim.id != primary_claim.id:
