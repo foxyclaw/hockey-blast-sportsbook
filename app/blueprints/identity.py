@@ -73,9 +73,10 @@ identity_bp = Blueprint("identity", __name__)
 def _get_hb_models():
     try:
         from hockey_blast_common_lib.models import (
-            Human, HumanAlias, GameRoster, Game, Organization, PlayerRole, Team
+            Human, HumanAlias, GameRoster, Game, Organization, PlayerRole, Team,
+            RefDivision, ScorekeeperDivision, Division,
         )
-        return Human, HumanAlias, GameRoster, Game, Organization, PlayerRole, Team
+        return Human, HumanAlias, GameRoster, Game, Organization, PlayerRole, Team, RefDivision, ScorekeeperDivision, Division
     except ImportError as exc:
         raise RuntimeError("hockey_blast_common_lib not available") from exc
 
@@ -88,7 +89,7 @@ def _build_human_profile(hb_session, human_id: int) -> dict:
     Returns a dict with: id, names (including aliases), career dates,
     skill_value, teams (with orgs and date ranges).
     """
-    Human, HumanAlias, GameRoster, Game, Organization, PlayerRole, Team = _get_hb_models()
+    Human, HumanAlias, GameRoster, Game, Organization, PlayerRole, Team, RefDivision, ScorekeeperDivision, Division = _get_hb_models()
 
     human = hb_session.get(Human, human_id)
     if human is None:
@@ -154,6 +155,43 @@ def _build_human_profile(hb_session, human_id: int) -> dict:
 
     teams = list(team_map.values())
 
+    # ── Ref / scorekeeper orgs (via ref_divisions / scorekeeper_divisions) ───
+    roles_extra = []
+    for RoleDivTable, role_label in [(RefDivision, "referee"), (ScorekeeperDivision, "scorekeeper")]:
+        role_rows = hb_session.execute(
+            select(
+                RoleDivTable.first_date,
+                RoleDivTable.last_date,
+                Division.org_id,
+                Organization.organization_name.label("org_name"),
+            )
+            .join(Division, Division.id == RoleDivTable.division_id)
+            .join(Organization, Organization.id == Division.org_id)
+            .where(RoleDivTable.human_id == human_id)
+            .order_by(RoleDivTable.last_date.desc().nullslast())
+        ).all()
+        if role_rows:
+            # Collapse to unique orgs with date ranges
+            org_map: dict[str, dict] = {}
+            for r in role_rows:
+                key = r.org_name
+                if key not in org_map:
+                    org_map[key] = {
+                        "team_name": f"{r.org_name} ({role_label})",
+                        "org_name": r.org_name,
+                        "role": role_label,
+                        "first_date": r.first_date.isoformat() if r.first_date else None,
+                        "last_date": r.last_date.isoformat() if r.last_date else None,
+                    }
+                else:
+                    if r.first_date and (not org_map[key]["first_date"] or r.first_date.isoformat() < org_map[key]["first_date"]):
+                        org_map[key]["first_date"] = r.first_date.isoformat()
+                    if r.last_date and (not org_map[key]["last_date"] or r.last_date.isoformat() > org_map[key]["last_date"]):
+                        org_map[key]["last_date"] = r.last_date.isoformat()
+            roles_extra.extend(org_map.values())
+
+    teams = teams + roles_extra
+
     # Unique orgs (for quick display)
     orgs = list({r["org_name"] for r in teams if r["org_name"]})
 
@@ -210,7 +248,7 @@ def get_candidates():
         user_first = display_parts[0] if len(display_parts) > 1 else ""
 
     try:
-        Human, HumanAlias, _, _, _, _, _ = _get_hb_models()
+        Human, HumanAlias, _, _, _, _, _, _, _, _ = _get_hb_models()
     except RuntimeError as exc:
         return error_response("SERVICE_UNAVAILABLE", str(exc), 503)
 
@@ -370,7 +408,7 @@ def confirm_identity():
         return error_response("VALIDATION_ERROR", "hb_human_id must be positive integer(s)", 400)
 
     try:
-        Human, _, _, _, _, _, _ = _get_hb_models()
+        Human, _, _, _, _, _, _, _, _, _ = _get_hb_models()
         hb_session = HBSession()
         for hid in ids_to_claim:
             if hb_session.get(Human, hid) is None:
@@ -510,7 +548,7 @@ def confirm_identity():
 def get_orgs():
     """GET /api/identity/orgs — list all organizations (no auth required)."""
     try:
-        _, _, _, _, Organization, _, _ = _get_hb_models()
+        _, _, _, _, Organization, _, _, _, _, _ = _get_hb_models()
     except RuntimeError as exc:
         return error_response("SERVICE_UNAVAILABLE", str(exc), 503)
 
