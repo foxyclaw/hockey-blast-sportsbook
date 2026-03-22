@@ -317,8 +317,16 @@
               </select>
             </div>
             <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Season Start Date</span></label>
-              <input v-model="launchStartDate" type="date" class="input input-bordered input-sm" />
+              <label class="label py-1"><span class="label-text text-xs">Season Start</span></label>
+              <input v-model="launchStartDate" type="datetime-local" class="input input-bordered input-sm" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
+              <input v-model="launchDraftOpens" type="datetime-local" class="input input-bordered input-sm" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Draft Closes</span></label>
+              <input v-model="launchDraftCloses" type="datetime-local" class="input input-bordered input-sm" />
             </div>
             <div class="form-control">
               <label class="label cursor-pointer gap-2 py-1">
@@ -694,6 +702,8 @@ async function loadOrgs() {
   } catch { /* ignore */ }
 }
 const launchStartDate = ref('')
+const launchDraftOpens = ref('')
+const launchDraftCloses = ref('')
 const launchActiveOnly = ref(true)
 const levels = ref([])
 const selectedLevelIds = ref([])
@@ -767,6 +777,8 @@ async function launchSeason() {
       org_id: launchOrgId.value,
       level_ids: selectedLevelIds.value,
       season_start_date: launchStartDate.value,
+      draft_opens_at: launchDraftOpens.value || undefined,
+      draft_closes_at: launchDraftCloses.value || undefined,
     })
     launchResult.value = data
     selectedLevelIds.value = []

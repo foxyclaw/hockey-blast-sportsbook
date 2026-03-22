@@ -34,6 +34,8 @@ class FantasyLeague(PredBase):
         nullable=False,
     )
     draft_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    draft_opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    draft_closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     season_starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     join_code: Mapped[str | None] = mapped_column(String(12), nullable=True)
@@ -69,6 +71,8 @@ class FantasyLeague(PredBase):
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "draft_started_at": self.draft_started_at.isoformat() if self.draft_started_at else None,
+            "draft_opens_at": self.draft_opens_at.isoformat() if self.draft_opens_at else None,
+            "draft_closes_at": self.draft_closes_at.isoformat() if self.draft_closes_at else None,
             "season_starts_at": self.season_starts_at.isoformat() if self.season_starts_at else None,
             "is_private": self.is_private,
             "join_code": self.join_code,

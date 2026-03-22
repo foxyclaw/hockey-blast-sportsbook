@@ -133,6 +133,19 @@ def create_league():
 
     pred = PredSession()
     try:
+        # Parse optional datetime fields
+        def _parse_dt(val):
+            if not val:
+                return None
+            from datetime import timezone as _tz
+            for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                try:
+                    dt = datetime.strptime(val, fmt)
+                    return dt.replace(tzinfo=_tz.utc)
+                except ValueError:
+                    continue
+            return None
+
         league = FantasyLeague(
             name=name,
             level_id=level_id,
@@ -147,6 +160,9 @@ def create_league():
             created_by=user.id,
             is_private=is_private,
             join_code=join_code,
+            season_starts_at=_parse_dt(data.get("season_starts_at")),
+            draft_opens_at=_parse_dt(data.get("draft_opens_at")),
+            draft_closes_at=_parse_dt(data.get("draft_closes_at")),
         )
         pred.add(league)
         pred.flush()

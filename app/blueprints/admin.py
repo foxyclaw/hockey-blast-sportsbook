@@ -480,8 +480,13 @@ def get_fantasy_orgs():
 def launch_fantasy_season():
     """
     POST /api/admin/fantasy/launch-season
-    Body: { org_id, level_ids: [], season_start_date: "YYYY-MM-DD" }
-    Sets season_starts_at on matching fantasy leagues and marks them active.
+    Body: {
+      org_id, level_ids: [],
+      season_start_date: "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM",
+      draft_opens_at: "YYYY-MM-DDTHH:MM" (optional),
+      draft_closes_at: "YYYY-MM-DDTHH:MM" (optional)
+    }
+    Sets season_starts_at (and draft window) on matching fantasy leagues and marks them active.
     """
     from datetime import date
     from sqlalchemy import select
@@ -498,11 +503,27 @@ def launch_fantasy_season():
     if not season_start_date:
         return jsonify({"error": "VALIDATION_ERROR", "message": "season_start_date required"}), 400
 
+    def _parse_dt(val):
+        if not val:
+            return None
+        from datetime import datetime as _dt, timezone as _tz
+        for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return _dt.strptime(val, fmt).replace(tzinfo=_tz.utc)
+            except ValueError:
+                continue
+        return None
+
     try:
         from datetime import datetime
-        start_dt = datetime.strptime(season_start_date, "%Y-%m-%d")
+        start_dt = _parse_dt(season_start_date)
+        if start_dt is None:
+            raise ValueError()
     except ValueError:
-        return jsonify({"error": "VALIDATION_ERROR", "message": "season_start_date must be YYYY-MM-DD"}), 400
+        return jsonify({"error": "VALIDATION_ERROR", "message": "season_start_date must be YYYY-MM-DD or YYYY-MM-DDTHH:MM"}), 400
+
+    draft_opens_dt = _parse_dt(data.get("draft_opens_at"))
+    draft_closes_dt = _parse_dt(data.get("draft_closes_at"))
 
     from hockey_blast_common_lib.models import Level
     from app.db import HBSession, PredSession
@@ -532,6 +553,10 @@ def launch_fantasy_season():
         if existing:
             # Update existing league
             existing.season_starts_at = start_dt
+            if draft_opens_dt is not None:
+                existing.draft_opens_at = draft_opens_dt
+            if draft_closes_dt is not None:
+                existing.draft_closes_at = draft_closes_dt
             if existing.status == "forming":
                 existing.status = "active"
             updated.append({"id": existing.id, "name": existing.name, "action": "updated"})
@@ -559,6 +584,8 @@ def launch_fantasy_season():
                 roster_goalies=1,
                 draft_pick_hours=24,
                 season_starts_at=start_dt,
+                draft_opens_at=draft_opens_dt,
+                draft_closes_at=draft_closes_dt,
             )
             pred.add(new_league)
             pred.flush()

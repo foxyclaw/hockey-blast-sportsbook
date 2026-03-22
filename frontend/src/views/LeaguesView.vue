@@ -36,6 +36,38 @@
                 class="input input-bordered input-sm"
               />
             </div>
+            <div class="form-control">
+              <label class="label py-1">
+                <span class="label-text text-xs">Season Start</span>
+              </label>
+              <input
+                v-model="createForm.season_starts_at"
+                type="datetime-local"
+                class="input input-bordered input-sm"
+              />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="form-control">
+                <label class="label py-1">
+                  <span class="label-text text-xs">Draft Opens</span>
+                </label>
+                <input
+                  v-model="createForm.draft_opens_at"
+                  type="datetime-local"
+                  class="input input-bordered input-sm"
+                />
+              </div>
+              <div class="form-control">
+                <label class="label py-1">
+                  <span class="label-text text-xs">Draft Closes</span>
+                </label>
+                <input
+                  v-model="createForm.draft_closes_at"
+                  type="datetime-local"
+                  class="input input-bordered input-sm"
+                />
+              </div>
+            </div>
             <button type="submit" class="btn btn-primary btn-sm w-full" :disabled="creating">
               <span v-if="creating" class="loading loading-spinner loading-xs"></span>
               Create League
@@ -159,7 +191,7 @@ const leagues = ref([])
 const loading = ref(false)
 const leaguesError = ref(null)
 
-const createForm = ref({ name: '', season_label: '' })
+const createForm = ref({ name: '', season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '' })
 const creating = ref(false)
 const createError = ref(null)
 
@@ -189,10 +221,13 @@ async function createLeague() {
     const { data } = await api.post('/api/leagues', {
       name: createForm.value.name,
       season_label: createForm.value.season_label || undefined,
+      season_starts_at: createForm.value.season_starts_at || undefined,
+      draft_opens_at: createForm.value.draft_opens_at || undefined,
+      draft_closes_at: createForm.value.draft_closes_at || undefined,
     })
     const newLeague = data.league ?? data
     leagues.value.unshift(newLeague)
-    createForm.value = { name: '', season_label: '' }
+    createForm.value = { name: '', season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '' }
   } catch (e) {
     createError.value = e.response?.data?.message ?? e.message
   } finally {
