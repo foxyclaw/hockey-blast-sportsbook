@@ -427,7 +427,14 @@ def confirm_identity():
             if len(confirmed_claims) >= 2:
                 primary_claim = next((c for c in confirmed_claims if c.is_primary), None)
                 if primary_claim:
-                    hb_merge_session = HBSession()
+                    import os as _os
+                    from sqlalchemy import create_engine as _create_engine
+                    from sqlalchemy.orm import sessionmaker as _sessionmaker
+                    _boss_url = _os.environ.get("HB_BOSS_DATABASE_URL")
+                    if _boss_url:
+                        hb_merge_session = _sessionmaker(bind=_create_engine(_boss_url))()
+                    else:
+                        hb_merge_session = HBSession()
                     merged_secondary_claims = []
                     for secondary_claim in confirmed_claims:
                         if secondary_claim.id != primary_claim.id:
@@ -481,6 +488,63 @@ def confirm_identity():
             for c in all_claims
         ],
     })
+
+
+@identity_bp.route("/set-primary", methods=["POST"])
+@require_auth
+def set_primary():
+    """
+    POST /api/identity/set-primary
+
+    Body: { "hb_human_id": 12345 }
+
+    Sets the given claim as primary for the current user:
+    - Validates that hb_human_id belongs to a *confirmed* claim for this user
+    - Sets is_primary=True on that claim, is_primary=False on all others
+    - Updates pred_users.hb_human_id to the chosen value
+    - Returns { "ok": true, "primary_hb_human_id": 12345 }
+    """
+    from app.models.pred_user_hb_claim import PredUserHbClaim
+
+    user = g.pred_user
+    data = request.get_json(force=True, silent=True) or {}
+    hb_human_id = data.get("hb_human_id")
+
+    if not isinstance(hb_human_id, int) or hb_human_id <= 0:
+        return error_response("VALIDATION_ERROR", "'hb_human_id' must be a positive integer", 400)
+
+    pred_session = PredSession()
+
+    # Find the target claim — must be confirmed and belong to this user
+    target_claim = pred_session.execute(
+        select(PredUserHbClaim).where(
+            PredUserHbClaim.user_id == user.id,
+            PredUserHbClaim.hb_human_id == hb_human_id,
+            PredUserHbClaim.claim_status == "confirmed",
+        )
+    ).scalars().first()
+
+    if target_claim is None:
+        return error_response(
+            "NOT_FOUND",
+            f"No confirmed claim found for hb_human_id={hb_human_id} belonging to this user",
+            404,
+        )
+
+    # Flip is_primary on all confirmed claims for this user
+    all_claims = pred_session.execute(
+        select(PredUserHbClaim).where(PredUserHbClaim.user_id == user.id)
+    ).scalars().all()
+
+    for claim in all_claims:
+        claim.is_primary = claim.hb_human_id == hb_human_id
+
+    # Update the user's canonical hb_human_id on the pred_users record
+    user.hb_human_id = hb_human_id
+
+    pred_session.commit()
+
+    return jsonify({"ok": True, "primary_hb_human_id": hb_human_id})
 
 
 @identity_bp.route("/orgs", methods=["GET"])
