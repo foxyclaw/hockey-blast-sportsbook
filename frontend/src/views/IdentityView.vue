@@ -43,7 +43,7 @@
               <!-- Profile info -->
               <div class="flex-1 min-w-0">
                 <div class="font-semibold">
-                  {{ claim.profile?.first_name }} {{ claim.profile?.last_name }}
+                  {{ claim.profile?.first_name }}{{ claim.profile?.middle_name ? ' ' + claim.profile.middle_name : '' }} {{ claim.profile?.last_name }}
                 </div>
                 <div class="flex flex-wrap gap-1 mt-1">
                   <span v-if="claim.is_primary" class="badge badge-xs badge-primary">Primary</span>

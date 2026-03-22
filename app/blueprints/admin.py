@@ -44,7 +44,8 @@ def _claim_detail(claim: PredUserHbClaim, pred_session) -> dict:
     # For pending_review claims, show context for admin decision
     if claim.claim_status == "pending_review":
         snapshot = claim.profile_snapshot or {}
-        claimed_name = f"{snapshot.get('first_name', '')} {snapshot.get('last_name', '')}".strip()
+        mid = snapshot.get('middle_name', '') or ''
+        claimed_name = f"{snapshot.get('first_name', '')} {mid} {snapshot.get('last_name', '')}".replace('  ', ' ').strip()
 
         conflicting = pred_session.execute(
             select(PredUserHbClaim).where(

@@ -45,7 +45,7 @@
                 <span class="text-success mt-0.5">✅</span>
                 <div class="flex-1 min-w-0">
                   <div class="font-semibold text-sm">
-                    {{ claim.profile?.first_name }} {{ claim.profile?.last_name }}
+                    {{ claim.profile?.first_name }}{{ claim.profile?.middle_name ? ' ' + claim.profile.middle_name : '' }} {{ claim.profile?.last_name }}
                     <span v-if="claim.is_primary" class="badge badge-xs badge-success ml-1">Primary</span>
                     <span v-if="claim.claim_status === 'pending_review'" class="badge badge-xs badge-warning ml-1">Pending Review</span>
                   </div>
@@ -120,7 +120,7 @@
                   />
                   <div class="flex-1 min-w-0">
                     <div class="font-semibold text-sm">
-                      {{ cand.first_name }} {{ cand.last_name }}
+                      {{ cand.first_name }}{{ cand.middle_name ? ' ' + cand.middle_name : '' }} {{ cand.last_name }}
                       <span v-if="cand.name_match === 'search'" class="badge badge-xs badge-info ml-1">Search Result</span>
                       <span v-else-if="cand.name_match" class="badge badge-xs badge-warning ml-1">Name Match</span>
                     </div>

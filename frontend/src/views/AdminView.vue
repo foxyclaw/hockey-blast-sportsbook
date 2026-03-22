@@ -159,7 +159,7 @@
                   <div class="font-medium">{{ c.user_display_name }}</div>
                   <div class="text-xs opacity-50">{{ c.user_email }}</div>
                 </td>
-                <td>{{ c.profile_snapshot?.first_name }} {{ c.profile_snapshot?.last_name }}</td>
+                <td>{{ c.profile_snapshot?.first_name }}{{ c.profile_snapshot?.middle_name ? ' ' + c.profile_snapshot.middle_name : '' }} {{ c.profile_snapshot?.last_name }}</td>
                 <td class="text-xs">{{ (c.profile_snapshot?.orgs || []).join(', ') || '—' }}</td>
                 <td class="text-xs">{{ formatDate(c.claimed_at) }}</td>
                 <td>
