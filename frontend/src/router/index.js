@@ -70,6 +70,13 @@ const router = createRouter({
       meta: { requiresAdmin: true },
     },
     {
+      path: '/admin/predictions',
+      name: 'admin-predictions',
+      component: () => import('@/views/PredictionAnalysisView.vue'),
+      beforeEnter: authGuard,
+      meta: { requiresAdmin: true },
+    },
+    {
       path: '/callback',
       name: 'callback',
       component: () => import('@/views/CallbackView.vue'),

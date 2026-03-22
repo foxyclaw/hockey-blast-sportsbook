@@ -43,6 +43,9 @@
       >
         🏒 Fantasy
       </button>
+      <router-link to="/admin/predictions" class="tab">
+        📈 Predictions
+      </router-link>
     </div>
 
     <!-- ── Pending Claims ────────────────────────────────────────────────── -->
