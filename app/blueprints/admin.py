@@ -226,9 +226,27 @@ def approve_claims_batch():
         claim.reviewed_by = g.pred_user.id
         claim.reviewed_at = now_utc
 
-    # Link hb_human_id if not set yet — pick the designated primary, or first in list
+    # Link hb_human_id if not set yet — pick the designated primary,
+    # or fall back to the HB human with the latest last_date (most recently active).
     if claimant.hb_human_id is None:
-        primary_claim = next((c for c in pending if c.is_primary), pending[0])
+        explicit_primary = next((c for c in pending if c.is_primary), None)
+        if explicit_primary:
+            primary_claim = explicit_primary
+        else:
+            # Pick the most recently active human in HB
+            try:
+                from hockey_blast_common_lib.models import Human as _Human
+                _hb = HBSession()
+                best_claim = pending[0]
+                best_date = None
+                for c in pending:
+                    h = _hb.get(_Human, c.hb_human_id)
+                    if h and h.last_date and (best_date is None or h.last_date > best_date):
+                        best_date = h.last_date
+                        best_claim = c
+                primary_claim = best_claim
+            except Exception:
+                primary_claim = pending[0]
         primary_claim.is_primary = True
         claimant.hb_human_id = primary_claim.hb_human_id
 
