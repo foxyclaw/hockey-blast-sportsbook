@@ -7,11 +7,14 @@ DELETE /api/picks/<pick_id>        — retract a pick (if game not locked)
 GET    /api/picks/<pick_id>        — single pick detail
 """
 
+import logging
+
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 
 from app.auth.jwt_validator import require_auth
 from app.db import HBSession, PredSession
+from app.models.game_prediction_log import GamePredictionLog
 from app.models.pred_league import PredLeague
 from app.models.pred_pick import PredPick
 from app.models.pred_result import PredResult
@@ -153,7 +156,6 @@ def create_pick():
     if not league_id:
         league_id = _get_or_create_global_league(user, pred_session)
 
-    import logging
     logging.getLogger(__name__).info(
         f"[Pick] user={user.id} game={game_id} team={picked_team_id} league={league_id} confidence={confidence}"
     )
@@ -176,6 +178,67 @@ def create_pick():
     except Exception as exc:
         pred_session.rollback()
         return error_response("INTERNAL_ERROR", str(exc), 500)
+
+    # ── Snapshot prediction log (first pick for this game only) ──────────────
+    try:
+        existing_log = pred_session.execute(
+            select(GamePredictionLog).where(GamePredictionLog.game_id == pick.game_id)
+        ).scalar_one_or_none()
+
+        if existing_log is None:
+            home_skill = pick.home_team_avg_skill
+            away_skill = pick.away_team_avg_skill
+
+            # Predicted winner: lower avg_skill = better team
+            if home_skill is not None and away_skill is not None:
+                predicted_winner_team_id = (
+                    pick.home_team_id if float(home_skill) < float(away_skill) else pick.away_team_id
+                )
+                skill_differential = float(away_skill) - float(home_skill)
+            else:
+                predicted_winner_team_id = None
+                skill_differential = None
+
+            # Look up org_id from HB teams table
+            org_id = None
+            try:
+                from hockey_blast_common_lib.models import Team as HBTeam
+                _hb = HBSession()
+                _team_row = _hb.execute(
+                    select(HBTeam).where(HBTeam.id == pick.home_team_id)
+                ).scalar_one_or_none()
+                if _team_row is not None:
+                    org_id = _team_row.org_id
+            except Exception as _org_exc:
+                logging.getLogger(__name__).warning(
+                    "Could not fetch org_id for home_team_id=%s: %s", pick.home_team_id, _org_exc
+                )
+
+            game_date = (
+                pick.game_scheduled_start.date()
+                if pick.game_scheduled_start and hasattr(pick.game_scheduled_start, "date")
+                else None
+            )
+
+            log_row = GamePredictionLog(
+                game_id=pick.game_id,
+                org_id=org_id,
+                game_date=game_date,
+                game_scheduled_start=pick.game_scheduled_start,
+                home_team_id=pick.home_team_id,
+                away_team_id=pick.away_team_id,
+                home_avg_skill=home_skill,
+                away_avg_skill=away_skill,
+                skill_differential=skill_differential,
+                predicted_winner_team_id=predicted_winner_team_id,
+            )
+            pred_session.add(log_row)
+            pred_session.commit()
+    except Exception as _snap_exc:
+        logging.getLogger(__name__).error(
+            "Failed to snapshot game_prediction_log for game_id=%s: %s", pick.game_id, _snap_exc
+        )
+        pred_session.rollback()
 
     # Compute projected points
     league_stmt = select(PredLeague).where(PredLeague.id == league_id)

@@ -27,6 +27,7 @@ from app.models.fantasy_roster import FantasyRoster
 from app.models.fantasy_draft_queue import FantasyDraftQueue
 from app.models.fantasy_game_scores import FantasyGameScores
 from app.models.fantasy_standings import FantasyStandings
+from app.models.game_prediction_log import GamePredictionLog
 
 __all__ = [
     "PredUser",
@@ -52,4 +53,5 @@ __all__ = [
     "FantasyDraftQueue",
     "FantasyGameScores",
     "FantasyStandings",
+    "GamePredictionLog",
 ]

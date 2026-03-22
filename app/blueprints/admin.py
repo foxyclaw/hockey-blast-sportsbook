@@ -675,187 +675,230 @@ def chat_questions():
     return jsonify({"questions": result, "count": len(result)})
 
 
+def _build_orgs_list(org_ids) -> list:
+    """Build orgs dropdown list from a list of org_ids, fetching names from HB."""
+    orgs_out = [{"id": None, "name": "All Orgs"}]
+    present_org_ids = {oid for oid in org_ids if oid is not None}
+    if present_org_ids:
+        try:
+            from hockey_blast_common_lib.models import Organization
+            hb = HBSession()
+            org_objs = hb.execute(
+                select(Organization.id, Organization.organization_name)
+                .where(Organization.id.in_(present_org_ids))
+                .order_by(Organization.id)
+            ).all()
+            orgs_out += [{"id": o.id, "name": o.organization_name} for o in org_objs]
+        except Exception as e:
+            logging.getLogger(__name__).warning("Could not fetch org names: %s", e)
+            orgs_out += [{"id": oid, "name": f"Org #{oid}"} for oid in sorted(present_org_ids)]
+    return orgs_out
+
+
 @admin_bp.route("/prediction-analysis", methods=["GET"])
 @require_admin
 def prediction_analysis():
     """
     GET /api/admin/prediction-analysis
 
-    Query params:
-        min_confidence (int, default 1) — exclude picks below this confidence
-        min_skill_diff (float, default 0.0) — exclude picks with abs(skill_diff) < threshold
-        org_id (int, optional) — filter by org via pred_leagues.org_id
+    Measures system prediction accuracy using the game_prediction_logs table.
+    Logs are snapshotted at first-pick time and compared against final HB scores.
 
-    Returns weekly breakdown + overall stats + confidence breakdown + orgs list.
+    Key rule: lower avg_skill = better team (0=elite, 100=worst).
+    Predicted winner = team with lower avg_skill (stored in game_prediction_logs).
+
+    Query params:
+        min_skill_diff (float, default 0.0) — exclude games where abs(skill_differential) < threshold
+        org_id (int, optional) — filter by org_id from game_prediction_logs
+
+    Response:
+        weeks[]   — weekly accuracy (newest first)
+        overall   — aggregate stats + by_skill_diff_bucket breakdown
+        orgs[]    — [{id, name}] available orgs
     """
     from datetime import date, timedelta
     from collections import defaultdict
 
-    from app.models.pred_pick import PredPick
-    from app.models.pred_result import PredResult
-    from app.models.pred_league import PredLeague
+    from app.models.game_prediction_log import GamePredictionLog
 
-    min_confidence = request.args.get("min_confidence", 1, type=int)
+    FINAL_STATUSES = {"Final", "Final.", "Final/OT", "Final/OT2", "Final/SO", "Final(SO)"}
+
     min_skill_diff = request.args.get("min_skill_diff", 0.0, type=float)
     org_id_filter = request.args.get("org_id", None, type=int)
 
     pred_session = PredSession()
 
-    # ── Build base query: graded picks with result ────────────────────────────
-    stmt = (
-        select(
-            PredPick.id,
-            PredPick.game_scheduled_start,
-            PredPick.confidence,
-            PredPick.skill_differential,
-            PredPick.is_upset_pick,
-            PredPick.league_id,
-            PredResult.is_correct,
-        )
-        .join(PredResult, PredResult.pick_id == PredPick.id)
-        .where(PredPick.confidence >= min_confidence)
+    # ── 1. Query game_prediction_logs ─────────────────────────────────────────
+    stmt = select(GamePredictionLog).where(
+        func.abs(GamePredictionLog.skill_differential) >= min_skill_diff
     )
-
-    if min_skill_diff > 0.0:
-        stmt = stmt.where(
-            sa.or_(
-                PredPick.skill_differential == None,  # noqa: E711
-                sa.func.abs(PredPick.skill_differential) >= min_skill_diff,
-            )
-        )
-
     if org_id_filter is not None:
-        # Filter by org_id in pred_leagues — org_id=NULL means "all orgs" league
-        stmt = stmt.join(PredLeague, PredLeague.id == PredPick.league_id).where(
-            PredLeague.org_id == org_id_filter
-        )
+        stmt = stmt.where(GamePredictionLog.org_id == org_id_filter)
 
-    rows = pred_session.execute(stmt).all()
+    log_rows = pred_session.execute(stmt).scalars().all()
 
-    # ── Bucket rows by ISO week (Monday start) ────────────────────────────────
-    weeks: dict = defaultdict(lambda: {"total": 0, "correct": 0, "skill_diffs": [], "upset_picks": 0, "upset_correct": 0})
-    conf_stats: dict = defaultdict(lambda: {"total": 0, "correct": 0})
+    # Build orgs list from all logs (unfiltered) for the dropdown
+    all_org_ids = pred_session.execute(
+        select(GamePredictionLog.org_id).distinct()
+    ).scalars().all()
+    orgs_out = _build_orgs_list(all_org_ids)
 
-    total_graded = 0
-    total_correct = 0
-    total_skill_diffs = []
-    total_upset_picks = 0
-    total_upset_correct = 0
+    if not log_rows:
+        return jsonify({
+            "weeks": [],
+            "overall": {
+                "total": 0, "correct": 0, "rate": 0.0,
+                "by_skill_diff_bucket": {
+                    "0-5": {"total": 0, "correct": 0, "rate": 0.0},
+                    "5-10": {"total": 0, "correct": 0, "rate": 0.0},
+                    "10-20": {"total": 0, "correct": 0, "rate": 0.0},
+                    "20+": {"total": 0, "correct": 0, "rate": 0.0},
+                },
+            },
+            "orgs": orgs_out,
+        })
 
-    for row in rows:
-        total_graded += 1
-        is_correct = bool(row.is_correct)
+    # ── 2. Fetch HB game results ───────────────────────────────────────────────
+    game_ids = [r.game_id for r in log_rows]
+    game_results: dict = {}  # game_id -> {home_final_score, visitor_final_score, status}
 
-        if is_correct:
-            total_correct += 1
+    try:
+        from hockey_blast_common_lib.models import Game
+        hb = HBSession()
+        hb_games = hb.execute(
+            select(
+                Game.id,
+                Game.home_final_score,
+                Game.visitor_final_score,
+                Game.status,
+            ).where(Game.id.in_(game_ids))
+        ).all()
+        for g in hb_games:
+            game_results[g.id] = {
+                "home_final_score": g.home_final_score,
+                "visitor_final_score": g.visitor_final_score,
+                "status": g.status,
+            }
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not fetch HB game results: %s", e)
 
-        # Skill diff
-        sd = float(row.skill_differential) if row.skill_differential is not None else None
-        if sd is not None:
-            total_skill_diffs.append(abs(sd))
-
-        # Upset
-        if row.is_upset_pick:
-            total_upset_picks += 1
-            if is_correct:
-                total_upset_correct += 1
-
-        # Confidence breakdown
-        conf = row.confidence
-        conf_stats[conf]["total"] += 1
-        if is_correct:
-            conf_stats[conf]["correct"] += 1
-
-        # Week bucket — use game_scheduled_start
-        if row.game_scheduled_start:
-            gd = row.game_scheduled_start.date() if hasattr(row.game_scheduled_start, 'date') else date.fromisoformat(str(row.game_scheduled_start)[:10])
-            # Find Monday of the week
-            week_start = gd - timedelta(days=gd.weekday())
-        else:
-            week_start = date(2000, 1, 1)
-
-        wk = weeks[str(week_start)]
-        wk["total"] += 1
-        if is_correct:
-            wk["correct"] += 1
-        if sd is not None:
-            wk["skill_diffs"].append(abs(sd))
-        if row.is_upset_pick:
-            wk["upset_picks"] += 1
-            if is_correct:
-                wk["upset_correct"] += 1
-
-    # ── Format weeks ──────────────────────────────────────────────────────────
+    # ── 3. Helper functions ───────────────────────────────────────────────────
     def _rate(correct, total):
         return round(correct / total * 100, 1) if total else 0.0
 
     def _avg(vals):
         return round(sum(vals) / len(vals), 2) if vals else 0.0
 
+    def _skill_diff_bucket(diff: float) -> str:
+        d = abs(diff)
+        if d < 5:
+            return "0-5"
+        if d < 10:
+            return "5-10"
+        if d < 20:
+            return "10-20"
+        return "20+"
+
+    # ── 4. Process each log row ───────────────────────────────────────────────
+    weeks: dict = defaultdict(lambda: {
+        "total": 0, "correct": 0, "skill_diffs": [],
+        "upsets_total": 0, "upsets_correct": 0,
+    })
+    bucket_order = ["0-5", "5-10", "10-20", "20+"]
+    diff_buckets: dict = defaultdict(lambda: {"total": 0, "correct": 0})
+
+    total_games = 0
+    total_correct = 0
+    all_skill_diffs = []
+
+    for log in log_rows:
+        game_res = game_results.get(log.game_id)
+        if game_res is None:
+            continue
+        if game_res["status"] not in FINAL_STATUSES:
+            continue
+        if game_res["home_final_score"] is None or game_res["visitor_final_score"] is None:
+            continue
+        if log.predicted_winner_team_id is None:
+            continue
+
+        # Determine actual winner
+        if game_res["home_final_score"] > game_res["visitor_final_score"]:
+            actual_winner_team_id = log.home_team_id
+        else:
+            actual_winner_team_id = log.away_team_id
+
+        is_correct = (actual_winner_team_id == log.predicted_winner_team_id)
+        skill_diff = float(log.skill_differential) if log.skill_differential is not None else 0.0
+        abs_diff = abs(skill_diff)
+
+        # Upset = underdog (higher skill = worse team) actually won
+        is_upset = not is_correct
+
+        total_games += 1
+        if is_correct:
+            total_correct += 1
+        all_skill_diffs.append(abs_diff)
+
+        # Week bucket (ISO week, Monday start)
+        if log.game_scheduled_start:
+            gd = (
+                log.game_scheduled_start.date()
+                if hasattr(log.game_scheduled_start, "date")
+                else date.fromisoformat(str(log.game_scheduled_start)[:10])
+            )
+        elif log.game_date:
+            gd = log.game_date
+        else:
+            gd = date(2000, 1, 1)
+
+        week_start = gd - timedelta(days=gd.weekday())
+        wk = weeks[str(week_start)]
+        wk["total"] += 1
+        if is_correct:
+            wk["correct"] += 1
+        wk["skill_diffs"].append(abs_diff)
+        if is_upset:
+            wk["upsets_total"] += 1
+            wk["upsets_correct"] += 1
+
+        # Skill diff bucket
+        bucket = _skill_diff_bucket(skill_diff)
+        diff_buckets[bucket]["total"] += 1
+        if is_correct:
+            diff_buckets[bucket]["correct"] += 1
+
+    # ── 5. Format weeks output (newest first) ────────────────────────────────
     weeks_out = []
     for week_start_str in sorted(weeks.keys(), reverse=True):
         wk = weeks[week_start_str]
         weeks_out.append({
             "week_start": week_start_str,
-            "total_graded": wk["total"],
+            "total": wk["total"],
             "correct": wk["correct"],
-            "success_rate": _rate(wk["correct"], wk["total"]),
+            "rate": _rate(wk["correct"], wk["total"]),
             "avg_skill_diff": _avg(wk["skill_diffs"]),
-            "upset_picks": wk["upset_picks"],
-            "upset_correct": wk["upset_correct"],
-            "upset_rate": _rate(wk["upset_correct"], wk["upset_picks"]),
+            "upsets_correct": wk["upsets_correct"],
+            "upsets_total": wk["upsets_total"],
         })
 
-    # ── By-confidence breakdown ───────────────────────────────────────────────
-    by_confidence = {}
-    best_conf_label = None
-    best_conf_rate = -1.0
-    for c in [1, 2, 3]:
-        cs = conf_stats.get(c, {"total": 0, "correct": 0})
-        r = _rate(cs["correct"], cs["total"])
-        by_confidence[str(c)] = {
-            "total": cs["total"],
-            "correct": cs["correct"],
-            "rate": r,
+    # ── 6. By-skill-diff-bucket breakdown ────────────────────────────────────
+    by_skill_diff_bucket = {}
+    for bk in bucket_order:
+        bdata = diff_buckets.get(bk, {"total": 0, "correct": 0})
+        by_skill_diff_bucket[bk] = {
+            "total": bdata["total"],
+            "correct": bdata["correct"],
+            "rate": _rate(bdata["correct"], bdata["total"]),
         }
-        if cs["total"] > 0 and r > best_conf_rate:
-            best_conf_rate = r
-            best_conf_label = c
-
-    # ── Orgs list (from pred_leagues in pred DB) ──────────────────────────────
-    org_rows = pred_session.execute(
-        select(PredLeague.org_id).distinct()
-    ).scalars().all()
-
-    orgs_out = [{"id": None, "name": "All Orgs"}]
-    non_null_org_ids = [oid for oid in org_rows if oid is not None]
-
-    if non_null_org_ids:
-        try:
-            from hockey_blast_common_lib.models import Organization
-            hb = HBSession()
-            org_objs = hb.execute(
-                select(Organization.id, Organization.organization_name)
-                .where(Organization.id.in_(non_null_org_ids))
-                .order_by(Organization.id)
-            ).all()
-            orgs_out += [{"id": o.id, "name": o.organization_name} for o in org_objs]
-        except Exception:
-            orgs_out += [{"id": oid, "name": f"Org #{oid}"} for oid in sorted(non_null_org_ids)]
 
     return jsonify({
         "weeks": weeks_out,
         "overall": {
-            "total_graded": total_graded,
+            "total": total_games,
             "correct": total_correct,
-            "success_rate": _rate(total_correct, total_graded),
-            "avg_skill_diff": _avg(total_skill_diffs),
-            "upset_picks": total_upset_picks,
-            "upset_correct": total_upset_correct,
-            "upset_rate": _rate(total_upset_correct, total_upset_picks),
-            "best_confidence": best_conf_label,
-            "best_confidence_rate": best_conf_rate if best_conf_label else None,
-            "by_confidence": by_confidence,
+            "rate": _rate(total_correct, total_games),
+            "by_skill_diff_bucket": by_skill_diff_bucket,
         },
         "orgs": orgs_out,
     })

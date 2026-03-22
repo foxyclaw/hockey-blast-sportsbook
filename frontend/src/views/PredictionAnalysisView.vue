@@ -17,16 +17,6 @@
             </select>
           </div>
 
-          <!-- Min confidence -->
-          <div class="form-control">
-            <label class="label py-1"><span class="label-text text-xs">Min confidence</span></label>
-            <select v-model.number="filters.minConfidence" class="select select-bordered select-sm w-36" @change="onFilterChange">
-              <option :value="1">1 — Any</option>
-              <option :value="2">2 — Medium+</option>
-              <option :value="3">3 — High only</option>
-            </select>
-          </div>
-
           <!-- Min skill gap -->
           <div class="form-control">
             <label class="label py-1"><span class="label-text text-xs">Min skill gap</span></label>
@@ -55,45 +45,35 @@
 
     <template v-else-if="data">
       <!-- Summary cards -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <div class="stat bg-base-200 rounded-xl shadow">
           <div class="stat-title text-xs">Overall Success Rate</div>
-          <div class="stat-value text-primary text-3xl">{{ data.overall.success_rate }}%</div>
-          <div class="stat-desc">{{ data.overall.correct }} / {{ data.overall.total_graded }} picks</div>
+          <div class="stat-value text-primary text-3xl">{{ data.overall.rate }}%</div>
+          <div class="stat-desc">{{ data.overall.correct }} / {{ data.overall.total }} games</div>
         </div>
         <div class="stat bg-base-200 rounded-xl shadow">
           <div class="stat-title text-xs">Total Graded</div>
-          <div class="stat-value text-2xl">{{ data.overall.total_graded }}</div>
-          <div class="stat-desc">Avg skill gap: {{ data.overall.avg_skill_diff }}</div>
+          <div class="stat-value text-2xl">{{ data.overall.total }}</div>
+          <div class="stat-desc">Games with final scores</div>
         </div>
         <div class="stat bg-base-200 rounded-xl shadow">
-          <div class="stat-title text-xs">Upset Success Rate</div>
-          <div class="stat-value text-warning text-3xl">{{ data.overall.upset_rate }}%</div>
-          <div class="stat-desc">{{ data.overall.upset_correct }} / {{ data.overall.upset_picks }} upset picks</div>
-        </div>
-        <div class="stat bg-base-200 rounded-xl shadow">
-          <div class="stat-title text-xs">Best Confidence Level</div>
-          <div class="stat-value text-success text-3xl">
-            <template v-if="data.overall.best_confidence">
-              {{ confidenceLabel(data.overall.best_confidence) }}
-            </template>
+          <div class="stat-title text-xs">Best Skill Gap Bucket</div>
+          <div class="stat-value text-success text-2xl">
+            <template v-if="bestBucket">{{ bestBucket.label }}</template>
             <template v-else>—</template>
           </div>
           <div class="stat-desc">
-            <template v-if="data.overall.best_confidence">
-              {{ data.overall.best_confidence_rate }}% success rate
-            </template>
-            <template v-else>No graded picks yet</template>
+            <template v-if="bestBucket">{{ bestBucket.rate }}% ({{ bestBucket.total }} games)</template>
+            <template v-else>Not enough data</template>
           </div>
         </div>
       </div>
 
-      <!-- Weekly chart (CSS bar chart) -->
+      <!-- Weekly chart (SVG line chart) -->
       <div v-if="data.weeks.length" class="card bg-base-200 shadow mb-6">
         <div class="card-body p-4">
           <h2 class="font-semibold mb-3">Weekly Success Rate</h2>
           <div class="overflow-x-auto">
-            <!-- Simple SVG line chart -->
             <svg
               v-if="chartPoints.length > 1"
               :width="chartWidth"
@@ -147,7 +127,7 @@
         <div class="card-body p-4">
           <h2 class="font-semibold mb-3">Weekly Breakdown</h2>
           <div v-if="!data.weeks.length" class="text-sm text-base-content/50 py-4 text-center">
-            No graded picks match the current filters.
+            No graded games match the current filters.
           </div>
           <div v-else class="overflow-x-auto">
             <table class="table table-sm w-full text-sm">
@@ -157,7 +137,7 @@
                   <th class="text-right">Games</th>
                   <th class="text-right">Correct</th>
                   <th class="text-right">Rate</th>
-                  <th class="text-right">Avg Skill Gap</th>
+                  <th class="text-right">Avg Skill Diff</th>
                   <th class="text-right">Upsets</th>
                   <th class="text-right">Upset Rate</th>
                 </tr>
@@ -165,15 +145,17 @@
               <tbody>
                 <tr v-for="wk in data.weeks" :key="wk.week_start" class="hover">
                   <td class="font-mono text-xs">{{ wk.week_start }}</td>
-                  <td class="text-right">{{ wk.total_graded }}</td>
+                  <td class="text-right">{{ wk.total }}</td>
                   <td class="text-right">{{ wk.correct }}</td>
                   <td class="text-right">
-                    <span :class="rateColor(wk.success_rate)">{{ wk.success_rate }}%</span>
+                    <span :class="rateColor(wk.rate)">{{ wk.rate }}%</span>
                   </td>
                   <td class="text-right">{{ wk.avg_skill_diff }}</td>
-                  <td class="text-right">{{ wk.upset_picks }}</td>
+                  <td class="text-right">{{ wk.upsets_total }}</td>
                   <td class="text-right">
-                    <span v-if="wk.upset_picks > 0" :class="rateColor(wk.upset_rate)">{{ wk.upset_rate }}%</span>
+                    <span v-if="wk.upsets_total > 0" :class="rateColor(upsetRate(wk))">
+                      {{ upsetRate(wk) }}%
+                    </span>
                     <span v-else class="text-base-content/30">—</span>
                   </td>
                 </tr>
@@ -183,34 +165,42 @@
         </div>
       </div>
 
-      <!-- By confidence breakdown -->
+      <!-- By skill gap breakdown -->
       <div class="card bg-base-200 shadow mb-6">
         <div class="card-body p-4">
-          <h2 class="font-semibold mb-3">By Confidence Level</h2>
-          <div class="space-y-3">
-            <div v-for="c in [1, 2, 3]" :key="c" class="flex items-center gap-3">
-              <div class="w-24 text-sm font-medium shrink-0">
-                <span :class="confBadge(c)" class="badge badge-sm mr-1">{{ c }}</span>
-                {{ ['Low', 'Medium', 'High'][c - 1] }}
-              </div>
-              <div class="w-16 text-right text-xs text-base-content/60 shrink-0">
-                {{ data.overall.by_confidence[c]?.total ?? 0 }} picks
-              </div>
-              <div class="w-16 text-right text-xs shrink-0">
-                {{ data.overall.by_confidence[c]?.correct ?? 0 }} correct
-              </div>
-              <div class="w-14 text-right text-sm font-semibold shrink-0" :class="rateColor(data.overall.by_confidence[c]?.rate ?? 0)">
-                {{ data.overall.by_confidence[c]?.rate ?? 0 }}%
-              </div>
-              <!-- Visual bar -->
-              <div class="flex-1 bg-base-300 rounded h-4 overflow-hidden">
-                <div
-                  class="h-full rounded transition-all duration-500"
-                  :class="confBarColor(c)"
-                  :style="{ width: (data.overall.by_confidence[c]?.rate ?? 0) + '%' }"
-                ></div>
-              </div>
-            </div>
+          <h2 class="font-semibold mb-3">By Skill Gap</h2>
+          <div class="overflow-x-auto">
+            <table class="table table-sm w-full text-sm">
+              <thead>
+                <tr>
+                  <th>Skill Gap</th>
+                  <th class="text-right">Games</th>
+                  <th class="text-right">Correct</th>
+                  <th class="text-right">Rate</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="bk in bucketOrder" :key="bk" class="hover">
+                  <td class="font-mono text-sm font-medium">{{ bk }}</td>
+                  <td class="text-right">{{ data.overall.by_skill_diff_bucket[bk]?.total ?? 0 }}</td>
+                  <td class="text-right">{{ data.overall.by_skill_diff_bucket[bk]?.correct ?? 0 }}</td>
+                  <td class="text-right">
+                    <span :class="rateColor(data.overall.by_skill_diff_bucket[bk]?.rate ?? 0)">
+                      {{ data.overall.by_skill_diff_bucket[bk]?.rate ?? 0 }}%
+                    </span>
+                  </td>
+                  <td class="w-40">
+                    <div class="bg-base-300 rounded h-4 overflow-hidden">
+                      <div
+                        class="h-full rounded transition-all duration-500 bg-primary"
+                        :style="{ width: (data.overall.by_skill_diff_bucket[bk]?.rate ?? 0) + '%' }"
+                      ></div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -228,9 +218,10 @@ import { useApiClient } from '@/api/client'
 
 const api = useApiClient()
 
+const bucketOrder = ['0-5', '5-10', '10-20', '20+']
+
 const filters = ref({
   orgId: null,
-  minConfidence: 1,
   minSkillDiff: 0,
 })
 
@@ -248,7 +239,6 @@ async function load() {
   loading.value = true
   try {
     const params = new URLSearchParams()
-    params.set('min_confidence', filters.value.minConfidence)
     params.set('min_skill_diff', filters.value.minSkillDiff)
     if (filters.value.orgId !== null) params.set('org_id', filters.value.orgId)
 
@@ -267,6 +257,26 @@ async function load() {
 }
 
 onMounted(load)
+
+// Best bucket: highest rate with at least 3 games
+const bestBucket = computed(() => {
+  if (!data.value?.overall?.by_skill_diff_bucket) return null
+  const buckets = data.value.overall.by_skill_diff_bucket
+  let best = null
+  for (const bk of bucketOrder) {
+    const b = buckets[bk]
+    if (!b || b.total < 3) continue
+    if (!best || b.rate > best.rate) {
+      best = { label: bk, ...b }
+    }
+  }
+  return best
+})
+
+function upsetRate(wk) {
+  if (!wk.upsets_total) return 0
+  return Math.round(wk.upsets_correct / wk.upsets_total * 1000) / 10
+}
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 const chartPad = 36
@@ -288,8 +298,8 @@ const chartPoints = computed(() => {
   const n = sorted.length
   return sorted.map((wk, i) => ({
     x: chartPad + (n === 1 ? (chartWidth.value - chartPad - 10) / 2 : i * ((chartWidth.value - chartPad - 10) / (n - 1))),
-    y: chartY(wk.success_rate),
-    label: `${wk.week_start}: ${wk.correct}/${wk.total_graded} (${wk.success_rate}%)`,
+    y: chartY(wk.rate),
+    label: `${wk.week_start}: ${wk.correct}/${wk.total} (${wk.rate}%)`,
     weekLabel: wk.week_start.slice(5), // MM-DD
   }))
 })
@@ -306,17 +316,5 @@ function rateColor(rate) {
   if (rate >= 65) return 'text-success'
   if (rate >= 50) return 'text-warning'
   return 'text-error'
-}
-
-function confidenceLabel(c) {
-  return { 1: '1 – Low', 2: '2 – Med', 3: '3 – High' }[c] ?? String(c)
-}
-
-function confBadge(c) {
-  return { 1: 'badge-ghost', 2: 'badge-warning', 3: 'badge-success' }[c] ?? 'badge-ghost'
-}
-
-function confBarColor(c) {
-  return { 1: 'bg-base-content/30', 2: 'bg-warning', 3: 'bg-success' }[c] ?? 'bg-primary'
 }
 </script>
