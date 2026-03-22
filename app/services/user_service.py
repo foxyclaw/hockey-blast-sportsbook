@@ -41,6 +41,8 @@ def get_or_create_pred_user(token_payload: dict[str, Any], session: Session) -> 
         user = PredUser(
             auth0_sub=sub,
             display_name=display_name[:64],
+            given_name=token_payload.get("given_name"),
+            family_name=token_payload.get("family_name"),
             email=token_payload.get("email"),
             avatar_url=token_payload.get("picture"),
             created_at=now,
@@ -61,6 +63,12 @@ def get_or_create_pred_user(token_payload: dict[str, Any], session: Session) -> 
 
         if token_payload.get("email") and not user.email:
             user.email = token_payload["email"]
+
+        if token_payload.get("given_name") and not user.given_name:
+            user.given_name = token_payload["given_name"]
+
+        if token_payload.get("family_name") and not user.family_name:
+            user.family_name = token_payload["family_name"]
 
     return user
 

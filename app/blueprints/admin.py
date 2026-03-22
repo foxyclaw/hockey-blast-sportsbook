@@ -10,14 +10,17 @@ Routes (all require is_admin):
     POST /api/admin/users/<id>/toggle-admin    — toggle is_admin (super admin only)
 """
 
+import logging
 from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify, request
 import sqlalchemy as sa
 from sqlalchemy import select, func
 
+from hockey_blast_common_lib.merge_humans import merge_humans
+
 from app.auth.admin_required import require_admin
-from app.db import PredSession
+from app.db import HBSession, PredSession
 from app.models.pred_user import PredUser
 from app.models.pred_user_hb_claim import PredUserHbClaim
 from app.utils.response import error_response
@@ -131,6 +134,42 @@ def approve_claim(claim_id: int):
         claim.is_primary = True
 
     pred_session.commit()
+
+    # If the user now has 2+ confirmed claims, merge all secondary human IDs
+    # into the primary one in the hockey_blast DB.
+    try:
+        confirmed_claims = pred_session.execute(
+            select(PredUserHbClaim).where(
+                PredUserHbClaim.user_id == claim.user_id,
+                PredUserHbClaim.claim_status == "confirmed",
+            )
+        ).scalars().all()
+
+        if len(confirmed_claims) >= 2:
+            primary_claim = next((c for c in confirmed_claims if c.is_primary), None)
+            if primary_claim:
+                hb_session = HBSession()
+                merged_secondary_claims = []
+                for secondary_claim in confirmed_claims:
+                    if secondary_claim.id != primary_claim.id:
+                        merge_humans(
+                            hb_session,
+                            primary_human_id=primary_claim.hb_human_id,
+                            secondary_human_id=secondary_claim.hb_human_id,
+                        )
+                        merged_secondary_claims.append(secondary_claim)
+                hb_session.close()
+                now_utc = datetime.now(timezone.utc)
+                for sc in merged_secondary_claims:
+                    sc.merged_at = now_utc
+                pred_session.commit()
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "merge_humans failed for user_id=%d after approving claim_id=%d",
+            claim.user_id,
+            claim_id,
+        )
+
     return jsonify({"ok": True, "claim": _claim_detail(claim, pred_session)})
 
 

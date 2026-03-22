@@ -35,6 +35,12 @@ class PredUser(PredBase):
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Sourced from Auth0 `picture` claim.
 
+    given_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Sourced from Auth0 `given_name` claim (first name from identity provider).
+
+    family_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Sourced from Auth0 `family_name` claim (last name from identity provider).
+
     # Linked hockey_blast human (optional — user connects their HB profile manually)
     hb_human_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # References hockey_blast.humans.id — no FK constraint (cross-DB)
@@ -85,6 +91,8 @@ class PredUser(PredBase):
         return {
             "id": self.id,
             "display_name": self.display_name,
+            "given_name": self.given_name,
+            "family_name": self.family_name,
             "email": self.email,
             "avatar_url": self.avatar_url,
             "hb_human_id": self.hb_human_id,

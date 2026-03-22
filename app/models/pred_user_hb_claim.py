@@ -51,6 +51,13 @@ class PredUserHbClaim(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # ── Merge tracking ───────────────────────────────────────────────────────
+    # Set when this claim's hb_human_id has been merged into the primary human
+    # on the hockey_blast side. NULL means the HB-side merge has not run yet.
+    merged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Prevent exact duplicate claims (same user + same hb_human_id)
     __table_args__ = (
         UniqueConstraint("user_id", "hb_human_id", name="uq_user_hb_claim"),
@@ -68,5 +75,6 @@ class PredUserHbClaim(Base):
             "reviewed_by": self.reviewed_by,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "claimed_at": self.claimed_at.isoformat() if self.claimed_at else None,
+            "merged_at": self.merged_at.isoformat() if self.merged_at else None,
             "profile_snapshot": self.profile_snapshot,
         }

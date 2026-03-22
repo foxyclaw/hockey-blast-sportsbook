@@ -14,15 +14,21 @@ Security model:
       "Bob" and "Robert" both return matching players.
 """
 
+import csv
+import logging
+import os
+from datetime import datetime, timezone
+
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select, func, distinct, or_
 
-import csv
-import os
+from hockey_blast_common_lib.merge_humans import merge_humans
 
 from app.auth.jwt_validator import require_auth
 from app.db import HBSession, PredSession
 from app.utils.response import error_response
+
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Nickname / synonym expansion — loaded from name_synonyms.csv
@@ -193,10 +199,14 @@ def get_candidates():
     user = g.pred_user
     q = (request.args.get("q") or "").strip()
 
-    # ── Extract first / last from the user's Auth0-sourced display_name ─────
-    display_parts = (user.display_name or "").rsplit(None, 1)
-    user_last = display_parts[-1] if display_parts else ""
-    user_first = display_parts[0] if len(display_parts) > 1 else ""
+    # ── Extract first / last from Auth0 claims, falling back to display_name ─
+    if user.given_name or user.family_name:
+        user_first = user.given_name or ""
+        user_last = user.family_name or ""
+    else:
+        display_parts = (user.display_name or "").rsplit(None, 1)
+        user_last = display_parts[-1] if display_parts else ""
+        user_first = display_parts[0] if len(display_parts) > 1 else ""
 
     try:
         Human, HumanAlias, _, _, _, _, _ = _get_hb_models()
@@ -402,6 +412,41 @@ def confirm_identity():
             user.hb_human_id = hid
 
     pred_session.commit()
+
+    # If all new claims were auto-confirmed (no pending_review), merge any
+    # secondary human IDs into the primary one in the hockey_blast DB.
+    if not pending_review_ids:
+        try:
+            confirmed_claims = pred_session.execute(
+                select(PredUserHbClaim).where(
+                    PredUserHbClaim.user_id == user.id,
+                    PredUserHbClaim.claim_status == "confirmed",
+                )
+            ).scalars().all()
+
+            if len(confirmed_claims) >= 2:
+                primary_claim = next((c for c in confirmed_claims if c.is_primary), None)
+                if primary_claim:
+                    hb_merge_session = HBSession()
+                    merged_secondary_claims = []
+                    for secondary_claim in confirmed_claims:
+                        if secondary_claim.id != primary_claim.id:
+                            merge_humans(
+                                hb_merge_session,
+                                primary_human_id=primary_claim.hb_human_id,
+                                secondary_human_id=secondary_claim.hb_human_id,
+                            )
+                            merged_secondary_claims.append(secondary_claim)
+                    hb_merge_session.close()
+                    now_utc = datetime.now(timezone.utc)
+                    for sc in merged_secondary_claims:
+                        sc.merged_at = now_utc
+                    pred_session.commit()
+        except Exception:
+            _logger.exception(
+                "merge_humans failed for user_id=%d after confirm_identity",
+                user.id,
+            )
 
     all_claims = pred_session.execute(
         select(PredUserHbClaim).where(PredUserHbClaim.user_id == user.id)
