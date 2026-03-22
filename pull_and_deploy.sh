@@ -74,10 +74,11 @@ fi
 echo ""
 echo "🗄️  Running DB migrations..."
 DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
-if "$DEPLOY_DIR/.venv/bin/flask" db upgrade 2>&1 | grep -v "INFO\|apscheduler\|grader\|Scheduler\|No such command"; then
+if "$DEPLOY_DIR/.venv/bin/alembic" -c "$DEPLOY_DIR/migrations/alembic.ini" upgrade head 2>&1; then
   echo "   ✅ Migrations complete"
 else
-  echo "   ⚠️  No flask-migrate or nothing to migrate — skipping"
+  echo "   ❌ Migrations failed — check output above"
+  exit 1
 fi
 
 # ── 4. Restart the service ─────────────────────────────────────────────────
