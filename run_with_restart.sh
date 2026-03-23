@@ -1,16 +1,16 @@
 #!/bin/bash
-# Auto-restart wrapper for hockey-blast-sportsbook
 cd "$(dirname "$0")"
 set -a && source .env && set +a
 PYTHON=".venv/bin/python"
-
-echo "Starting hockey-blast-sportsbook..."
+APP_PORT=${PORT:-5002}
+echo "Starting hockey-blast-sportsbook on port $APP_PORT (HTTP)..."
 while true; do
-    echo "[$(date)] Starting app on port 5002..."
+    echo "[$(date)] Starting app on port $APP_PORT..."
     $PYTHON -c "
+import os
 from app import create_app
 app = create_app()
-app.run(host='0.0.0.0', port=5002, ssl_context=('cert.pem','key.pem'), debug=False, use_reloader=False)
+app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5002)), debug=False, use_reloader=False)
 "
     EXIT_CODE=$?
     echo "[$(date)] App exited with code $EXIT_CODE — restarting in 3s..."
