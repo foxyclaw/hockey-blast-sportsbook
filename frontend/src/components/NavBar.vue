@@ -42,8 +42,12 @@
             🛡️ Admin
           </RouterLink>
         </li>
+        <li>
+          <button @click="helpButtonRef?.open()" class="rounded-lg text-sm font-bold" title="Help / Feedback">?</button>
+        </li>
       </ul>
     </div>
+    <HelpButton ref="helpButtonRef" />
 
     <div class="navbar-end gap-2 w-auto shrink-0">
       <!-- Balance badge -->
@@ -125,12 +129,6 @@
         <span v-if="loginInProgress" class="loading loading-spinner loading-xs"></span>
         Sign In
       </button>
-
-      <!-- Help / Feedback button -->
-      <button @click="helpButtonRef?.open()" class="btn btn-ghost btn-circle btn-sm" title="Help / Feedback" aria-label="Help / Feedback">
-        <span style="font-weight:700;font-size:1.1rem;">?</span>
-      </button>
-      <HelpButton ref="helpButtonRef" />
 
       <!-- Mobile hamburger -->
       <div class="dropdown dropdown-end sm:hidden">
