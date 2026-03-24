@@ -86,9 +86,13 @@
       <div v-if="activeTab === 'draft'">
         <div v-if="['forming', 'draft_open'].includes(league.status)" class="text-center py-10 text-base-content/40">
           <div class="text-4xl mb-2">⏳</div>
-          <p>Waiting for the league creator to open the draft.</p>
-          <p v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)" class="mt-2">
-            <button class="btn btn-primary btn-sm" @click="isAuthenticated ? showJoinModal = true : requireLogin()">Join to participate</button>
+          <p class="font-medium">Draft opens {{ formatDeadline(league.draft_opens_at) }}</p>
+          <p class="text-sm mt-1 max-w-xs mx-auto">
+            The draft will start automatically once the league fills up, or at the scheduled time — whichever comes first.
+          </p>
+          <p v-if="league.is_member" class="mt-3 text-success text-sm">✅ You're in! You'll be notified when it's your turn to pick.</p>
+          <p v-else class="mt-3">
+            <button class="btn btn-primary btn-sm" @click="isAuthenticated ? showJoinModal = true : requireLogin()">Join League</button>
           </p>
         </div>
 
