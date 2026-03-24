@@ -331,7 +331,8 @@ def _best_available(league_id: int, user_id: int, pred, league) -> dict | None:
     if not candidates:
         return None
 
-    return max(candidates, key=lambda p: p.get("ppg", 0))
+    # Use fantasy_points (total, same sort as UI pool list)
+    return max(candidates, key=lambda p: p.get("fantasy_points", 0))
 
 
 def _get_pool(league_id: int) -> dict:
