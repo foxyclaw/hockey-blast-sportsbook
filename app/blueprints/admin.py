@@ -542,11 +542,12 @@ def launch_fantasy_season():
         level = hb.get(Level, level_id)
         level_name = level.level_name if level else str(level_id)
 
-        # Check if league already exists for this level/org
+        # Check if league already exists for this level/org/season
         existing = pred.execute(
             select(FantasyLeague).where(
                 FantasyLeague.org_id == org_id,
                 FantasyLeague.level_id == level_id,
+                FantasyLeague.season_label == season_label,
                 FantasyLeague.status.in_(["forming", "active", "drafting", "draft_open"]),
             )
         ).scalar_one_or_none()
