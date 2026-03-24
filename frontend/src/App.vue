@@ -86,7 +86,9 @@ watch(
         debugToken.value = token ? token.substring(0, 30) + '…' : 'MISSING'
         await userStore.fetchPredUser(token)
         // Trigger a navigation to current route so the router guard re-evaluates
-        await router.replace(router.currentRoute.value.fullPath)
+        if (router.currentRoute.value.name !== 'callback') {
+          await router.replace(router.currentRoute.value.fullPath)
+        }
       } catch (e) {
         debugToken.value = 'EXCEPTION: ' + e.message
         console.error('[App] fetchPredUser failed:', e)
