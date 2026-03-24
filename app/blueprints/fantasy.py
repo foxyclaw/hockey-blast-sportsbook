@@ -275,6 +275,20 @@ def list_leagues():
 
     leagues = pred.execute(stmt).scalars().all()
 
+    # Batch-load org names and HB league names for display
+    from hockey_blast_common_lib.models import Organization, League as HBLeague
+    hb = HBSession()
+    org_ids = {l.org_id for l in leagues if l.org_id}
+    hb_league_ids = {l.hb_league_id for l in leagues if l.hb_league_id}
+    org_names = {}
+    hb_league_name_map = {}
+    if org_ids:
+        for row in hb.execute(select(Organization.id, Organization.organization_name).where(Organization.id.in_(org_ids))).all():
+            org_names[row.id] = row.organization_name
+    if hb_league_ids:
+        for row in hb.execute(select(HBLeague.id, HBLeague.league_name).where(HBLeague.id.in_(hb_league_ids))).all():
+            hb_league_name_map[row.id] = row.league_name
+
     result = []
     for league in leagues:
         mgr_count = pred.execute(
@@ -282,6 +296,8 @@ def list_leagues():
         ).scalar_one()
         d = league.to_dict()
         d["manager_count"] = mgr_count
+        d["org_name"] = org_names.get(league.org_id)
+        d["hb_league_name"] = hb_league_name_map.get(league.hb_league_id) if league.hb_league_id else None
 
         # Is current user a member? Is it their turn to draft?
         if g.pred_user:
@@ -354,6 +370,42 @@ def get_league(league_id: int):
     else:
         d["is_member"] = False
         d["is_creator"] = False
+
+    # Enrich with human-readable ORG / LEAGUE / LEVEL / SEASON labels
+    from hockey_blast_common_lib.models import Organization, League as HBLeague, Season as HBSeason
+    from sqlalchemy import func as safunc
+    hb = HBSession()
+
+    org = hb.execute(select(Organization).where(Organization.id == league.org_id)).scalar_one_or_none()
+    d["org_name"] = org.organization_name if org else None
+
+    if league.hb_league_id:
+        hb_league = hb.execute(select(HBLeague).where(HBLeague.id == league.hb_league_id)).scalar_one_or_none()
+        d["hb_league_name"] = hb_league.league_name if hb_league else None
+    else:
+        d["hb_league_name"] = None
+
+    # Resolved season: explicit hb_season_id or auto-detect latest for this level
+    if league.hb_season_id:
+        season = hb.execute(select(HBSeason).where(HBSeason.id == league.hb_season_id)).scalar_one_or_none()
+        d["hb_season_name"] = season.season_name if season else None
+        d["hb_season_resolved_id"] = league.hb_season_id
+    else:
+        # Find latest season that has divisions for this level
+        from hockey_blast_common_lib.models import Division
+        latest_season_id = hb.execute(
+            select(safunc.max(Division.season_id)).where(
+                Division.level_id == league.level_id,
+                Division.org_id == league.org_id,
+            )
+        ).scalar()
+        if latest_season_id:
+            season = hb.execute(select(HBSeason).where(HBSeason.id == latest_season_id)).scalar_one_or_none()
+            d["hb_season_name"] = season.season_name if season else None
+            d["hb_season_resolved_id"] = latest_season_id
+        else:
+            d["hb_season_name"] = None
+            d["hb_season_resolved_id"] = None
 
     return jsonify(d)
 

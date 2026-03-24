@@ -17,9 +17,12 @@
               <h1 class="text-2xl font-extrabold tracking-tight">{{ league.name }}</h1>
               <span v-if="league.is_private" class="badge badge-neutral badge-sm">🔒 Private</span>
             </div>
-            <p class="text-sm text-base-content/50 mt-1">
-              Level: {{ league.level_name }}
-              <span v-if="league.season_label"> · {{ league.season_label }}</span>
+            <p class="text-sm text-base-content/50 mt-1 flex flex-wrap gap-x-3">
+              <span v-if="league.org_name">🏢 {{ league.org_name }}</span>
+              <span v-if="league.hb_league_name">🏒 {{ league.hb_league_name }}</span>
+              <span>📊 {{ league.level_name }}</span>
+              <span v-if="league.hb_season_name">📅 {{ league.hb_season_name }}</span>
+              <span v-else-if="league.season_label">📅 {{ league.season_label }}</span>
             </p>
             <p v-if="league.is_private && league.join_code && league.is_creator" class="text-xs text-base-content/40 mt-1">
               Invite code: <span class="font-mono font-bold text-base-content/70">{{ league.join_code }}</span>

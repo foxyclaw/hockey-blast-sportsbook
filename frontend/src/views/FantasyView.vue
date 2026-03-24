@@ -48,8 +48,12 @@
                     <h3 class="font-bold text-base">{{ league.name }}</h3>
                     <span v-if="league.is_private" class="badge badge-xs badge-neutral gap-1">🔒 Private</span>
                   </div>
-                  <p class="text-xs text-base-content/50">Level: {{ league.level_name }}</p>
-                  <p v-if="league.season_label" class="text-xs text-base-content/50">{{ league.season_label }}</p>
+                  <p class="text-xs text-base-content/50 flex flex-wrap gap-x-2">
+                    <span v-if="league.org_name">🏢 {{ league.org_name }}</span>
+                    <span v-if="league.hb_league_name">🏒 {{ league.hb_league_name }}</span>
+                    <span>📊 {{ league.level_name }}</span>
+                    <span v-if="league.season_label">📅 {{ league.season_label }}</span>
+                  </p>
                 </div>
                 <span class="badge badge-sm" :class="statusBadgeClass(league.status)">
                   {{ statusLabel(league.status) }}
