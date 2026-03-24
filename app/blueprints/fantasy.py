@@ -360,6 +360,27 @@ def join_league(league_id: int):
         )
         pred.add(mgr)
         pred.commit()
+
+        # Auto-open draft when league hits max_managers
+        new_count = mgr_count + 1
+        if new_count >= league.max_managers and league.status == "forming":
+            import random as _random
+            managers = pred.execute(
+                select(FantasyManager).where(FantasyManager.league_id == league_id)
+            ).scalars().all()
+            positions = list(range(1, len(managers) + 1))
+            _random.shuffle(positions)
+            for m, pos in zip(managers, positions):
+                m.draft_position = pos
+            league.status = "draft_open"
+            pred.commit()
+
+            from app.services.fantasy_draft_service import build_draft_queue
+            try:
+                build_draft_queue(league_id)
+            except Exception as e:
+                pass  # draft queue build failure shouldn't block the join response
+
     except Exception as e:
         pred.rollback()
         return error_response("INTERNAL_ERROR", str(e), 500)
