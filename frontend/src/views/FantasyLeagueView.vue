@@ -597,7 +597,7 @@ function statusBadgeClass(s) {
 function formatDeadline(iso) {
   if (!iso) return ''
   const d = new Date(iso)
-  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
 }
 
 async function loadLeague() {

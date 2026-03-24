@@ -17,7 +17,8 @@ from datetime import datetime, timezone, timedelta
 # Draft quiet hours: picks do not expire before 10 AM PT (no one gets auto-skipped overnight)
 _QUIET_START_HOUR = 0    # midnight PT
 _QUIET_END_HOUR   = 10   # 10 AM PT
-_PT = timezone(timedelta(hours=-7))  # PDT; adjust to -8 in winter
+from zoneinfo import ZoneInfo as _ZoneInfo
+_PT = _ZoneInfo("America/Los_Angeles")  # handles PDT/PST automatically
 
 
 def _deadline_respecting_quiet_hours(pick_hours: int) -> datetime:
