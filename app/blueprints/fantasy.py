@@ -40,38 +40,38 @@ fantasy_bp = Blueprint("fantasy", __name__)
 @fantasy_bp.route("/levels", methods=["GET"])
 @optional_auth
 def list_levels():
-    """GET /api/fantasy/levels — list levels active in the current season for this org."""
-    from hockey_blast_common_lib.models import Level, Division, Season
+    """GET /api/fantasy/levels — list levels that have a fantasy league for the current season."""
+    from hockey_blast_common_lib.models import Level
     from hockey_blast_common_lib.stats_models import LevelStatsSkater
-    from datetime import date, timezone as _tz
-    import datetime as _dt
+    from app.models.fantasy_league import FantasyLeague
+    from app.db import PredSession
 
     hb = HBSession()
+    pred = PredSession()
     org_id = request.args.get("org_id", 1, type=int)
-    today = date.today()
+    season_label = request.args.get("season_label", "Spring 2026")
 
-    # Active level_ids: levels that have a division in a currently running season
-    active_level_ids_stmt = (
-        select(Division.level_id)
-        .join(Season, Season.id == Division.season_id)
-        .where(
-            Season.org_id == org_id,
-            Season.start_date <= today,
-            Season.end_date >= today,
-        )
-        .distinct()
-    )
+    # Level IDs that already have a fantasy league for this org+season
+    existing_level_ids = {
+        row.level_id for row in pred.execute(
+            select(FantasyLeague.level_id)
+            .where(
+                FantasyLeague.org_id == org_id,
+                FantasyLeague.season_label == season_label,
+                FantasyLeague.status.notin_(["completed"]),
+            )
+        ).all()
+    }
 
-    # Get those levels with skater counts, filtered to active ones
+    if not existing_level_ids:
+        return jsonify({"levels": []})
+
+    # Get those levels with skater counts
     stmt = (
         select(Level, func.count(LevelStatsSkater.human_id).label("skater_count"))
         .join(LevelStatsSkater, LevelStatsSkater.level_id == Level.id, isouter=True)
-        .where(
-            Level.org_id == org_id,
-            Level.id.in_(active_level_ids_stmt),
-        )
+        .where(Level.id.in_(existing_level_ids))
         .group_by(Level.id)
-        .having(func.count(LevelStatsSkater.human_id) >= 10)
         .order_by(Level.skill_value.asc().nullslast())
     )
 
