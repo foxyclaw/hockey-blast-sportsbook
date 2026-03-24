@@ -61,7 +61,10 @@ watch(
       return
     }
     await userStore.fetchPredUser(idTokenClaims.value?.__raw)
-    router.replace({ name: 'home' })
+    // Restore the page they were trying to visit before login
+    const { appState } = useAuth0()
+    const returnTo = appState?.value?.returnTo
+    router.replace(returnTo && returnTo !== '/' ? returnTo : { name: 'home' })
   },
   { immediate: true }
 )
