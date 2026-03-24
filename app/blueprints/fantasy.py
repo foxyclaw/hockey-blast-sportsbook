@@ -40,18 +40,36 @@ fantasy_bp = Blueprint("fantasy", __name__)
 @fantasy_bp.route("/levels", methods=["GET"])
 @optional_auth
 def list_levels():
-    """GET /api/fantasy/levels — list levels that have enough players to form a league."""
-    from hockey_blast_common_lib.models import Level, Organization
+    """GET /api/fantasy/levels — list levels active in the current season for this org."""
+    from hockey_blast_common_lib.models import Level, Division, Season
     from hockey_blast_common_lib.stats_models import LevelStatsSkater
+    from datetime import date, timezone as _tz
+    import datetime as _dt
 
     hb = HBSession()
     org_id = request.args.get("org_id", 1, type=int)
+    today = date.today()
 
-    # Get all levels for this org that have at least some stats
+    # Active level_ids: levels that have a division in a currently running season
+    active_level_ids_stmt = (
+        select(Division.level_id)
+        .join(Season, Season.id == Division.season_id)
+        .where(
+            Season.org_id == org_id,
+            Season.start_date <= today,
+            Season.end_date >= today,
+        )
+        .distinct()
+    )
+
+    # Get those levels with skater counts, filtered to active ones
     stmt = (
         select(Level, func.count(LevelStatsSkater.human_id).label("skater_count"))
         .join(LevelStatsSkater, LevelStatsSkater.level_id == Level.id, isouter=True)
-        .where(Level.org_id == org_id)
+        .where(
+            Level.org_id == org_id,
+            Level.id.in_(active_level_ids_stmt),
+        )
         .group_by(Level.id)
         .having(func.count(LevelStatsSkater.human_id) >= 10)
         .order_by(Level.skill_value.asc().nullslast())
