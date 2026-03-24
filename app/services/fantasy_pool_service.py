@@ -87,7 +87,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .where(DivisionStatsSkater.division_id.in_(div_ids_stmt))
         .where(DivisionStatsSkater.human_id.not_in(non_human_ids) if non_human_ids else True)
         .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.last_name)
-        .having(func.sum(DivisionStatsSkater.games_played) >= 3)
+        .having(func.sum(DivisionStatsSkater.games_played) >= 1)
     )
 
     skater_rows = hb.execute(skater_stmt).all()
