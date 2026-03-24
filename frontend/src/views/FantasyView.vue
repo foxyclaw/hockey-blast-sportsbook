@@ -61,7 +61,7 @@
                 <span v-else-if="league.is_member" class="badge badge-xs badge-success">Joined</span>
               </div>
               <!-- Join button / code input for non-members in forming status -->
-              <div v-if="!league.is_member && league.status === 'forming'" class="mt-3">
+              <div v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)" class="mt-3">
                 <div v-if="!league.is_private">
                   <button class="btn btn-xs btn-outline btn-primary" @click="$router.push(`/fantasy/${league.id}`)">Join →</button>
                 </div>

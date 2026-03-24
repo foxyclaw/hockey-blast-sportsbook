@@ -31,7 +31,7 @@
             </span>
             <!-- Join button -->
             <button
-              v-if="!league.is_member && league.status === 'forming'"
+              v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)"
               class="btn btn-primary btn-sm"
               @click="showJoinModal = true"
             >
@@ -83,10 +83,10 @@
 
       <!-- ── Draft Tab ── -->
       <div v-if="activeTab === 'draft'">
-        <div v-if="['forming'].includes(league.status)" class="text-center py-10 text-base-content/40">
+        <div v-if="['forming', 'draft_open'].includes(league.status)" class="text-center py-10 text-base-content/40">
           <div class="text-4xl mb-2">⏳</div>
           <p>Waiting for the league creator to open the draft.</p>
-          <p v-if="!league.is_member" class="mt-2">
+          <p v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)" class="mt-2">
             <button class="btn btn-primary btn-sm" @click="showJoinModal = true">Join to participate</button>
           </p>
         </div>
@@ -345,7 +345,7 @@
       <div v-if="activeTab === 'myteam'">
         <div v-if="!league.is_member" class="text-center py-10 text-base-content/40">
           <p>You're not in this league.</p>
-          <button v-if="league.status === 'forming'" class="btn btn-primary btn-sm mt-3" @click="showJoinModal = true">
+          <button v-if="['forming', 'draft_open'].includes(league.status)" class="btn btn-primary btn-sm mt-3" @click="showJoinModal = true">
             Join League
           </button>
         </div>
