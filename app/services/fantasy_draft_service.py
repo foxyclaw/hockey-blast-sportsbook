@@ -124,7 +124,7 @@ def build_draft_queue(league_id: int) -> None:
         now_utc = datetime.now(timezone.utc)
         window_start = max(league.draft_opens_at or now_utc, now_utc)
         window_hours = (league.draft_closes_at - window_start).total_seconds() / 3600
-        pick_hours = max(1.0, window_hours / total_picks)
+        pick_hours = max(1.0 / 60, window_hours / total_picks)  # min 1 minute, no 1h floor
         logger.info(
             "[draft] league=%d managers=%d picks=%d window=%.1fh → %.2fh/pick",
             league_id, n, total_picks, window_hours, pick_hours,
