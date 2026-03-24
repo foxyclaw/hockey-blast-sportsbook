@@ -138,7 +138,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
@@ -209,9 +209,24 @@ function timeAgo(iso) {
 }
 
 // Load notifications when user logs in
+// Poll notifications every 30s when user is logged in
+let _notifInterval = null
+onMounted(() => {
+  if (isAuthenticated.value) {
+    _notifInterval = setInterval(loadNotifications, 30000)
+  }
+})
+onUnmounted(() => {
+  if (_notifInterval) clearInterval(_notifInterval)
+})
 watch(isAuthenticated, (v) => {
-  if (v) loadNotifications()
-}, { immediate: true })
+  if (v) {
+    loadNotifications()
+    if (!_notifInterval) _notifInterval = setInterval(loadNotifications, 30000)
+  } else {
+    if (_notifInterval) { clearInterval(_notifInterval); _notifInterval = null }
+  }
+})
 
 // ── Login ──────────────────────────────────────────────────────────────────
 async function doLogin() {
