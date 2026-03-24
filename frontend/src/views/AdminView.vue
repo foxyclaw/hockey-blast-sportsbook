@@ -317,6 +317,13 @@
               </select>
             </div>
             <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">League</span></label>
+              <select v-model.number="launchLeagueId" class="select select-bordered select-sm w-56">
+                <option :value="null">— All leagues —</option>
+                <option v-for="lg in hbLeagues" :key="lg.id" :value="lg.id">{{ lg.league_name }}</option>
+              </select>
+            </div>
+            <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Season Start</span></label>
               <input v-model="launchStartDate" type="datetime-local" class="input input-bordered input-sm" />
             </div>
@@ -722,8 +729,12 @@ watch(activeTab, (tab) => {
 // ── Launch Fantasy Season ──────────────────────────────────────────────────
 const orgs = ref([])
 const launchOrgId = ref(1)
+const launchLeagueId = ref(2)  // default: SharksIce at San Jose
+const hbLeagues = ref([])
 
+watch(launchLeagueId, () => { levels.value = []; selectedLevelIds.value = [] })
 watch(launchOrgId, () => {
+  loadHbLeagues()
   if (activeTab.value === 'launch') {
     loadLevels()
     loadAdminLeagues()
@@ -738,6 +749,7 @@ async function loadOrgs() {
       launchOrgId.value = orgs.value[0].id
     }
     // Auto-load levels and leagues for the default org
+    await loadHbLeagues()
     await loadLevels()
     await loadAdminLeagues()
   } catch { /* ignore */ }
@@ -857,6 +869,18 @@ async function batchDeleteLeagues() {
   }
 }
 
+async function loadHbLeagues() {
+  try {
+    const { data } = await api.get('/api/admin/fantasy/hb-leagues', { params: { org_id: launchOrgId.value } })
+    hbLeagues.value = data.leagues || []
+    // Default to SharksIce at San Jose if available
+    if (!launchLeagueId.value) {
+      const sj = hbLeagues.value.find(l => l.league_name.toLowerCase().includes('san jose'))
+      if (sj) launchLeagueId.value = sj.id
+    }
+  } catch { hbLeagues.value = [] }
+}
+
 async function loadLevels() {
   levelsLoading.value = true
   launchError.value = null
@@ -864,7 +888,7 @@ async function loadLevels() {
   selectedLevelIds.value = []
   try {
     const { data } = await api.get('/api/admin/fantasy/active-levels', {
-      params: { org_id: launchOrgId.value, active_only: launchActiveOnly.value }
+      params: { org_id: launchOrgId.value, active_only: launchActiveOnly.value, league_id: launchLeagueId.value || undefined }
     })
     levels.value = data.levels
   } catch (e) {

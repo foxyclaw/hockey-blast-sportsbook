@@ -419,6 +419,8 @@ def get_active_levels():
 
     hb = HBSession()
 
+    league_id = request.args.get("league_id", None, type=int)
+
     stmt = (
         select(Division.level_id, Level.level_name, Level.short_name)
         .join(Season, Season.id == Division.season_id)
@@ -426,6 +428,9 @@ def get_active_levels():
         .where(Season.org_id == org_id)
         .distinct()
     )
+
+    if league_id:
+        stmt = stmt.where(Season.league_id == league_id)
 
     if active_only:
         cutoff = date.today() - timedelta(days=30)
@@ -455,6 +460,20 @@ def get_active_levels():
         key=_natural_sort_key,
     )
     return jsonify({"levels": levels})
+
+
+@admin_bp.route("/fantasy/hb-leagues", methods=["GET"])
+@require_admin
+def get_hb_leagues():
+    """GET /api/admin/fantasy/hb-leagues?org_id=1 — list HB leagues for org."""
+    from hockey_blast_common_lib.models import League
+    from app.db import HBSession
+    org_id = request.args.get("org_id", 1, type=int)
+    hb = HBSession()
+    leagues = hb.execute(
+        select(League).where(League.org_id == org_id).order_by(League.league_name)
+    ).scalars().all()
+    return jsonify({"leagues": [{"id": l.id, "league_name": l.league_name} for l in leagues]})
 
 
 @admin_bp.route("/fantasy/orgs", methods=["GET"])
