@@ -553,6 +553,11 @@ const sortedSkaters = computed(() => {
     : skaters
 
   return [...filtered].sort((a, b) => {
+    // Always sink drafted players to the bottom
+    const aDrafted = a.drafted_by ? 1 : 0
+    const bDrafted = b.drafted_by ? 1 : 0
+    if (aDrafted !== bDrafted) return aDrafted - bDrafted
+
     let aVal, bVal
     if (sortKey.value === 'name') {
       aVal = `${a.first_name} ${a.last_name}`
@@ -571,7 +576,11 @@ const filteredGoalies = computed(() => {
   const filtered = q
     ? goalies.filter(p => `${p.first_name} ${p.last_name}`.toLowerCase().includes(q))
     : goalies
-  return filtered
+  return [...filtered].sort((a, b) => {
+    const aDrafted = a.drafted_by ? 1 : 0
+    const bDrafted = b.drafted_by ? 1 : 0
+    return aDrafted - bDrafted
+  })
 })
 
 function statusLabel(s) {
