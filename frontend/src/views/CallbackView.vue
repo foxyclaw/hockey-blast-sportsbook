@@ -25,7 +25,7 @@ import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
 
-const { isAuthenticated, isLoading, error, idTokenClaims, loginWithRedirect } = useAuth0()
+const { isAuthenticated, isLoading, error, idTokenClaims, loginWithRedirect, appState } = useAuth0()
 const userStore = useUserStore()
 const router = useRouter()
 const authError = ref(null)
@@ -61,10 +61,9 @@ watch(
       return
     }
     await userStore.fetchPredUser(idTokenClaims.value?.__raw)
-    // Restore the page they were trying to visit before login
-    const { appState } = useAuth0()
+    // Use returnTo from appState if set, otherwise home
     const returnTo = appState?.value?.returnTo
-    router.replace(returnTo && returnTo !== '/' ? returnTo : { name: 'home' })
+    router.replace(returnTo && returnTo !== '/callback' ? returnTo : { name: 'home' })
   },
   { immediate: true }
 )
