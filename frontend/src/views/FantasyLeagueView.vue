@@ -251,43 +251,24 @@
             </div>
           </div>
 
-          <!-- Draft board -->
-          <div class="overflow-x-auto">
-            <table class="table table-xs w-full">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Round</th>
-                  <th>Manager</th>
-                  <th>Player</th>
-                  <th>Deadline</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="pick in draftQueue"
-                  :key="pick.overall_pick"
-                  :class="{
-                    'bg-success/10': pick.picked_at,
-                    'bg-warning/10': !pick.picked_at && !pick.is_skipped && pick === currentPick,
-                    'opacity-40': pick.is_skipped,
-                  }"
-                >
-                  <td>{{ pick.overall_pick }}</td>
-                  <td>{{ pick.round }}</td>
-                  <td>{{ pick.manager?.team_name || '—' }}</td>
-                  <td>{{ pick.player_name || (pick.picked_at ? '?' : '—') }}</td>
-                  <td class="text-xs">{{ pick.deadline ? formatDeadline(pick.deadline) : '—' }}</td>
-                  <td>
-                    <span v-if="pick.is_skipped" class="badge badge-xs badge-error">Skipped</span>
-                    <span v-else-if="pick.picked_at" class="badge badge-xs badge-success">Done</span>
-                    <span v-else-if="pick === currentPick" class="badge badge-xs badge-warning">On clock</span>
-                    <span v-else class="badge badge-xs badge-ghost">Pending</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- Draft progress summary -->
+          <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+            <div class="bg-base-200 rounded-lg p-3">
+              <div class="text-2xl font-bold text-success">{{ draftQueue.filter(p => p.picked_at).length }}</div>
+              <div class="text-xs text-base-content/50 mt-0.5">Picks Made</div>
+            </div>
+            <div class="bg-base-200 rounded-lg p-3">
+              <div class="text-2xl font-bold text-warning">{{ draftQueue.filter(p => !p.picked_at && !p.is_skipped).length }}</div>
+              <div class="text-xs text-base-content/50 mt-0.5">Picks Remaining</div>
+            </div>
+            <div class="bg-base-200 rounded-lg p-3">
+              <div class="text-2xl font-bold">{{ currentPick ? currentPick.round : '—' }}</div>
+              <div class="text-xs text-base-content/50 mt-0.5">Current Round</div>
+            </div>
+            <div class="bg-base-200 rounded-lg p-3">
+              <div class="text-2xl font-bold text-primary">{{ league.max_managers && league.roster_skaters ? (league.roster_skaters + league.roster_goalies) - (currentPick ? currentPick.round - 1 : 0) : '—' }}</div>
+              <div class="text-xs text-base-content/50 mt-0.5">Rounds Left</div>
+            </div>
           </div>
         </div>
       </div>
