@@ -726,7 +726,7 @@ watch(() => league.value?.status, (status) => {
   if (['draft_open', 'drafting'].includes(status)) {
     _draftPollInterval = setInterval(async () => {
       await loadLeague()
-      await loadDraftQueue()
+      await Promise.all([loadDraftQueue(), loadPool()])
     }, 30000)
   }
 }, { immediate: true })
