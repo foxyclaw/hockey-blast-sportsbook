@@ -61,9 +61,11 @@ watch(
       return
     }
     await userStore.fetchPredUser(idTokenClaims.value?.__raw)
-    // Use returnTo from appState if set, otherwise home
-    const returnTo = appState?.value?.returnTo
-    router.replace(returnTo && returnTo !== '/callback' ? returnTo : { name: 'home' })
+    // onRedirectCallback in main.js handles the redirect to returnTo.
+    // Only fall back to home if we somehow get here without appState.
+    if (!appState?.value?.returnTo) {
+      router.replace({ name: 'home' })
+    }
   },
   { immediate: true }
 )
