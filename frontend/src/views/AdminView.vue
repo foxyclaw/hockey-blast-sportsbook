@@ -340,6 +340,11 @@
               <input v-model="launchSeasonLabel" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-sm w-40" />
             </div>
             <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Max Managers (optional)</span></label>
+              <input v-model.number="launchMaxManagers" type="number" min="2" max="20" placeholder="auto" class="input input-bordered input-xs w-24" />
+              <div class="text-xs text-base-content/40 mt-0.5">Overrides auto-calc</div>
+            </div>
+            <div class="form-control">
               <label class="label cursor-pointer gap-2 py-1">
                 <span class="label-text text-xs">Active levels only</span>
                 <input type="checkbox" v-model="launchActiveOnly" class="checkbox checkbox-sm" />
@@ -755,6 +760,7 @@ async function loadOrgs() {
   } catch { /* ignore */ }
 }
 const launchSeasonLabel = ref('Spring 2026')
+const launchMaxManagers = ref(null)
 // Pre-fill sensible defaults: season start = next Monday 00:01,
 // draft opens = next Friday 19:00, draft closes = Sunday after that 23:00
 function nextWeekday(dayOfWeek, hour, minute) {
@@ -923,6 +929,7 @@ async function launchSeason() {
       level_ids: selectedLevelIds.value,
       season_start_date: launchStartDate.value,
       season_label: launchSeasonLabel.value || undefined,
+      max_managers: launchMaxManagers.value || undefined,
       draft_opens_at: launchDraftOpens.value || undefined,
       draft_closes_at: launchDraftCloses.value || undefined,
     })

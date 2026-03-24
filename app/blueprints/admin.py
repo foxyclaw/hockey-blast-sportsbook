@@ -517,6 +517,10 @@ def launch_fantasy_season():
     level_ids = data.get("level_ids", [])
     season_start_date = data.get("season_start_date")
     season_label = (data.get("season_label") or "Spring 2026").strip()
+    max_managers_override = data.get("max_managers")  # optional int override
+    if max_managers_override is not None:
+        try: max_managers_override = int(max_managers_override)
+        except: max_managers_override = None
 
     if not level_ids:
         return jsonify({"error": "VALIDATION_ERROR", "message": "level_ids required"}), 400
@@ -595,6 +599,10 @@ def launch_fantasy_season():
             except Exception:
                 max_managers = 8
                 roster_skaters = 6
+            # Admin override: fixed managers count, max 10+goalie roster
+            if max_managers_override:
+                max_managers = max_managers_override
+                roster_skaters = min(roster_skaters, 10)
 
             display_level = level.short_name or level_name if level else str(level_id)
             league_name = f"Level {display_level} — Spring 2026"
