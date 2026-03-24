@@ -952,6 +952,7 @@ async function launchSeason() {
       season_start_date: launchStartDate.value,
       season_label: launchSeasonLabel.value || undefined,
       max_managers: launchMaxManagers.value || undefined,
+      hb_league_id: launchLeagueId.value || undefined,
       draft_opens_at: launchDraftOpens.value || undefined,
       draft_closes_at: launchDraftCloses.value || undefined,
     })

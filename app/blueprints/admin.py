@@ -593,7 +593,7 @@ def launch_fantasy_season():
         else:
             # Create new league — get pool info for sizing
             try:
-                pool = get_player_pool(level_id, org_id)
+                pool = get_player_pool(level_id, org_id, league_id=data.get('hb_league_id'))
                 max_managers = pool.get("max_managers", 8)
                 roster_skaters = pool.get("roster_skaters", 6)
             except Exception:
@@ -610,6 +610,7 @@ def launch_fantasy_season():
                 name=league_name,
                 level_id=level_id,
                 level_name=level_name,
+                hb_league_id=data.get("hb_league_id"),
                 org_id=org_id,
                 season_label=season_label,
                 status="forming",
