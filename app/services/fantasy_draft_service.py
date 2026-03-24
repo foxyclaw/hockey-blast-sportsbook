@@ -44,9 +44,13 @@ def _compute_pick_hours(league) -> float:
         remaining = len(remaining_picks)
         if remaining > 0:
             window_end = league.draft_closes_at
-            window_hours = max(0, (window_end - now_utc).total_seconds() / 3600)
+            window_hours = (window_end - now_utc).total_seconds() / 3600
             if window_hours > 0:
                 return max(1.0 / 60, window_hours / remaining)  # min 1 minute
+            else:
+                # Window already passed — give each remaining pick 5 minutes so
+                # auto-pick cascades quickly instead of defaulting to 24h.
+                return 5.0 / 60  # 5 minutes
     return float(league.draft_pick_hours)
 
 
