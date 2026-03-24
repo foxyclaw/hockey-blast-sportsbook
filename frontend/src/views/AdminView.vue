@@ -430,6 +430,7 @@
                   <th>Season Start</th>
                   <th>Draft Opens</th>
                   <th>Draft Closes</th>
+                  <th>HB Season</th>
                   <th></th>
                 </tr>
               </thead>
@@ -447,6 +448,7 @@
                     <td class="text-xs">{{ fmtDt(l.season_starts_at) }}</td>
                     <td class="text-xs">{{ fmtDt(l.draft_opens_at) }}</td>
                     <td class="text-xs">{{ fmtDt(l.draft_closes_at) }}</td>
+                    <td class="text-xs opacity-60">{{ l.hb_season_id || 'auto' }}</td>
                     <td>
                       <button class="btn btn-xs btn-ghost" @click="openLeagueEdit(l)">✏️</button>
                     </td>
@@ -466,6 +468,13 @@
                         <div class="form-control">
                           <label class="label py-0"><span class="label-text text-xs">Draft Closes</span></label>
                           <input v-model="leagueEditForm.draft_closes_at" type="datetime-local" class="input input-bordered input-xs w-48" />
+                        </div>
+                        <div class="form-control">
+                          <label class="label py-0"><span class="label-text text-xs">HB Season (for scoring)</span></label>
+                          <select v-model.number="leagueEditForm.hb_season_id" class="select select-bordered select-xs w-56" @focus="loadHbSeasons(l.hb_league_id)">
+                            <option :value="null">— auto (latest) —</option>
+                            <option v-for="s in hbSeasons" :key="s.id" :value="s.id">{{ s.season_name }} ({{ s.start_date }} → {{ s.end_date }})</option>
+                          </select>
                         </div>
                         <div class="flex gap-2 mt-4">
                           <button class="btn btn-xs btn-primary" :disabled="leagueEditSaving" @click="saveLeagueEdit(l.id)">
@@ -800,7 +809,8 @@ const deleteResult = ref(null)
 
 // ── Inline league edit ───────────────────────────────────────────────────────
 const editingLeagueId = ref(null)
-const leagueEditForm = ref({ season_starts_at: '', draft_opens_at: '', draft_closes_at: '' })
+const leagueEditForm = ref({ season_starts_at: '', draft_opens_at: '', draft_closes_at: '', hb_season_id: null })
+const hbSeasons = ref([])
 const leagueEditSaving = ref(false)
 const leagueEditError = ref(null)
 
@@ -824,12 +834,21 @@ function openLeagueEdit(league) {
     return
   }
   leagueEditError.value = null
+  hbSeasons.value = []
   leagueEditForm.value = {
     season_starts_at: toLocalDtInput(league.season_starts_at),
     draft_opens_at: toLocalDtInput(league.draft_opens_at),
     draft_closes_at: toLocalDtInput(league.draft_closes_at),
   }
   editingLeagueId.value = league.id
+}
+
+async function loadHbSeasons(leagueId) {
+  if (!leagueId) return
+  try {
+    const { data } = await api.get('/api/admin/fantasy/hb-seasons', { params: { league_id: leagueId } })
+    hbSeasons.value = data.seasons || []
+  } catch { hbSeasons.value = [] }
 }
 
 async function saveLeagueEdit(leagueId) {
@@ -840,6 +859,7 @@ async function saveLeagueEdit(leagueId) {
       season_starts_at: leagueEditForm.value.season_starts_at || null,
       draft_opens_at: leagueEditForm.value.draft_opens_at || null,
       draft_closes_at: leagueEditForm.value.draft_closes_at || null,
+      hb_season_id: leagueEditForm.value.hb_season_id || null,
     })
     // Update in-place
     const idx = adminLeagues.value.findIndex(l => l.id === leagueId)

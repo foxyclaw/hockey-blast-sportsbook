@@ -476,6 +476,19 @@ def get_hb_leagues():
     return jsonify({"leagues": [{"id": l.id, "league_name": l.league_name} for l in leagues]})
 
 
+@admin_bp.route("/fantasy/hb-seasons", methods=["GET"])
+@require_admin
+def get_hb_seasons():
+    """GET /api/admin/fantasy/hb-seasons?league_id=2 — list HB seasons for a league."""
+    from hockey_blast_common_lib.models import Season
+    from app.db import HBSession
+    league_id = request.args.get("league_id", type=int)
+    hb = HBSession()
+    stmt = select(Season).where(Season.league_id == league_id).order_by(Season.start_date.desc()).limit(10) if league_id else select(Season).order_by(Season.start_date.desc()).limit(20)
+    seasons = hb.execute(stmt).scalars().all()
+    return jsonify({"seasons": [{"id": s.id, "season_name": s.season_name, "start_date": str(s.start_date), "end_date": str(s.end_date)} for s in seasons]})
+
+
 @admin_bp.route("/fantasy/orgs", methods=["GET"])
 @require_admin
 def get_fantasy_orgs():
@@ -688,7 +701,7 @@ def update_fantasy_league(league_id: int):
     if not league:
         return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
 
-    EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name")
+    EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name", "hb_season_id")
     DATETIME_FIELDS = {"season_starts_at", "draft_opens_at", "draft_closes_at"}
 
     for field in EDITABLE:

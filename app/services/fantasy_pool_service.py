@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from app.db import HBSession
 
 
-def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None) -> dict:
+def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, season_id: int = None) -> dict:
     """
     Returns the eligible player pool for a fantasy league at the given HB level.
 
@@ -53,18 +53,23 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None) -> di
             )
         )
 
-    season_subq = (
-        select(func.max(Division.season_id))
-        .where(*season_filter)
-        .scalar_subquery()
-    )
-
-    # Get all division_ids in this season+level
-    div_ids_stmt = select(Division.id).where(
-        Division.level_id == level_id,
-        Division.org_id == org_id,
-        Division.season_id == season_subq,
-    )
+    if season_id is not None:
+        # Admin-pinned season — use it directly
+        div_ids_stmt = select(Division.id).where(
+            Division.level_id == level_id,
+            Division.season_id == season_id,
+        )
+    else:
+        season_subq = (
+            select(func.max(Division.season_id))
+            .where(*season_filter)
+            .scalar_subquery()
+        )
+        div_ids_stmt = select(Division.id).where(
+            Division.level_id == level_id,
+            Division.org_id == org_id,
+            Division.season_id == season_subq,
+        )
 
     # ── Skaters ──────────────────────────────────────────────────────────────
     skater_stmt = (

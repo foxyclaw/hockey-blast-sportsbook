@@ -399,7 +399,7 @@ def get_pool(league_id: int):
 
     from app.services.fantasy_pool_service import get_player_pool
     try:
-        pool = get_player_pool(league.level_id, org_id=league.org_id, league_id=getattr(league, 'hb_league_id', None))
+        pool = get_player_pool(league.level_id, org_id=league.org_id, league_id=league.hb_league_id, season_id=league.hb_season_id)
     except Exception as e:
         return error_response("INTERNAL_ERROR", str(e), 500)
 

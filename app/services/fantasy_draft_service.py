@@ -342,7 +342,7 @@ def _get_pool(league_id: int) -> dict:
     from app.services.fantasy_pool_service import get_player_pool
     pred = PredSession()
     league = pred.get(FantasyLeague, league_id)
-    return get_player_pool(league.level_id, league_id=getattr(league, 'hb_league_id', None))
+    return get_player_pool(league.level_id, league_id=league.hb_league_id, season_id=league.hb_season_id)
 
 
 def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None:

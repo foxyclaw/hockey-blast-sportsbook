@@ -20,6 +20,7 @@ class FantasyLeague(PredBase):
     level_id: Mapped[int] = mapped_column(Integer, nullable=False)
     level_name: Mapped[str] = mapped_column(String(64), nullable=False)
     hb_league_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # HB League (rink/program), e.g. SharksIce SJ = 2
+    hb_season_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # HB Season for scoring/pool; NULL = use latest
     org_id: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     season_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="forming")
@@ -62,6 +63,7 @@ class FantasyLeague(PredBase):
             "level_id": self.level_id,
             "level_name": self.level_name,
             "hb_league_id": self.hb_league_id,
+            "hb_season_id": self.hb_season_id,
             "org_id": self.org_id,
             "season_label": self.season_label,
             "status": self.status,
