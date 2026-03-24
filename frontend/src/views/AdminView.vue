@@ -442,7 +442,10 @@
                         :value="l.id" v-model="selectedLeagueIds" />
                     </td>
                     <td class="font-medium">{{ l.name }}</td>
-                    <td>{{ l.level_name }}</td>
+                    <td>
+                      {{ l.level_name }}
+                      <span v-if="l.hb_league_name" class="text-xs opacity-50 ml-1">({{ l.hb_league_name }})</span>
+                    </td>
                     <td><span class="badge badge-xs" :class="statusBadgeClass(l.status)">{{ l.status }}</span></td>
                     <td>{{ l.manager_count ?? '—' }}</td>
                     <td class="text-xs">{{ fmtDt(l.season_starts_at) }}</td>

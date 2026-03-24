@@ -672,7 +672,24 @@ def list_fantasy_leagues():
         )
     ).scalars().all()
 
-    return jsonify({"leagues": [l.to_dict() for l in leagues]})
+    # Enrich with HB league names for display
+    hb_league_ids = {l.hb_league_id for l in leagues if l.hb_league_id}
+    hb_league_names = {}
+    if hb_league_ids:
+        from hockey_blast_common_lib.models import League as HBLeague
+        from app.db import HBSession
+        hb = HBSession()
+        rows = hb.execute(
+            select(HBLeague.id, HBLeague.league_name).where(HBLeague.id.in_(hb_league_ids))
+        ).all()
+        hb_league_names = {r.id: r.league_name for r in rows}
+
+    def league_dict(l):
+        d = l.to_dict()
+        d["hb_league_name"] = hb_league_names.get(l.hb_league_id) if l.hb_league_id else None
+        return d
+
+    return jsonify({"leagues": [league_dict(l) for l in leagues]})
 
 
 @admin_bp.route("/fantasy/leagues/<int:league_id>", methods=["PATCH"])
