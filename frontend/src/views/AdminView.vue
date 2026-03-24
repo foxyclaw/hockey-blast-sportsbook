@@ -383,11 +383,15 @@
             </div>
           </div>
 
-          <button @click="launchSeason" class="btn btn-primary btn-sm"
-            :disabled="!selectedLevelIds.length || !launchStartDate || launching">
-            <span v-if="launching" class="loading loading-spinner loading-xs"></span>
-            🚀 Launch Season
-          </button>
+          <div class="flex items-center gap-3">
+            <button @click="launchSeason" class="btn btn-primary btn-sm"
+              :disabled="!selectedLevelIds.length || !launchStartDate || launching">
+              <span v-if="launching" class="loading loading-spinner loading-xs"></span>
+              🚀 Launch Season
+            </button>
+            <span v-if="!selectedLevelIds.length && levels.length === 0" class="text-xs text-base-content/40">← Load Levels first, then select</span>
+            <span v-else-if="!selectedLevelIds.length" class="text-xs text-base-content/40">← Select at least one level</span>
+          </div>
         </div>
       </div>
 
