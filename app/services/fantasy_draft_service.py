@@ -169,7 +169,7 @@ def build_draft_queue(league_id: int) -> None:
     _set_next_deadline(league_id, pred, pick_hours)
 
 
-def _set_next_deadline(league_id: int, pred, pick_hours: int) -> None:
+def _set_next_deadline(league_id: int, pred, pick_hours: int, prev_was_auto: bool = False) -> None:
     """Set deadline on the first unpicked, non-skipped slot."""
     stmt = (
         select(FantasyDraftQueue)
@@ -185,6 +185,8 @@ def _set_next_deadline(league_id: int, pred, pick_hours: int) -> None:
     if slot:
         slot.deadline = _deadline_respecting_quiet_hours(pick_hours)
         pred.commit()
+        # If previous pick was auto (timeout), notify the skipped manager immediately
+        # then notify the next manager normally
         _notify_manager(slot.user_id, slot.league_id, slot.overall_pick, slot.deadline, pred)
     else:
         # No more unpicked slots — draft is complete, mark league active
@@ -235,6 +237,12 @@ def advance_draft(league_id: int) -> None:
     best = _best_available(league_id, current.user_id, pred, league)
     if best is not None:
         _record_pick(league_id, current, best["hb_human_id"], best["is_goalie"], pred, now)
+
+        # Notify the manager that we picked for them (immediate SMS)
+        _notify_manager(
+            current.user_id, league_id, current.overall_pick,
+            current.deadline, pred, auto_picked=True
+        )
 
         # Award compensatory pick
         mgr_stmt = select(FantasyManager).where(
@@ -396,22 +404,35 @@ def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None
         pass
 
 
-def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: datetime, pred) -> None:
+def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: datetime, pred,
+                    auto_picked: bool = False) -> None:
     """
     Notify a manager it's their turn to pick.
-    Uses notify_user so SMS fires after 10 min if they haven't been active.
+    - Normal turn: SMS fires after 2 min if they haven't opened the app
+    - Auto-picked on their behalf: SMS fires immediately (they're clearly not watching)
     """
     try:
         _clear_stale_draft_notifications(user_id, league_id, pred)
-        from app.services.notify_service import notify_user
-        deadline_str = deadline.astimezone().strftime("%b %d %I:%M %p %Z")
+        from app.services.notify_service import notify_user, DRAFT_NOTIFY_DELAY_SECONDS
+        deadline_str = deadline.astimezone().strftime("%b %d %I:%M %p %Z") if deadline else "soon"
+
+        if auto_picked:
+            title = "🏒 Auto-picked for you!"
+            body = f"Pick #{pick_number} was made automatically (you missed your turn). Check your roster."
+            delay = 0  # immediate — they need to know
+        else:
+            title = "🏒 Your Pick!"
+            body = f"Pick #{pick_number} — deadline {deadline_str}."
+            delay = DRAFT_NOTIFY_DELAY_SECONDS  # 2 min
+
         notify_user(
             db=pred,
             user_id=user_id,
-            title="🏒 Your Pick!",
-            body=f"Pick #{pick_number} — deadline {deadline_str}.",
+            title=title,
+            body=body,
             url=f"/fantasy/{league_id}",
             notif_type="fantasy_draft",
+            delay_seconds=delay,
         )
         pred.commit()
     except Exception as e:

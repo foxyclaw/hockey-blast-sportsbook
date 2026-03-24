@@ -22,7 +22,8 @@ from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
-NOTIFY_DELAY_SECONDS = 600  # 10 minutes
+NOTIFY_DELAY_SECONDS = 600       # 10 minutes (default)
+DRAFT_NOTIFY_DELAY_SECONDS = 120  # 2 minutes for draft picks — shorter window
 
 
 def _send_delayed_external(
@@ -32,11 +33,12 @@ def _send_delayed_external(
     email_text: str,
     email_html: str,
     notif_created_at: datetime,
+    delay_seconds: int = NOTIFY_DELAY_SECONDS,
 ) -> None:
-    """Wait NOTIFY_DELAY_SECONDS, then send SMS/email if user hasn't been active."""
+    """Wait delay_seconds, then send SMS/email if user hasn't been active."""
     import time
 
-    time.sleep(NOTIFY_DELAY_SECONDS)
+    time.sleep(delay_seconds)
 
     from app.db import PredSession
     from app.models.pred_user import PredUser
@@ -100,6 +102,7 @@ def _send_delayed_external(
 def notify_user(
     db, user_id: int, title: str, body: str = None, url: str = None,
     notif_type: str = "info", bell_only: bool = False,
+    delay_seconds: int | None = None,
 ) -> None:
     """
     Send a notification to a user via all configured channels:
@@ -138,9 +141,10 @@ def notify_user(
 
     # 3. Fire delayed SMS/email in a background thread (unless bell_only)
     if not bell_only:
+        effective_delay = delay_seconds if delay_seconds is not None else NOTIFY_DELAY_SECONDS
         t = threading.Thread(
             target=_send_delayed_external,
-            args=(user_id, sms_text, f"🏒 {title}", sms_text, html, notif_created_at),
+            args=(user_id, sms_text, f"🏒 {title}", sms_text, html, notif_created_at, effective_delay),
             daemon=True,
         )
         t.start()
