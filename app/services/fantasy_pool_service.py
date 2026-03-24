@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from app.db import HBSession
 
 
-def get_player_pool(level_id: int, org_id: int = 1) -> dict:
+def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None) -> dict:
     """
     Returns the eligible player pool for a fantasy league at the given HB level.
 
@@ -37,13 +37,25 @@ def get_player_pool(level_id: int, org_id: int = 1) -> dict:
     # Exclude fake/placeholder players
     non_human_ids = get_non_human_ids(hb)
 
-    # Find the most recent season_id for this level and org
+    # Find the most recent season_id for this level, org, and optionally league
+    from hockey_blast_common_lib.models import Season as HBSeason
+    season_filter = [
+        Division.level_id == level_id,
+        Division.org_id == org_id,
+    ]
+    if league_id is not None:
+        season_filter.append(
+            Division.season_id.in_(
+                select(HBSeason.id).where(
+                    HBSeason.league_id == league_id,
+                    HBSeason.org_id == org_id,
+                )
+            )
+        )
+
     season_subq = (
         select(func.max(Division.season_id))
-        .where(
-            Division.level_id == level_id,
-            Division.org_id == org_id,
-        )
+        .where(*season_filter)
         .scalar_subquery()
     )
 
