@@ -118,10 +118,10 @@
 
           <div class="form-control">
             <label class="label"><span class="label-text text-sm">Your Level</span></label>
-            <select v-model="createForm.level_id" class="select select-bordered select-sm" required>
+            <select v-model="createForm.level_key" class="select select-bordered select-sm" required>
               <option value="" disabled>Select your level...</option>
-              <option v-for="lvl in levels" :key="lvl.level_id" :value="lvl.level_id">
-                Level {{ lvl.level_name }}
+              <option v-for="(lvl, idx) in levels" :key="idx" :value="idx">
+                {{ lvl.display_name || ('Level ' + lvl.level_name) }}
               </option>
             </select>
             <div v-if="levelsLoading" class="text-xs text-base-content/40 mt-1">Loading levels…</div>
@@ -194,7 +194,7 @@ const levelsLoading = ref(false)
 const showCreateModal = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const createForm = ref({ team_name: '', level_id: '', is_private: false })
+const createForm = ref({ team_name: '', level_key: '', is_private: false })
 const createdJoinCode = ref('')
 const showJoinCodeModal = ref(false)
 
@@ -270,13 +270,14 @@ async function createLeague() {
   createError.value = ''
   creating.value = true
   try {
-    // Find selected level name for the league name
-    const lvl = levels.value.find(l => l.level_id === createForm.value.level_id)
-    const levelLabel = lvl ? `Level ${lvl.level_name}` : `Level ${createForm.value.level_id}`
+    // Find selected level using index key (supports duplicate level_ids with different hb_league_ids)
+    const lvl = levels.value[createForm.value.level_key]
+    const levelLabel = lvl ? `Level ${lvl.level_name}` : 'Level ?'
     const { data } = await api.post('/api/fantasy/leagues', {
       name: `${levelLabel} — Spring 2026`,
       team_name: createForm.value.team_name,
-      level_id: createForm.value.level_id,
+      level_id: lvl?.level_id,
+      hb_league_id: lvl?.hb_league_id ?? null,
       season_label: 'Spring 2026',
       is_private: createForm.value.is_private,
       season_starts_at: '2026-04-01',
@@ -292,7 +293,7 @@ async function createLeague() {
     } else {
       router.push(`/fantasy/${data.id}`)
     }
-    createForm.value = { team_name: '', level_id: '', is_private: false }
+    createForm.value = { team_name: '', level_key: '', is_private: false }
   } catch (e) {
     createError.value = e?.response?.data?.message || 'Failed to create league'
   } finally {

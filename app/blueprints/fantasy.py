@@ -51,22 +51,32 @@ def list_levels():
     org_id = request.args.get("org_id", 1, type=int)
     season_label = request.args.get("season_label", "Spring 2026")
 
-    # Level IDs that already have a fantasy league for this org+season
-    existing_level_ids = {
-        row.level_id for row in pred.execute(
-            select(FantasyLeague.level_id)
-            .where(
-                FantasyLeague.org_id == org_id,
-                FantasyLeague.season_label == season_label,
-                FantasyLeague.status.notin_(["completed"]),
-            )
-        ).all()
-    }
+    # Fetch all fantasy leagues for this org+season (not just level_ids)
+    # We need hb_league_id per level so the create form can pass it through.
+    # A level may appear in multiple HB leagues (e.g. O35 in Masters and Over35) —
+    # each becomes a separate entry in the dropdown.
+    existing_leagues = pred.execute(
+        select(FantasyLeague.level_id, FantasyLeague.hb_league_id)
+        .where(
+            FantasyLeague.org_id == org_id,
+            FantasyLeague.season_label == season_label,
+            FantasyLeague.status.notin_(["completed"]),
+        )
+        .distinct()
+    ).all()
 
-    if not existing_level_ids:
+    if not existing_leagues:
         return jsonify({"levels": []})
 
-    # Get those levels with skater counts
+    # Build a map: level_id -> set of hb_league_ids
+    from collections import defaultdict
+    level_to_hb_leagues = defaultdict(set)
+    for row in existing_leagues:
+        level_to_hb_leagues[row.level_id].add(row.hb_league_id)
+
+    existing_level_ids = set(level_to_hb_leagues.keys())
+
+    # Get level metadata + skater counts
     stmt = (
         select(Level, func.count(LevelStatsSkater.human_id).label("skater_count"))
         .join(LevelStatsSkater, LevelStatsSkater.level_id == Level.id, isouter=True)
@@ -76,6 +86,17 @@ def list_levels():
     )
 
     rows = hb.execute(stmt).all()
+
+    # Build HB league name map for display
+    from hockey_blast_common_lib.models import League as HBLeague
+    hb_league_names = {}
+    all_hb_league_ids = {lid for lids in level_to_hb_leagues.values() for lid in lids if lid}
+    if all_hb_league_ids:
+        hb_league_rows = hb.execute(
+            select(HBLeague.id, HBLeague.league_name).where(HBLeague.id.in_(all_hb_league_ids))
+        ).all()
+        hb_league_names = {r.id: r.league_name for r in hb_league_rows}
+
     levels = []
     for level, skater_count in rows:
         usable = int(skater_count * 0.7)
@@ -89,14 +110,37 @@ def list_levels():
         if max_managers < 4:
             continue  # skip levels with insufficient pool
 
-        levels.append({
-            "level_id": level.id,
-            "level_name": level.short_name or level.level_name or str(level.id),
-            "org_id": level.org_id,
-            "skater_count": skater_count,
-            "roster_skaters": roster_skaters,
-            "max_managers": max_managers,
-        })
+        level_name = level.short_name or level.level_name or str(level.id)
+        hb_league_ids = sorted(lv for lv in level_to_hb_leagues[level.id] if lv is not None)
+
+        if len(hb_league_ids) > 1:
+            # Multiple HB leagues for same level — emit one entry per HB league
+            for hb_lid in hb_league_ids:
+                hb_lname = hb_league_names.get(hb_lid, str(hb_lid))
+                levels.append({
+                    "level_id": level.id,
+                    "level_name": level_name,
+                    "hb_league_id": hb_lid,
+                    "hb_league_name": hb_lname,
+                    "display_name": f"{level_name} ({hb_lname})",
+                    "org_id": level.org_id,
+                    "skater_count": skater_count,
+                    "roster_skaters": roster_skaters,
+                    "max_managers": max_managers,
+                })
+        else:
+            hb_lid = hb_league_ids[0] if hb_league_ids else None
+            levels.append({
+                "level_id": level.id,
+                "level_name": level_name,
+                "hb_league_id": hb_lid,
+                "hb_league_name": hb_league_names.get(hb_lid) if hb_lid else None,
+                "display_name": level_name,
+                "org_id": level.org_id,
+                "skater_count": skater_count,
+                "roster_skaters": roster_skaters,
+                "max_managers": max_managers,
+            })
 
     return jsonify({"levels": levels})
 
@@ -130,10 +174,14 @@ def create_league():
 
     level_name = level.short_name or level.level_name or str(level_id)
 
-    # Compute roster sizing
+    # hb_league_id — passed from frontend (comes from levels API).
+    # Critical: determines which HB league's stats are used for the player pool.
+    hb_league_id = data.get("hb_league_id") or None
+
+    # Compute roster sizing using the correct hb_league_id
     from app.services.fantasy_pool_service import get_player_pool
     try:
-        pool_info = get_player_pool(level_id)
+        pool_info = get_player_pool(level_id, league_id=hb_league_id)
     except Exception as e:
         return error_response("INTERNAL_ERROR", f"Could not load player pool: {e}", 500)
 
@@ -168,6 +216,7 @@ def create_league():
             name=name,
             level_id=level_id,
             level_name=level_name,
+            hb_league_id=hb_league_id,
             org_id=level.org_id,
             season_label=data.get("season_label"),
             status="forming",
