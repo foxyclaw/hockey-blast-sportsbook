@@ -339,6 +339,10 @@
               <label class="label py-1"><span class="label-text text-xs">Season Label</span></label>
               <input v-model="launchSeasonLabel" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-sm w-40" />
             </div>
+            <button type="button" @click="applyTestMode" class="btn btn-xs btn-warning mt-5" title="Sets 2 managers, draft starts now for 2h">
+              🧪 Test Mode
+            </button>
+
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Max Managers (optional)</span></label>
               <input v-model.number="launchMaxManagers" type="number" min="2" max="20" placeholder="auto" class="input input-bordered input-xs w-24" />
@@ -906,6 +910,20 @@ async function loadLevels() {
   } finally {
     levelsLoading.value = false
   }
+}
+
+function applyTestMode() {
+  const pad = n => String(n).padStart(2, '0')
+  const now = new Date()
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const opens = new Date(now.getTime() + 1 * 60000)   // 1 min from now
+  const closes = new Date(now.getTime() + 120 * 60000) // 2 hours from now
+  const season = new Date(now.getTime() + 130 * 60000) // 2h10m from now
+  launchDraftOpens.value = fmt(opens)
+  launchDraftCloses.value = fmt(closes)
+  launchStartDate.value = fmt(season)
+  launchMaxManagers.value = 2
+  launchSeasonLabel.value = 'Test ' + now.toLocaleDateString()
 }
 
 async function launchSeason() {
