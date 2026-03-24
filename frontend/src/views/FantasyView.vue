@@ -107,15 +107,24 @@
         <h3 class="font-bold text-lg mb-4">Create Fantasy League</h3>
 
         <form @submit.prevent="createLeague" class="space-y-4">
+          <!-- Season (hardcoded to current upcoming season) -->
           <div class="form-control">
-            <label class="label"><span class="label-text text-sm">League Name</span></label>
-            <input
-              v-model="createForm.name"
-              type="text"
-              placeholder="e.g. Pond Puck Pros"
-              class="input input-bordered input-sm"
-              required
-            />
+            <label class="label"><span class="label-text text-sm">League</span></label>
+            <select class="select select-bordered select-sm" disabled>
+              <option selected>Sharks Ice Adult Hockey League — Spring 2026</option>
+            </select>
+            <div class="text-xs text-base-content/40 mt-1">Season starts April 1, 2026 · Draft: Mar 27–29</div>
+          </div>
+
+          <div class="form-control">
+            <label class="label"><span class="label-text text-sm">Your Level</span></label>
+            <select v-model="createForm.level_id" class="select select-bordered select-sm" required>
+              <option value="" disabled>Select your level...</option>
+              <option v-for="lvl in levels" :key="lvl.level_id" :value="lvl.level_id">
+                Level {{ lvl.level_name }}
+              </option>
+            </select>
+            <div v-if="levelsLoading" class="text-xs text-base-content/40 mt-1">Loading levels…</div>
           </div>
 
           <div class="form-control">
@@ -126,27 +135,6 @@
               placeholder="e.g. Ice Bandits"
               class="input input-bordered input-sm"
               required
-            />
-          </div>
-
-          <div class="form-control">
-            <label class="label"><span class="label-text text-sm">Level</span></label>
-            <select v-model="createForm.level_id" class="select select-bordered select-sm" required>
-              <option value="" disabled>Select a level...</option>
-              <option v-for="lvl in levels" :key="lvl.level_id" :value="lvl.level_id">
-                {{ lvl.level_name }} (up to {{ lvl.max_managers }} managers)
-              </option>
-            </select>
-            <div v-if="levelsLoading" class="text-xs text-base-content/40 mt-1">Loading levels…</div>
-          </div>
-
-          <div class="form-control">
-            <label class="label"><span class="label-text text-sm">Season Label (optional)</span></label>
-            <input
-              v-model="createForm.season_label"
-              type="text"
-              placeholder="e.g. Spring 2026"
-              class="input input-bordered input-sm"
             />
           </div>
 
@@ -206,7 +194,7 @@ const levelsLoading = ref(false)
 const showCreateModal = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const createForm = ref({ name: '', team_name: '', level_id: '', season_label: '', is_private: false })
+const createForm = ref({ team_name: '', level_id: '', is_private: false })
 const createdJoinCode = ref('')
 const showJoinCodeModal = ref(false)
 
@@ -282,12 +270,18 @@ async function createLeague() {
   createError.value = ''
   creating.value = true
   try {
+    // Find selected level name for the league name
+    const lvl = levels.value.find(l => l.level_id === createForm.value.level_id)
+    const levelLabel = lvl ? `Level ${lvl.level_name}` : `Level ${createForm.value.level_id}`
     const { data } = await api.post('/api/fantasy/leagues', {
-      name: createForm.value.name,
+      name: `${levelLabel} — Spring 2026`,
       team_name: createForm.value.team_name,
       level_id: createForm.value.level_id,
-      season_label: createForm.value.season_label || undefined,
+      season_label: 'Spring 2026',
       is_private: createForm.value.is_private,
+      season_starts_at: '2026-04-01',
+      draft_opens_at: '2026-03-27T19:00',
+      draft_closes_at: '2026-03-29T23:00',
     })
     showCreateModal.value = false
     if (data.is_private && data.join_code) {
@@ -298,7 +292,7 @@ async function createLeague() {
     } else {
       router.push(`/fantasy/${data.id}`)
     }
-    createForm.value = { name: '', team_name: '', level_id: '', season_label: '', is_private: false }
+    createForm.value = { team_name: '', level_id: '', is_private: false }
   } catch (e) {
     createError.value = e?.response?.data?.message || 'Failed to create league'
   } finally {
