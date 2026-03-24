@@ -459,7 +459,7 @@ const RosterList = {
 // ── Main component ────────────────────────────────────────────────────────
 const route = useRoute()
 const api = useApiClient()
-const { isAuthenticated, loginWithRedirect } = useAuth0()
+const { isAuthenticated, isLoading: authLoading, loginWithRedirect } = useAuth0()
 const userStore = useUserStore()
 
 const league = ref(null)
@@ -703,6 +703,11 @@ async function pickPlayer(player) {
 }
 
 // Load standings when tab changes
+// Reload league when auth state resolves — token wasn't available on first load
+watch(authLoading, (loading) => {
+  if (!loading) loadLeague()
+})
+
 watch(activeTab, (tab) => {
   if (tab === 'standings') loadStandings()
 })
