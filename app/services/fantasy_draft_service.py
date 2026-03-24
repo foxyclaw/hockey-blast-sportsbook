@@ -35,9 +35,11 @@ def _deadline_respecting_quiet_hours(pick_hours: int) -> datetime:
     deadline_pt = raw_deadline.astimezone(_PT)
 
     if _QUIET_START_HOUR <= deadline_pt.hour < _QUIET_END_HOUR:
-        # Push to 10 AM PT same calendar day
+        # Deadline would land in quiet hours — restart the clock from 10 AM PT
+        # i.e. 10 AM is when the pick window STARTS, so deadline = 10 AM + pick_hours
         wakeup = deadline_pt.replace(hour=_QUIET_END_HOUR, minute=0, second=0, microsecond=0)
-        return wakeup.astimezone(timezone.utc)
+        wakeup_with_window = wakeup + timedelta(hours=pick_hours)
+        return wakeup_with_window.astimezone(timezone.utc)
 
     return raw_deadline
 
