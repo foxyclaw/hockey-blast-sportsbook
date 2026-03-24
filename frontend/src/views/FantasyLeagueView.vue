@@ -33,7 +33,7 @@
             <button
               v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)"
               class="btn btn-primary btn-sm"
-              @click="isAuthenticated ? showJoinModal = true : loginWithRedirect({ appState: { returnTo: $route.fullPath } })"
+              @click="isAuthenticated ? showJoinModal = true : loginWithRedirect({ appState: { returnTo: route.fullPath } })"
             >
               Join League
             </button>
@@ -88,7 +88,7 @@
           <div class="text-4xl mb-2">⏳</div>
           <p>Waiting for the league creator to open the draft.</p>
           <p v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)" class="mt-2">
-            <button class="btn btn-primary btn-sm" @click="isAuthenticated ? showJoinModal = true : loginWithRedirect({ appState: { returnTo: $route.fullPath } })">Join to participate</button>
+            <button class="btn btn-primary btn-sm" @click="isAuthenticated ? showJoinModal = true : loginWithRedirect({ appState: { returnTo: route.fullPath } })">Join to participate</button>
           </p>
         </div>
 
@@ -346,7 +346,7 @@
       <div v-if="activeTab === 'myteam'">
         <div v-if="!league.is_member" class="text-center py-10 text-base-content/40">
           <p>You're not in this league.</p>
-          <button v-if="['forming', 'draft_open'].includes(league.status)" class="btn btn-primary btn-sm mt-3" @click="isAuthenticated ? showJoinModal = true : loginWithRedirect({ appState: { returnTo: $route.fullPath } })">
+          <button v-if="['forming', 'draft_open'].includes(league.status)" class="btn btn-primary btn-sm mt-3" @click="isAuthenticated ? showJoinModal = true : loginWithRedirect({ appState: { returnTo: route.fullPath } })">
             Join League
           </button>
         </div>
@@ -406,7 +406,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
-import { useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useApiClient } from '@/api/client'
 
@@ -461,7 +460,6 @@ const RosterList = {
 const route = useRoute()
 const api = useApiClient()
 const { isAuthenticated, loginWithRedirect } = useAuth0()
-const $route = useRoute()
 const userStore = useUserStore()
 
 const league = ref(null)
