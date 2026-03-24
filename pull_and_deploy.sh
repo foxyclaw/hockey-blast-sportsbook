@@ -91,7 +91,7 @@ sleep 4
 # ── 4. Health check ────────────────────────────────────────────────────────
 echo ""
 echo "🩺 Health check..."
-HEALTH=$(curl -s --max-time 5 http://127.0.0.1:5003/api/health 2>/dev/null)
+HEALTH=$(curl -s --max-time 5 http://127.0.0.1:5002/api/health 2>/dev/null)
 if echo "$HEALTH" | grep -q '"ok"'; then
   echo "   ✅ Service is healthy: $HEALTH"
 else
