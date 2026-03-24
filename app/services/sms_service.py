@@ -13,7 +13,7 @@ import os
 logger = logging.getLogger(__name__)
 
 
-def send_sms(to_phone: str, message: str) -> bool:
+def send_sms(to_phone: str, message: str, user_id: int | None = None) -> bool:
     """
     Send an SMS via Twilio. Returns True on success, False on failure.
     Silently skips if Twilio is not configured.
@@ -35,16 +35,37 @@ def send_sms(to_phone: str, message: str) -> bool:
         digits = "1" + digits
     formatted = f"+{digits}"
 
+    twilio_sid = None
+    status = "sent"
+    error_msg = None
+
     try:
         from twilio.rest import Client
         client = Client(account_sid, auth_token)
-        client.messages.create(
-            body=message,
-            from_=from_number,
-            to=formatted,
-        )
-        logger.info(f"SMS sent to {formatted}")
-        return True
+        msg = client.messages.create(body=message, from_=from_number, to=formatted)
+        twilio_sid = msg.sid
+        logger.info(f"SMS sent to {formatted} ({twilio_sid})")
     except Exception as e:
         logger.error(f"SMS failed to {formatted}: {e}")
-        return False
+        status = "failed"
+        error_msg = str(e)
+
+    # Log to DB (best-effort — never let logging break the caller)
+    try:
+        from app.db import PredSession
+        from app.models.sms_log import SmsLog
+        db = PredSession()
+        db.add(SmsLog(
+            user_id=user_id,
+            to_phone=formatted,
+            body=message,
+            twilio_sid=twilio_sid,
+            status=status,
+            error=error_msg,
+        ))
+        db.commit()
+        db.close()
+    except Exception as log_err:
+        logger.warning(f"Could not log SMS to DB: {log_err}")
+
+    return status == "sent"

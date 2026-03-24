@@ -51,9 +51,24 @@ def _send_delayed_external(
 
         # If user was seen after the notification was created, they're active — skip
         if user.last_seen_at and user.last_seen_at > notif_created_at:
-            logger.info(
-                f"Delayed notify skipped for user {user_id}: active since notification"
-            )
+            logger.info(f"Delayed notify skipped for user {user_id}: active since notification")
+            # Log the skip so we have a record
+            try:
+                from app.models.sms_log import SmsLog
+                phone = prefs.notify_phone if prefs else None
+                if phone:
+                    digits = "".join(c for c in phone if c.isdigit())
+                    formatted = f"+1{digits}" if len(digits) == 10 else f"+{digits}"
+                    db.add(SmsLog(
+                        user_id=user_id,
+                        to_phone=formatted,
+                        body=sms_text,
+                        status="skipped",
+                        error="user was active",
+                    ))
+                    db.commit()
+            except Exception:
+                pass
             return
 
         prefs = db.execute(
@@ -63,8 +78,7 @@ def _send_delayed_external(
         # SMS
         if prefs and prefs.notify_phone:
             from app.services.sms_service import send_sms
-
-            send_sms(prefs.notify_phone, sms_text)
+            send_sms(prefs.notify_phone, sms_text, user_id=user_id)
 
         # Email
         if user.email and (not prefs or prefs.notify_email):
