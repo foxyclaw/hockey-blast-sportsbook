@@ -14,6 +14,32 @@ Auto-pick: best available player by ppg from pool.
 import logging
 from datetime import datetime, timezone, timedelta
 
+# Draft quiet hours: picks do not expire before 10 AM PT (no one gets auto-skipped overnight)
+_QUIET_START_HOUR = 0    # midnight PT
+_QUIET_END_HOUR   = 10   # 10 AM PT
+_PT = timezone(timedelta(hours=-7))  # PDT; adjust to -8 in winter
+
+
+def _deadline_respecting_quiet_hours(pick_hours: int) -> datetime:
+    """
+    Return now + pick_hours, but push the deadline past 10 AM PT if it
+    would land during quiet hours (midnight–10 AM).
+
+    Example: pick starts at 9 PM Friday, 24h deadline = 9 PM Saturday — fine.
+    Example: pick starts at 2 AM Friday, 24h deadline = 2 AM Saturday —
+             pushed to 10 AM Saturday so the manager isn't skipped overnight.
+    """
+    now_utc = datetime.now(timezone.utc)
+    raw_deadline = now_utc + timedelta(hours=pick_hours)
+    deadline_pt = raw_deadline.astimezone(_PT)
+
+    if _QUIET_START_HOUR <= deadline_pt.hour < _QUIET_END_HOUR:
+        # Push to 10 AM PT same calendar day
+        wakeup = deadline_pt.replace(hour=_QUIET_END_HOUR, minute=0, second=0, microsecond=0)
+        return wakeup.astimezone(timezone.utc)
+
+    return raw_deadline
+
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -102,7 +128,7 @@ def _set_next_deadline(league_id: int, pred, pick_hours: int) -> None:
     )
     slot = pred.execute(stmt).scalar_one_or_none()
     if slot:
-        slot.deadline = datetime.now(timezone.utc) + timedelta(hours=pick_hours)
+        slot.deadline = _deadline_respecting_quiet_hours(pick_hours)
         pred.commit()
         _notify_manager(slot.user_id, slot.league_id, slot.overall_pick, slot.deadline, pred)
     else:
