@@ -258,7 +258,7 @@ async function loadLevels() {
   levelsLoading.value = true
   try {
     const { data } = await api.get('/api/fantasy/levels')
-    levels.value = data.levels || []
+    levels.value = (data.levels || []).sort((a, b) => a.level_name.localeCompare(b.level_name, undefined, {numeric: true, sensitivity: "base"}))
   } catch {
     levels.value = []
   } finally {
