@@ -1,5 +1,5 @@
 import os
-port = int(os.environ.get("PORT", 5003))
+port = int(os.environ.get("PORT", 5002))
 bind = f"127.0.0.1:{port}"
 workers = 4
 threads = 2
