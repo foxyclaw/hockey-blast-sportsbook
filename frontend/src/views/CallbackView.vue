@@ -61,11 +61,9 @@ watch(
       return
     }
     await userStore.fetchPredUser(idTokenClaims.value?.__raw)
-    // onRedirectCallback in main.js handles the redirect to returnTo.
-    // Only fall back to home if we somehow get here without appState.
-    if (!appState?.value?.returnTo) {
-      router.replace({ name: 'home' })
-    }
+    const returnTo = localStorage.getItem('auth_return_to')
+    localStorage.removeItem('auth_return_to')
+    router.replace(returnTo || { name: 'home' })
   },
   { immediate: true }
 )

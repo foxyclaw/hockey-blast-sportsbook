@@ -19,9 +19,6 @@ app.use(
     },
     cacheLocation: 'localstorage',
     cookieDomain: '.hockey-blast.com',
-    onRedirectCallback: (appState) => {
-      router.replace(appState?.returnTo || '/')
-    },
   })
 )
 
