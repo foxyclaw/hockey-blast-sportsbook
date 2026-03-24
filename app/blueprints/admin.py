@@ -557,8 +557,7 @@ def launch_fantasy_season():
                 existing.draft_opens_at = draft_opens_dt
             if draft_closes_dt is not None:
                 existing.draft_closes_at = draft_closes_dt
-            if existing.status == "forming":
-                existing.status = "active"
+            # Status not auto-promoted on re-import; admin controls transitions explicitly
             updated.append({"id": existing.id, "name": existing.name, "action": "updated"})
         else:
             # Create new league — get pool info for sizing
@@ -578,7 +577,7 @@ def launch_fantasy_season():
                 level_name=level_name,
                 org_id=org_id,
                 season_label="Spring 2026",
-                status="active",
+                status="forming",
                 max_managers=max_managers,
                 roster_skaters=roster_skaters,
                 roster_goalies=1,
