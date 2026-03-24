@@ -939,9 +939,9 @@ function applyTestMode() {
   const pad = n => String(n).padStart(2, '0')
   const now = new Date()
   const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  const opens = new Date(now.getTime() + 1 * 60000)   // 1 min from now
-  const closes = new Date(now.getTime() + 120 * 60000) // 2 hours from now
-  const season = new Date(now.getTime() + 130 * 60000) // 2h10m from now
+  const opens = new Date(now.getTime() + 5 * 60000)   // 5 min from now (time for managers to join)
+  const closes = new Date(now.getTime() + 125 * 60000) // 2 hours from opens
+  const season = new Date(now.getTime() + 135 * 60000) // 2h10m from now
   launchDraftOpens.value = fmt(opens)
   launchDraftCloses.value = fmt(closes)
   launchStartDate.value = fmt(season)
