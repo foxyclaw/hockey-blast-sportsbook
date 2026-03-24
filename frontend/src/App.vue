@@ -21,7 +21,6 @@
         <span>🏒 Hockey Blast Sportsbook · Not gambling · Just fun</span>
       </footer>
       <ChatWidget />
-    <HelpButton />
     </template>
   </div>
 </template>
@@ -32,7 +31,6 @@ import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { defineAsyncComponent } from 'vue'
 import NavBar from '@/components/NavBar.vue'
-import HelpButton from '@/components/HelpButton.vue'
 import { useUserStore } from '@/stores/user'
 
 const ChatWidget = defineAsyncComponent(() => import('@/components/ChatWidget.vue'))

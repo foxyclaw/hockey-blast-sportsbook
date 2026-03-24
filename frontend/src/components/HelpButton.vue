@@ -1,14 +1,4 @@
 <template>
-  <!-- Floating help button -->
-  <button
-    class="btn btn-circle btn-primary shadow-lg"
-    style="position:fixed;bottom:24px;right:24px;z-index:9999;width:48px;height:48px;font-size:1.25rem;"
-    aria-label="Help / Feedback"
-    @click="openModal"
-  >
-    ?
-  </button>
-
   <!-- DaisyUI modal -->
   <div class="modal" :class="{ 'modal-open': isOpen }">
     <div class="modal-box" style="max-width:480px;">
@@ -136,4 +126,6 @@ async function submit() {
     submitting.value = false
   }
 }
+
+defineExpose({ open: openModal })
 </script>

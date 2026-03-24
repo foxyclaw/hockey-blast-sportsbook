@@ -126,6 +126,12 @@
         Sign In
       </button>
 
+      <!-- Help / Feedback button -->
+      <button @click="helpButtonRef?.open()" class="btn btn-ghost btn-circle btn-sm" title="Help / Feedback" aria-label="Help / Feedback">
+        <span style="font-weight:700;font-size:1.1rem;">?</span>
+      </button>
+      <HelpButton ref="helpButtonRef" />
+
       <!-- Mobile hamburger -->
       <div class="dropdown dropdown-end sm:hidden">
         <label tabindex="0" class="btn btn-ghost btn-sm">
@@ -152,6 +158,7 @@ import { useRouter } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
 import { useApiClient } from '@/api/client'
+import HelpButton from '@/components/HelpButton.vue'
 
 const { isAuthenticated, isLoading, user, loginWithRedirect, logout } = useAuth0()
 const userStore = useUserStore()
@@ -160,6 +167,7 @@ const isFullyAuthenticated = computed(() => isAuthenticated.value && userStore.p
 const predUser = computed(() => userStore.predUser)
 const router = useRouter()
 const loginInProgress = ref(false)
+const helpButtonRef = ref(null)
 
 const balance = computed(() => userStore.balance)
 const api = useApiClient()

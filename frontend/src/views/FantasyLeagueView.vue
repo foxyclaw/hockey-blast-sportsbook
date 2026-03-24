@@ -108,7 +108,7 @@
               </p>
             </div>
           </div>
-          <div v-else-if="['active', 'completed'].includes(league.status)" class="alert alert-success mb-4">
+          <div v-else-if="['active', 'completed'].includes(league.status) && draftQueue.length > 0" class="alert alert-success mb-4">
             <span>✅ Draft complete! Season is {{ league.status === 'active' ? 'active' : 'completed' }}.</span>
           </div>
 
