@@ -37,7 +37,7 @@ class FantasyLeague(PredBase):
     )
     draft_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     draft_opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    draft_closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    draft_closes_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     season_starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     join_code: Mapped[str | None] = mapped_column(String(12), nullable=True)

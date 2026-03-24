@@ -191,6 +191,10 @@ def create_league():
     if max_managers < 4:
         return error_response("VALIDATION_ERROR", "Not enough players at this level to form a league (need 4+ managers worth of players)", 400)
 
+    # draft_closes_at is mandatory — the entire deadline system depends on it
+    if not data.get("draft_closes_at"):
+        return error_response("VALIDATION_ERROR", "draft_closes_at is required", 400)
+
     # Handle private league + join_code
     is_private = bool(data.get("is_private", False))
     join_code = None
