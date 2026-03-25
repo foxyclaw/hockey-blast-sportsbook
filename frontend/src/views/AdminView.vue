@@ -427,6 +427,7 @@
                   <th>Level</th>
                   <th>Status</th>
                   <th>Managers</th>
+                  <th>Season Label</th>
                   <th>Season Start</th>
                   <th>Draft Opens</th>
                   <th>Draft Closes</th>
@@ -448,7 +449,14 @@
                     </td>
                     <td><span class="badge badge-xs" :class="statusBadgeClass(l.status)">{{ l.status }}</span></td>
                     <td>{{ l.manager_count ?? '—' }}</td>
-                    <td class="text-xs">{{ fmtDt(l.season_starts_at) }}</td>
+                    <td class="text-xs">
+                      <span v-if="l.season_label" class="font-medium">{{ l.season_label }}</span>
+                      <span v-else class="font-bold text-warning animate-pulse">⚠️ SET SEASON!</span>
+                    </td>
+                    <td class="text-xs">
+                      <span v-if="l.season_starts_at">{{ fmtDt(l.season_starts_at) }}</span>
+                      <span v-else class="font-bold text-error">⚠️ MISSING</span>
+                    </td>
                     <td class="text-xs">{{ fmtDt(l.draft_opens_at) }}</td>
                     <td class="text-xs">{{ fmtDt(l.draft_closes_at) }}</td>
                     <td class="text-xs opacity-60">{{ l.hb_season_id || 'auto' }}</td>
@@ -458,8 +466,12 @@
                   </tr>
                   <!-- Inline edit row -->
                   <tr v-if="editingLeagueId === l.id" class="bg-base-300">
-                    <td colspan="9" class="p-3">
+                    <td colspan="10" class="p-3">
                       <div class="flex flex-wrap gap-3 items-end">
+                        <div class="form-control">
+                          <label class="label py-0"><span class="label-text text-xs font-bold text-warning">Season Label ⚠️</span></label>
+                          <input v-model="leagueEditForm.season_label" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-xs w-40" />
+                        </div>
                         <div class="form-control">
                           <label class="label py-0"><span class="label-text text-xs">Season Start</span></label>
                           <input v-model="leagueEditForm.season_starts_at" type="datetime-local" class="input input-bordered input-xs w-48" />
@@ -812,7 +824,7 @@ const deleteResult = ref(null)
 
 // ── Inline league edit ───────────────────────────────────────────────────────
 const editingLeagueId = ref(null)
-const leagueEditForm = ref({ season_starts_at: '', draft_opens_at: '', draft_closes_at: '', hb_season_id: null })
+const leagueEditForm = ref({ season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '', hb_season_id: null })
 const hbSeasons = ref([])
 const leagueEditSaving = ref(false)
 const leagueEditError = ref(null)
@@ -839,9 +851,11 @@ function openLeagueEdit(league) {
   leagueEditError.value = null
   hbSeasons.value = []
   leagueEditForm.value = {
+    season_label: league.season_label || '',
     season_starts_at: toLocalDtInput(league.season_starts_at),
     draft_opens_at: toLocalDtInput(league.draft_opens_at),
     draft_closes_at: toLocalDtInput(league.draft_closes_at),
+    hb_season_id: league.hb_season_id || null,
   }
   editingLeagueId.value = league.id
 }
@@ -859,6 +873,7 @@ async function saveLeagueEdit(leagueId) {
   leagueEditError.value = null
   try {
     const { data } = await api.patch(`/api/admin/fantasy/leagues/${leagueId}`, {
+      season_label: leagueEditForm.value.season_label || null,
       season_starts_at: leagueEditForm.value.season_starts_at || null,
       draft_opens_at: leagueEditForm.value.draft_opens_at || null,
       draft_closes_at: leagueEditForm.value.draft_closes_at || null,
