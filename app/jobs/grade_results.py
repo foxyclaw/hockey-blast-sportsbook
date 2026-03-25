@@ -181,6 +181,31 @@ def start_scheduler(app):
         replace_existing=True,
     )
 
+
+    def _fantasy_score_job():
+        """Score completed games for all active fantasy leagues."""
+        with _app.app_context():
+            try:
+                from app.services.fantasy_scoring_service import score_active_leagues
+                summary = score_active_leagues()
+                if summary["games"] > 0 or summary["errors"] > 0:
+                    logger.info(
+                        "[fantasy] Scored leagues=%d games=%d errors=%d",
+                        summary.get("leagues", 0),
+                        summary.get("games", 0),
+                        summary.get("errors", 0),
+                    )
+            except Exception as exc:
+                logger.exception("[fantasy] Unhandled error in fantasy score job: %s", exc)
+
+    _scheduler.add_job(
+        func=_fantasy_score_job,
+        trigger=IntervalTrigger(minutes=5),
+        id="fantasy_scoring",
+        name="Score fantasy games",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     logger.info("[grader] Scheduler started. Interval: %d minutes", interval_minutes)
 

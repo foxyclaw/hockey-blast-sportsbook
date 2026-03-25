@@ -631,8 +631,11 @@ def get_draft_queue(league_id: int):
 @fantasy_bp.route("/leagues/<int:league_id>/roster/<int:user_id>", methods=["GET"])
 @optional_auth
 def get_roster(league_id: int, user_id: int):
-    """GET /api/fantasy/leagues/<id>/roster/<user_id> — a manager's roster."""
+    """GET /api/fantasy/leagues/<id>/roster/<user_id> — a manager's roster with stats."""
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import func, text as sa_text
     pred = PredSession()
+    hb = HBSession()
 
     stmt = select(FantasyRoster).where(
         FantasyRoster.league_id == league_id,
@@ -643,12 +646,77 @@ def get_roster(league_id: int, user_id: int):
     if not roster:
         return jsonify({"roster": []})
 
-    # Enrich with player names
     human_ids = [r.hb_human_id for r in roster]
+
+    # Player names
     from hockey_blast_common_lib.models import Human
-    hb = HBSession()
     humans = hb.execute(select(Human).where(Human.id.in_(human_ids))).scalars().all()
     human_map = {h.id: h for h in humans}
+
+    # Fantasy stats per player (aggregated across all scored games)
+    from app.models.fantasy_game_scores import FantasyGameScores
+    stats_rows = pred.execute(
+        select(
+            FantasyGameScores.hb_human_id,
+            func.sum(FantasyGameScores.goals).label("goals"),
+            func.sum(FantasyGameScores.assists).label("assists"),
+            func.sum(FantasyGameScores.penalties).label("penalties"),
+            func.sum(FantasyGameScores.games_played).label("gp"),
+            func.sum(FantasyGameScores.points).label("total_pts"),
+        )
+        .where(
+            FantasyGameScores.league_id == league_id,
+            FantasyGameScores.hb_human_id.in_(human_ids),
+        )
+        .group_by(FantasyGameScores.hb_human_id)
+    ).all()
+    stats_map = {
+        r.hb_human_id: {
+            "goals": int(r.goals or 0),
+            "assists": int(r.assists or 0),
+            "penalties": int(r.penalties or 0),
+            "gp": int(r.gp or 0),
+            "total_pts": float(r.total_pts or 0),
+        }
+        for r in stats_rows
+    }
+
+    # Determine which players are "live" right now:
+    # Find games scheduled within the last 3 hours (approximate game duration)
+    # that are still in Scheduled status (not yet Final) for this league's divisions.
+    live_human_ids: set[int] = set()
+    try:
+        league_row = pred.execute(
+            sa_text("SELECT level_id, hb_season_id FROM fantasy_leagues WHERE id = :lid"),
+            {"lid": league_id},
+        ).fetchone()
+        if league_row:
+            now_utc = datetime.now(timezone.utc)
+            window_start = now_utc - timedelta(hours=3)
+            div_rows = hb.execute(
+                sa_text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
+                {"lvl": league_row.level_id, "sid": league_row.hb_season_id},
+            ).fetchall()
+            if div_rows:
+                div_ids_sql = ",".join(str(r.id) for r in div_rows)
+                # Games with status Scheduled that started within the last 3h
+                # HB stores date + time separately; use last_update_ts as proxy for recent activity
+                live_games = hb.execute(sa_text(
+                    f"SELECT id FROM games "
+                    f"WHERE division_id IN ({div_ids_sql}) "
+                    f"AND status NOT IN ('Final','Final.','Final/OT','Final/OT2','Final/SO','Final(SO)','
+                    f"'CANCELED','FORFEIT','Forfeit','NOEVENTS','FAILED','UnKnown') "
+                    f"AND last_update_ts >= :ws"
+                ), {"ws": window_start}).fetchall()
+                if live_games:
+                    live_game_ids = [g.id for g in live_games]
+                    lg_ids_sql = ",".join(str(g) for g in live_game_ids)
+                    live_players = hb.execute(sa_text(
+                        f"SELECT DISTINCT human_id FROM game_rosters WHERE game_id IN ({lg_ids_sql})"
+                    )).fetchall()
+                    live_human_ids = {r.human_id for r in live_players}
+    except Exception as e:
+        pass  # live status is best-effort
 
     result = []
     for r in roster:
@@ -658,7 +726,17 @@ def get_roster(league_id: int, user_id: int):
             d["first_name"] = h.first_name
             d["last_name"] = h.last_name
             d["player_name"] = f"{h.first_name} {h.last_name}".strip()
+        s = stats_map.get(r.hb_human_id, {})
+        d["goals"] = s.get("goals", 0)
+        d["assists"] = s.get("assists", 0)
+        d["penalties"] = s.get("penalties", 0)
+        d["gp"] = s.get("gp", 0)
+        d["fantasy_points"] = s.get("total_pts", 0.0)
+        d["is_live"] = r.hb_human_id in live_human_ids
         result.append(d)
+
+    # Sort: goalies last, then by fantasy_points desc
+    result.sort(key=lambda p: (p.get("is_goalie", False), -p.get("fantasy_points", 0)))
 
     return jsonify({"roster": result})
 

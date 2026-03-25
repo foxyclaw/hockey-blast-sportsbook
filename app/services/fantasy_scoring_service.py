@@ -60,97 +60,109 @@ def score_game(league_id: int, game_id: int) -> None:
 
     rostered_ids = {r.hb_human_id: r for r in roster}
 
-    # Query HB for game roster / goal stats
-    # Use raw SQL since models may have Flask-SQLAlchemy bindings
+    # ── Get all players who appeared in this game (game_rosters) ─────────────
     try:
-        # Skater stats for this game
-        skater_sql = text("""
-            SELECT
-                gr.human_id,
-                COALESCE(SUM(CASE WHEN g.scoring_type IN ('Goal','PP Goal','SH Goal','Penalty Shot Goal') THEN 1 ELSE 0 END), 0) AS goals,
-                COALESCE(SUM(CASE WHEN g.scoring_type IN ('Assist','PP Assist','SH Assist') THEN 1 ELSE 0 END), 0) AS assists,
-                COALESCE(SUM(CASE WHEN g.scoring_type IN ('Minor','Major','Game Misconduct') THEN 1 ELSE 0 END), 0) AS penalties
-            FROM game_roster gr
-            LEFT JOIN goals g ON g.game_id = gr.game_id AND (g.scorer_id = gr.human_id OR g.assist1_id = gr.human_id OR g.assist2_id = gr.human_id OR g.penalized_player_id = gr.human_id)
-            WHERE gr.game_id = :game_id
-            GROUP BY gr.human_id
-        """)
-        skater_rows = hb.execute(skater_sql, {"game_id": game_id}).fetchall()
-    except Exception:
-        # Fallback: simpler query if schema differs
-        try:
-            skater_sql = text("""
-                SELECT human_id,
-                       0 AS goals, 0 AS assists, 0 AS penalties
-                FROM game_roster
-                WHERE game_id = :game_id
-                GROUP BY human_id
-            """)
-            skater_rows = hb.execute(skater_sql, {"game_id": game_id}).fetchall()
-        except Exception as e:
-            logger.warning(f"score_game: could not query HB for game {game_id}: {e}")
-            return
+        participants = {
+            r.human_id
+            for r in hb.execute(
+                text("SELECT human_id FROM game_rosters WHERE game_id = :gid"),
+                {"gid": game_id},
+            ).fetchall()
+        }
+    except Exception as e:
+        logger.warning("score_game: could not query game_rosters for game %d: %s", game_id, e)
+        return
 
-    # Check for goalie wins / shutouts
+    # ── Goals: goal_scorer_id, assist_1_id, assist_2_id ──────────────────────
+    goals_by_player: dict[int, int] = {}
+    assists_by_player: dict[int, int] = {}
     try:
-        goalie_sql = text("""
-            SELECT
-                gg.goalie_id AS human_id,
-                gg.is_win,
-                gg.goals_allowed
-            FROM game_goalies gg
-            WHERE gg.game_id = :game_id
-        """)
-        goalie_rows = hb.execute(goalie_sql, {"game_id": game_id}).fetchall()
-    except Exception:
-        goalie_rows = []
+        goal_rows = hb.execute(
+            text("SELECT goal_scorer_id, assist_1_id, assist_2_id "
+                 "FROM goals WHERE game_id = :gid"),
+            {"gid": game_id},
+        ).fetchall()
+        for g in goal_rows:
+            if g.goal_scorer_id:
+                goals_by_player[g.goal_scorer_id] = goals_by_player.get(g.goal_scorer_id, 0) + 1
+            if g.assist_1_id:
+                assists_by_player[g.assist_1_id] = assists_by_player.get(g.assist_1_id, 0) + 1
+            if g.assist_2_id:
+                assists_by_player[g.assist_2_id] = assists_by_player.get(g.assist_2_id, 0) + 1
+    except Exception as e:
+        logger.warning("score_game: could not query goals for game %d: %s", game_id, e)
 
-    goalie_results = {}
-    for gr in goalie_rows:
-        goalie_results[gr.human_id] = {
-            "is_win": bool(getattr(gr, "is_win", False)),
-            "is_shutout": (getattr(gr, "goals_allowed", 1) == 0),
-        }
+    # ── Penalties: penalized_player_id ───────────────────────────────────────
+    penalties_by_player: dict[int, int] = {}
+    try:
+        pen_rows = hb.execute(
+            text("SELECT penalized_player_id FROM penalties WHERE game_id = :gid"),
+            {"gid": game_id},
+        ).fetchall()
+        for p in pen_rows:
+            if p.penalized_player_id:
+                penalties_by_player[p.penalized_player_id] = (
+                    penalties_by_player.get(p.penalized_player_id, 0) + 1
+                )
+    except Exception as e:
+        logger.warning("score_game: could not query penalties for game %d: %s", game_id, e)
 
-    # Build stats map
-    stats = {}
-    for row in skater_rows:
-        stats[row.human_id] = {
-            "goals": int(row.goals),
-            "assists": int(row.assists),
-            "penalties": int(row.penalties),
-        }
+    # ── Goalie win/shutout from games table ───────────────────────────────────
+    goalie_results: dict[int, dict] = {}
+    try:
+        game_row = hb.execute(
+            text("SELECT home_goalie_id, visitor_goalie_id, "
+                 "home_final_score, visitor_final_score FROM games WHERE id = :gid"),
+            {"gid": game_id},
+        ).fetchone()
+        if game_row and game_row.home_final_score is not None and game_row.visitor_final_score is not None:
+            h = game_row.home_final_score
+            v = game_row.visitor_final_score
+            if game_row.home_goalie_id:
+                goalie_results[game_row.home_goalie_id] = {
+                    "is_win":     h > v,
+                    "is_shutout": v == 0,
+                }
+            if game_row.visitor_goalie_id:
+                goalie_results[game_row.visitor_goalie_id] = {
+                    "is_win":     v > h,
+                    "is_shutout": h == 0,
+                }
+    except Exception as e:
+        logger.warning("score_game: could not query goalie data for game %d: %s", game_id, e)
 
     now = datetime.now(timezone.utc)
+    scored = 0
 
-    # Score each rostered player
+    # ── Score each rostered player who was in this game ───────────────────────
     for hb_human_id, roster_entry in rostered_ids.items():
-        if hb_human_id not in stats:
-            continue  # player didn't play in this game
+        if hb_human_id not in participants:
+            continue  # player didn't appear in this game
 
-        s = stats[hb_human_id]
-        goalie_info = goalie_results.get(hb_human_id, {})
+        goals     = goals_by_player.get(hb_human_id, 0)
+        assists   = assists_by_player.get(hb_human_id, 0)
+        penalties = penalties_by_player.get(hb_human_id, 0)
+        goalie_info  = goalie_results.get(hb_human_id, {})
         is_goalie_win = goalie_info.get("is_win", False)
-        is_shutout = goalie_info.get("is_shutout", False)
+        is_shutout    = goalie_info.get("is_shutout", False)
 
         pts = _compute_points(
-            goals=s["goals"],
-            assists=s["assists"],
-            penalties=s["penalties"],
+            goals=goals,
+            assists=assists,
+            penalties=penalties,
             games_played=1,
             is_goalie_win=is_goalie_win,
             is_shutout=is_shutout,
         )
 
-        # Upsert into fantasy_game_scores
         stmt = pg_insert(FantasyGameScores).values(
             league_id=league_id,
             user_id=roster_entry.user_id,
             hb_human_id=hb_human_id,
             game_id=game_id,
-            goals=s["goals"],
-            assists=s["assists"],
-            penalties=s["penalties"],
+            goals=goals,
+            assists=assists,
+            penalties=penalties,
             games_played=1,
             is_goalie_win=is_goalie_win,
             is_shutout=is_shutout,
@@ -159,30 +171,97 @@ def score_game(league_id: int, game_id: int) -> None:
         ).on_conflict_do_update(
             constraint="uq_fantasy_game_scores_league_human_game",
             set_={
-                "goals": s["goals"],
-                "assists": s["assists"],
-                "penalties": s["penalties"],
+                "goals":         goals,
+                "assists":       assists,
+                "penalties":     penalties,
                 "is_goalie_win": is_goalie_win,
-                "is_shutout": is_shutout,
-                "points": pts,
-                "scored_at": now,
+                "is_shutout":    is_shutout,
+                "points":        pts,
+                "scored_at":     now,
             }
         )
         pred.execute(stmt)
+        scored += 1
 
     pred.commit()
+    logger.info("score_game: league=%d game=%d scored=%d players", league_id, game_id, scored)
 
-    # Update standings
+    # ── Update standings ──────────────────────────────────────────────────────
     _update_standings(league_id, pred)
+
+
+def score_active_leagues() -> dict:
+    """
+    Find all active fantasy leagues, discover completed-but-unscored games,
+    and score them. Called by the background scheduler.
+
+    Returns summary: {"leagues": int, "games": int, "errors": int}
+    """
+    pred = PredSession()
+    summary = {"leagues": 0, "games": 0, "errors": 0}
+
+    try:
+        from app.models.fantasy_league import FantasyLeague
+        leagues = pred.execute(
+            select(FantasyLeague).where(FantasyLeague.status == "active")
+        ).scalars().all()
+    except Exception as e:
+        logger.exception("[fantasy] Could not load active leagues: %s", e)
+        return summary
+
+    hb = HBSession()
+
+    for league in leagues:
+        summary["leagues"] += 1
+        try:
+            div_rows = hb.execute(
+                text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
+                {"lvl": league.level_id, "sid": league.hb_season_id},
+            ).fetchall()
+
+            if not div_rows:
+                continue
+
+            div_ids_sql = ",".join(str(r.id) for r in div_rows)
+            final_games = hb.execute(
+                text(
+                    f"SELECT id FROM games WHERE division_id IN ({div_ids_sql}) "
+                    "AND status IN ('Final','Final.','Final/OT','Final/OT2','Final/SO','Final(SO)')"
+                )
+            ).fetchall()
+
+            if not final_games:
+                continue
+
+            already_scored = {
+                r.game_id
+                for r in pred.execute(
+                    text("SELECT DISTINCT game_id FROM fantasy_game_scores WHERE league_id = :lid"),
+                    {"lid": league.id},
+                ).fetchall()
+            }
+
+            for game_row in final_games:
+                if game_row.id in already_scored:
+                    continue
+                try:
+                    score_game(league.id, game_row.id)
+                    summary["games"] += 1
+                except Exception as ge:
+                    logger.warning("[fantasy] score_game(%d, %d) failed: %s", league.id, game_row.id, ge)
+                    summary["errors"] += 1
+
+        except Exception as le:
+            logger.exception("[fantasy] Error processing league %d: %s", league.id, le)
+            summary["errors"] += 1
+
+    return summary
 
 
 def _update_standings(league_id: int, pred) -> None:
     """Recompute total_points for all managers and update rank."""
     from sqlalchemy import func
-    from app.models.fantasy_roster import FantasyRoster
-    from app.models.fantasy_game_scores import FantasyGameScores
 
-    # Sum points per user
     pts_stmt = (
         select(
             FantasyGameScores.user_id,
@@ -208,8 +287,8 @@ def _update_standings(league_id: int, pred) -> None:
             constraint="uq_fantasy_standings_league_user",
             set_={
                 "total_points": float(row.total or 0),
-                "rank": rank,
-                "updated_at": now,
+                "rank":         rank,
+                "updated_at":   now,
             }
         )
         pred.execute(stmt)

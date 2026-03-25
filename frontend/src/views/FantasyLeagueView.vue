@@ -391,40 +391,22 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
 import { useApiClient } from '@/api/client'
 
-// ── Inline mini-component for roster list ─────────────────────────────────
+// ── Roster list component (render function — no compiler needed) ──────────
 const RosterList = {
   name: 'RosterList',
   props: {
     leagueId: { type: Number, required: true },
-    userId: { type: Number, required: true },
-    showPoints: { type: Boolean, default: false },
+    userId:   { type: Number, required: true },
   },
-  template: `
-    <div>
-      <div v-if="rLoading" class="text-xs text-base-content/40">Loading…</div>
-      <div v-else-if="!roster.length" class="text-xs text-base-content/40 italic">No players drafted yet.</div>
-      <div v-else class="flex flex-wrap gap-2">
-        <span
-          v-for="p in roster"
-          :key="p.hb_human_id"
-          class="badge badge-outline gap-1 text-xs"
-          :class="p.is_goalie ? 'badge-secondary' : 'badge-primary'"
-        >
-          {{ p.is_goalie ? '🥅' : '🏒' }} {{ p.player_name }}
-          <span v-if="p.round_picked" class="opacity-50 text-xs">R{{ p.round_picked }}</span>
-        </span>
-      </div>
-    </div>
-  `,
   setup(props) {
     const api = useApiClient()
-    const roster = ref([])
+    const roster   = ref([])
     const rLoading = ref(true)
 
     async function load() {
@@ -440,7 +422,51 @@ const RosterList = {
     }
 
     onMounted(load)
-    return { roster, rLoading }
+    return () => {
+      if (rLoading.value) {
+        return h('div', { class: 'text-xs text-base-content/40 py-2' }, 'Loading…')
+      }
+      if (!roster.value.length) {
+        return h('div', { class: 'text-xs text-base-content/40 italic py-2' }, 'No players drafted yet.')
+      }
+
+      // Table header
+      const thead = h('thead', [
+        h('tr', [
+          h('th', { class: 'text-left text-xs font-medium opacity-60 pb-1 pr-4' }, 'Player'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 px-2' }, 'GP'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 px-2' }, 'G'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 px-2' }, 'A'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 pl-2' }, 'FP'),
+        ])
+      ])
+
+      const rows = roster.value.map(p => {
+        const icon = p.is_goalie ? '🥅' : '🏒'
+        const liveChip = p.is_live
+          ? h('span', { class: 'inline-flex items-center gap-1 ml-1' }, [
+              h('span', { class: 'w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block' }),
+              h('span', { class: 'text-green-400 text-xs font-semibold' }, 'LIVE'),
+            ])
+          : null
+        const nameCell = h('td', { class: 'pr-4 py-1' }, [
+          h('span', { class: 'text-sm' }, `${icon} ${p.player_name || '—'}`),
+          liveChip,
+        ])
+        return h('tr', { key: p.hb_human_id, class: 'border-t border-base-300/30' }, [
+          nameCell,
+          h('td', { class: 'text-right text-xs px-2 py-1 opacity-70' }, p.gp ?? 0),
+          h('td', { class: 'text-right text-xs px-2 py-1 opacity-70' }, p.goals ?? 0),
+          h('td', { class: 'text-right text-xs px-2 py-1 opacity-70' }, p.assists ?? 0),
+          h('td', { class: 'text-right text-xs pl-2 py-1 font-semibold text-primary' },
+            p.fantasy_points != null ? p.fantasy_points.toFixed(1) : '—'),
+        ])
+      })
+
+      return h('div', { class: 'overflow-x-auto' }, [
+        h('table', { class: 'w-full' }, [thead, h('tbody', rows)])
+      ])
+    }
   },
 }
 
