@@ -702,11 +702,11 @@ def get_roster(league_id: int, user_id: int):
                 # Games with status Scheduled that started within the last 3h
                 # HB stores date + time separately; use last_update_ts as proxy for recent activity
                 live_games = hb.execute(sa_text(
-                    f"SELECT id FROM games "
+                    "SELECT id FROM games "
                     f"WHERE division_id IN ({div_ids_sql}) "
-                    f"AND status NOT IN ('Final','Final.','Final/OT','Final/OT2','Final/SO','Final(SO)','
-                    f"'CANCELED','FORFEIT','Forfeit','NOEVENTS','FAILED','UnKnown') "
-                    f"AND last_update_ts >= :ws"
+                    "AND status NOT IN ('Final','Final.','Final/OT','Final/OT2','Final/SO',"
+                    "'Final(SO)','CANCELED','FORFEIT','Forfeit','NOEVENTS','FAILED','UnKnown') "
+                    "AND last_update_ts >= :ws"
                 ), {"ws": window_start}).fetchall()
                 if live_games:
                     live_game_ids = [g.id for g in live_games]
