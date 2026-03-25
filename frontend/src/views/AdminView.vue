@@ -307,7 +307,7 @@
     <div v-if="activeTab === 'launch'">
       <div class="card bg-base-200 shadow-md">
         <div class="card-body p-4">
-          <h2 class="card-title text-base mb-4">🏒 Launch Fantasy Season</h2>
+          <h2 class="card-title text-base mb-4">🏒 Launch/Update Fantasy Season</h2>
 
           <div class="flex flex-wrap gap-3 mb-4 items-end">
             <div class="form-control">
@@ -763,7 +763,7 @@ watch(activeTab, (tab) => {
   else if (tab === 'launch') loadOrgs()
 })
 
-// ── Launch Fantasy Season ──────────────────────────────────────────────────
+// ── Launch/Update Fantasy Season ──────────────────────────────────────────────────
 const orgs = ref([])
 const launchOrgId = ref(1)
 const launchLeagueId = ref(2)  // default: SharksIce at San Jose
