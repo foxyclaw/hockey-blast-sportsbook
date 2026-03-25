@@ -178,12 +178,15 @@ def create_league():
     # Critical: determines which HB league's stats are used for the player pool.
     hb_league_id = data.get("hb_league_id") or None
 
-    # Compute roster sizing using the correct hb_league_id
+    # Compute roster sizing using the correct hb_league_id and org_id
     from app.services.fantasy_pool_service import get_player_pool
     try:
-        pool_info = get_player_pool(level_id, league_id=hb_league_id)
+        pool_info = get_player_pool(level_id, org_id=level.org_id, league_id=hb_league_id)
     except Exception as e:
         return error_response("INTERNAL_ERROR", f"Could not load player pool: {e}", 500)
+
+    # Capture the resolved season_id so scoring works correctly
+    hb_season_id = pool_info.get("resolved_season_id")
 
     roster_skaters = pool_info["roster_skaters"]
     max_managers = pool_info["max_managers"]
@@ -221,6 +224,7 @@ def create_league():
             level_id=level_id,
             level_name=level_name,
             hb_league_id=hb_league_id,
+            hb_season_id=hb_season_id,
             org_id=level.org_id,
             season_label=data.get("season_label"),
             status="forming",

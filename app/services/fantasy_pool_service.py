@@ -65,6 +65,9 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
             .where(*season_filter)
             .scalar_subquery()
         )
+        # Resolve the actual season_id so we can return it
+        resolved = hb.execute(select(func.max(Division.season_id)).where(*season_filter)).scalar()
+        season_id = resolved
         div_ids_stmt = select(Division.id).where(
             Division.level_id == level_id,
             Division.org_id == org_id,
@@ -186,4 +189,5 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         "goalies": goalies,
         "roster_skaters": roster_skaters,
         "max_managers": max_managers,
+        "resolved_season_id": season_id,
     }
