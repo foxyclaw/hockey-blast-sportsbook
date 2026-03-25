@@ -684,9 +684,23 @@ def list_fantasy_leagues():
         ).all()
         hb_league_names = {r.id: r.league_name for r in rows}
 
+    # Batch manager counts
+    from app.models.fantasy_manager import FantasyManager
+    from sqlalchemy import func as safunc
+    league_ids = [l.id for l in leagues]
+    mgr_counts = {}
+    if league_ids:
+        rows = pred.execute(
+            select(FantasyManager.league_id, safunc.count(FantasyManager.id).label("cnt"))
+            .where(FantasyManager.league_id.in_(league_ids))
+            .group_by(FantasyManager.league_id)
+        ).all()
+        mgr_counts = {r.league_id: r.cnt for r in rows}
+
     def league_dict(l):
         d = l.to_dict()
         d["hb_league_name"] = hb_league_names.get(l.hb_league_id) if l.hb_league_id else None
+        d["manager_count"] = mgr_counts.get(l.id, 0)
         return d
 
     return jsonify({"leagues": [league_dict(l) for l in leagues]})
