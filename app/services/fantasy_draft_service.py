@@ -210,7 +210,8 @@ def advance_draft(league_id: int) -> None:
 
     now = datetime.now(timezone.utc)
 
-    # Find current pick
+    # Find current pick — use FOR UPDATE SKIP LOCKED to prevent duplicate auto-picks
+    # if the scheduler fires concurrently
     stmt = (
         select(FantasyDraftQueue)
         .where(
@@ -220,6 +221,7 @@ def advance_draft(league_id: int) -> None:
         )
         .order_by(FantasyDraftQueue.overall_pick.asc())
         .limit(1)
+        .with_for_update(skip_locked=True)
     )
     current = pred.execute(stmt).scalar_one_or_none()
 
