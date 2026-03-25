@@ -393,12 +393,13 @@ def _get_pool(league_id: int) -> dict:
 
 
 def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None:
-    """Delete ALL previous draft pick notifications for this user."""
+    """Delete only pending 'your turn' notifications — keep auto-pick history."""
     from app.models.pred_notification import PredNotification
     try:
         stale = pred.query(PredNotification).filter(
             PredNotification.user_id == user_id,
             PredNotification.type == "fantasy_draft",
+            PredNotification.title.like("%Your Pick%"),
         ).all()
         for n in stale:
             pred.delete(n)
