@@ -544,6 +544,11 @@ def launch_fantasy_season():
         if not val:
             return None
         from datetime import datetime as _dt, timezone as _tz
+        # Try full ISO with offset first (e.g. 2026-03-25T20:47:00.000Z from frontend)
+        try:
+            return _dt.fromisoformat(str(val).replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            pass
         for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
             try:
                 return _dt.strptime(val, fmt).replace(tzinfo=_tz.utc)
@@ -730,6 +735,10 @@ def update_fantasy_league(league_id: int):
             return "UNSET"   # sentinel: caller wants to clear the field
         if val == "":
             return "UNSET"
+        try:
+            return datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            pass
         for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
             try:
                 return datetime.strptime(val, fmt).replace(tzinfo=_tz.utc)

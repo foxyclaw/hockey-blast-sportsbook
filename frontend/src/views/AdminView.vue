@@ -874,9 +874,9 @@ async function saveLeagueEdit(leagueId) {
   try {
     const { data } = await api.patch(`/api/admin/fantasy/leagues/${leagueId}`, {
       season_label: leagueEditForm.value.season_label || null,
-      season_starts_at: leagueEditForm.value.season_starts_at || null,
-      draft_opens_at: leagueEditForm.value.draft_opens_at || null,
-      draft_closes_at: leagueEditForm.value.draft_closes_at || null,
+      season_starts_at: leagueEditForm.value.season_starts_at ? new Date(leagueEditForm.value.season_starts_at).toISOString() : null,
+      draft_opens_at: leagueEditForm.value.draft_opens_at ? new Date(leagueEditForm.value.draft_opens_at).toISOString() : null,
+      draft_closes_at: leagueEditForm.value.draft_closes_at ? new Date(leagueEditForm.value.draft_closes_at).toISOString() : null,
       hb_season_id: leagueEditForm.value.hb_season_id || null,
     })
     // Update in-place
@@ -983,16 +983,22 @@ async function launchSeason() {
       return
     }
   }
+  // Convert datetime-local string (no tz) to ISO with local offset
+  function localDtToISO(val) {
+    if (!val) return undefined
+    return new Date(val).toISOString()
+  }
+
   try {
     const { data } = await api.post('/api/admin/fantasy/launch-season', {
       org_id: launchOrgId.value,
       level_ids: selectedLevelIds.value,
-      season_start_date: launchStartDate.value,
+      season_start_date: localDtToISO(launchStartDate.value),
       season_label: launchSeasonLabel.value || undefined,
       max_managers: launchMaxManagers.value || undefined,
       hb_league_id: launchLeagueId.value || undefined,
-      draft_opens_at: launchDraftOpens.value || undefined,
-      draft_closes_at: launchDraftCloses.value || undefined,
+      draft_opens_at: localDtToISO(launchDraftOpens.value),
+      draft_closes_at: localDtToISO(launchDraftCloses.value),
     })
     launchResult.value = data
     selectedLevelIds.value = []
