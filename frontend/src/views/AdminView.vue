@@ -459,7 +459,7 @@
                     </td>
                     <td class="text-xs">{{ fmtDt(l.draft_opens_at) }}</td>
                     <td class="text-xs">{{ fmtDt(l.draft_closes_at) }}</td>
-                    <td class="text-xs opacity-60">{{ l.hb_season_id || 'auto' }}</td>
+                    <td class="text-xs opacity-60">{{ l.hb_season_name || (l.hb_season_id ? String(l.hb_season_id) : 'auto') }}</td>
                     <td>
                       <button class="btn btn-xs btn-ghost" @click="openLeagueEdit(l)">✏️</button>
                     </td>

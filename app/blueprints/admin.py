@@ -684,6 +684,16 @@ def list_fantasy_leagues():
         ).all()
         hb_league_names = {r.id: r.league_name for r in rows}
 
+    # Batch season names from HB
+    hb_season_ids = {l.hb_season_id for l in leagues if l.hb_season_id}
+    hb_season_names = {}
+    if hb_season_ids:
+        from hockey_blast_common_lib.models import Season as HBSeason
+        rows = hb.execute(
+            select(HBSeason.id, HBSeason.season_name).where(HBSeason.id.in_(hb_season_ids))
+        ).all()
+        hb_season_names = {r.id: r.season_name for r in rows}
+
     # Batch manager counts
     from app.models.fantasy_manager import FantasyManager
     from sqlalchemy import func as safunc
@@ -700,6 +710,7 @@ def list_fantasy_leagues():
     def league_dict(l):
         d = l.to_dict()
         d["hb_league_name"] = hb_league_names.get(l.hb_league_id) if l.hb_league_id else None
+        d["hb_season_name"] = hb_season_names.get(l.hb_season_id) if l.hb_season_id else None
         d["manager_count"] = mgr_counts.get(l.id, 0)
         return d
 
