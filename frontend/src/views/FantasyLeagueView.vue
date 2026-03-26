@@ -491,13 +491,26 @@ const pool = ref({ skaters: [], goalies: [] })
 const standings = ref([])
 const standingsLoading = ref(false)
 
-const activeTab = ref('draft')
-const tabs = [
-  { id: 'draft', label: '📋 Draft' },
-  { id: 'rosters', label: '👥 Rosters' },
+const allTabs = [
   { id: 'standings', label: '🏆 Standings' },
   { id: 'myteam', label: '⭐ My Team' },
+  { id: 'rosters', label: '👥 Rosters' },
+  { id: 'draft', label: '📋 Draft' },
 ]
+const tabs = computed(() => {
+  if (!league.value) return allTabs
+  if (['active', 'completed'].includes(league.value.status)) {
+    return allTabs.filter(t => t.id !== 'draft')
+  }
+  return allTabs
+})
+const activeTab = ref('draft')
+// Once league loads, switch to standings if draft is done
+watch(() => league.value?.status, (status) => {
+  if (status && ['active', 'completed'].includes(status) && activeTab.value === 'draft') {
+    activeTab.value = 'standings'
+  }
+}, { immediate: true })
 
 const showJoinModal = ref(false)
 const joining = ref(false)

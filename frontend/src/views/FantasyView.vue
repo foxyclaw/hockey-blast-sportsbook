@@ -111,14 +111,6 @@
         <h3 class="font-bold text-lg mb-4">Create Fantasy League</h3>
 
         <form @submit.prevent="createLeague" class="space-y-4">
-          <!-- Season (hardcoded to current upcoming season) -->
-          <div class="form-control">
-            <label class="label"><span class="label-text text-sm">League</span></label>
-            <select class="select select-bordered select-sm" disabled>
-              <option selected>Sharks Ice Adult Hockey League — Spring 2026</option>
-            </select>
-            <div class="text-xs text-base-content/40 mt-1">Season starts April 1, 2026 · Draft: Mar 27–29</div>
-          </div>
 
           <div class="form-control">
             <label class="label"><span class="label-text text-sm">Your Level</span></label>
@@ -129,18 +121,30 @@
               </option>
             </select>
             <div v-if="levelsLoading" class="text-xs text-base-content/40 mt-1">Loading levels…</div>
+            <div class="text-xs text-base-content/40 mt-1">📊 Stats will pull from the current active season for your level automatically.</div>
           </div>
 
           <div class="form-control">
             <label class="label"><span class="label-text text-sm">Your Team Name</span></label>
-            <input
-              v-model="createForm.team_name"
-              type="text"
-              placeholder="e.g. Ice Bandits"
-              class="input input-bordered input-sm"
-              required
-            />
+            <input v-model="createForm.team_name" type="text" placeholder="e.g. Ice Bandits" class="input input-bordered input-sm" required />
           </div>
+
+          <div class="form-control">
+            <label class="label"><span class="label-text text-sm">Season Label <span class="text-base-content/40">(optional)</span></span></label>
+            <input v-model="createForm.season_label" type="text" placeholder="e.g. Winter 2026" class="input input-bordered input-sm" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
+              <input v-model="createForm.draft_opens_at" type="datetime-local" class="input input-bordered input-sm" />
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Draft Closes *</span></label>
+              <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered input-sm" required />
+            </div>
+          </div>
+          <div class="text-xs text-base-content/40">* Draft close time is required — after this picks auto-advance. Season starts automatically when draft completes.</div>
 
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3">
@@ -198,7 +202,7 @@ const levelsLoading = ref(false)
 const showCreateModal = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const createForm = ref({ team_name: '', level_key: '', is_private: false })
+const createForm = ref({ team_name: '', level_key: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' })
 const createdJoinCode = ref('')
 const showJoinCodeModal = ref(false)
 
@@ -277,16 +281,17 @@ async function createLeague() {
     // Find selected level using index key (supports duplicate level_ids with different hb_league_ids)
     const lvl = levels.value[createForm.value.level_key]
     const levelLabel = lvl ? `Level ${lvl.level_name}` : 'Level ?'
+    const seasonLabel = createForm.value.season_label || undefined
+    const leagueName = seasonLabel ? `${levelLabel} — ${seasonLabel}` : levelLabel
     const { data } = await api.post('/api/fantasy/leagues', {
-      name: `${levelLabel} — Spring 2026`,
+      name: leagueName,
       team_name: createForm.value.team_name,
       level_id: lvl?.level_id,
       hb_league_id: lvl?.hb_league_id ?? null,
-      season_label: 'Spring 2026',
+      season_label: seasonLabel,
       is_private: createForm.value.is_private,
-      season_starts_at: '2026-04-01',
-      draft_opens_at: '2026-03-27T19:00',
-      draft_closes_at: '2026-03-29T23:00',
+      draft_opens_at: createForm.value.draft_opens_at ? new Date(createForm.value.draft_opens_at).toISOString() : undefined,
+      draft_closes_at: new Date(createForm.value.draft_closes_at).toISOString(),
     })
     showCreateModal.value = false
     if (data.is_private && data.join_code) {
@@ -297,7 +302,7 @@ async function createLeague() {
     } else {
       router.push(`/fantasy/${data.id}`)
     }
-    createForm.value = { team_name: '', level_key: '', is_private: false }
+    createForm.value = { team_name: '', level_key: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' }
   } catch (e) {
     createError.value = e?.response?.data?.message || 'Failed to create league'
   } finally {
