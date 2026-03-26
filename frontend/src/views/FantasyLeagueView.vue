@@ -309,8 +309,8 @@
                 <th>#</th>
                 <th>Team</th>
                 <th>Manager</th>
-                <th class="text-right">Total Pts</th>
                 <th class="text-right">Week Pts</th>
+                <th class="text-right font-bold">Total Pts</th>
               </tr>
             </thead>
             <tbody>
@@ -322,8 +322,8 @@
                 <td>{{ row.rank || '—' }}</td>
                 <td>{{ row.team_name }}</td>
                 <td class="text-base-content/60 text-sm">{{ row.display_name }}</td>
-                <td class="text-right">{{ row.total_points }}</td>
                 <td class="text-right">{{ row.week_points }}</td>
+                <td class="text-right font-bold">{{ row.total_points }}</td>
               </tr>
             </tbody>
           </table>
