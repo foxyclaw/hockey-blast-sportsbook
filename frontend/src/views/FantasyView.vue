@@ -193,7 +193,7 @@
           </div>
         </form>
       </div>
-      <div class="modal-backdrop" @click="showCreateModal = false"></div>
+      <div class="modal-backdrop"></div>
     </div>
 
     <!-- Join Code reveal modal (shown after creating a private league) -->
