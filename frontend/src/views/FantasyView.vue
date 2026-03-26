@@ -144,6 +144,17 @@
 
         <form @submit.prevent="createLeague" class="space-y-4">
 
+          <!-- Organization (locked to org 1 for now) -->
+          <div class="form-control">
+            <label class="label py-1">
+              <span class="label-text text-sm">Organization</span>
+              <span class="label-text-alt text-xs text-base-content/30">more orgs coming soon</span>
+            </label>
+            <select class="select select-bordered select-sm opacity-60" disabled>
+              <option selected>SIAHL at San Jose</option>
+            </select>
+          </div>
+
           <!-- HB League selector -->
           <div class="form-control">
             <label class="label py-1"><span class="label-text text-sm">League</span></label>
