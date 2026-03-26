@@ -11,7 +11,7 @@ Scoring rules:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -259,9 +259,13 @@ def score_active_leagues() -> dict:
 
 
 def _update_standings(league_id: int, pred) -> None:
-    """Recompute total_points for all managers and update rank."""
+    """Recompute total_points and week_points for all managers and update rank."""
     from sqlalchemy import func
 
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    # Total points
     pts_stmt = (
         select(
             FantasyGameScores.user_id,
@@ -270,23 +274,64 @@ def _update_standings(league_id: int, pred) -> None:
         .where(FantasyGameScores.league_id == league_id)
         .group_by(FantasyGameScores.user_id)
     )
-    rows = pred.execute(pts_stmt).all()
+    total_rows = pred.execute(pts_stmt).all()
+    total_map = {r.user_id: float(r.total or 0) for r in total_rows}
 
-    sorted_rows = sorted(rows, key=lambda r: float(r.total or 0), reverse=True)
-    now = datetime.now(timezone.utc)
+    # Week points — join to HB games table to get actual game date
+    # Falls back to scored_at if game date not available
+    try:
+        from app.db import HBSession
+        from sqlalchemy import text as sa_text
+        hb = HBSession()
+        # Get game_ids for this league scored in last 7 days (by scored_at as proxy)
+        # Then cross-check actual game.date from HB
+        game_ids_stmt = (
+            select(FantasyGameScores.game_id)
+            .where(FantasyGameScores.league_id == league_id)
+            .distinct()
+        )
+        all_game_ids = [r.game_id for r in pred.execute(game_ids_stmt).all()]
+        if all_game_ids:
+            ids_sql = ",".join(str(g) for g in all_game_ids)
+            recent_games = hb.execute(sa_text(
+                f"SELECT id FROM games WHERE id IN ({ids_sql}) AND date >= :cutoff"
+            ), {"cutoff": week_ago.date()}).fetchall()
+            recent_game_ids = {r.id for r in recent_games}
+        else:
+            recent_game_ids = set()
 
-    for rank, row in enumerate(sorted_rows, 1):
+        week_stmt = (
+            select(
+                FantasyGameScores.user_id,
+                func.sum(FantasyGameScores.points).label("week_total"),
+            )
+            .where(
+                FantasyGameScores.league_id == league_id,
+                FantasyGameScores.game_id.in_(recent_game_ids) if recent_game_ids else False,
+            )
+            .group_by(FantasyGameScores.user_id)
+        )
+        week_rows = pred.execute(week_stmt).all()
+        week_map = {r.user_id: float(r.week_total or 0) for r in week_rows}
+    except Exception as e:
+        logger.warning("week_points calculation failed, falling back to 0: %s", e)
+        week_map = {}
+
+    sorted_users = sorted(total_map.keys(), key=lambda uid: total_map[uid], reverse=True)
+
+    for rank, user_id in enumerate(sorted_users, 1):
         stmt = pg_insert(FantasyStandings).values(
             league_id=league_id,
-            user_id=row.user_id,
-            total_points=float(row.total or 0),
-            week_points=0,
+            user_id=user_id,
+            total_points=total_map[user_id],
+            week_points=week_map.get(user_id, 0.0),
             rank=rank,
             updated_at=now,
         ).on_conflict_do_update(
             constraint="uq_fantasy_standings_league_user",
             set_={
-                "total_points": float(row.total or 0),
+                "total_points": total_map[user_id],
+                "week_points":  week_map.get(user_id, 0.0),
                 "rank":         rank,
                 "updated_at":   now,
             }
