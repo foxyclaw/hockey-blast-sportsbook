@@ -312,7 +312,8 @@
           <div class="flex flex-wrap gap-3 mb-4 items-end">
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Organization</span></label>
-              <select v-model.number="launchOrgId" class="select select-bordered select-sm w-48">
+              <select v-model="launchOrgId" class="select select-bordered select-sm w-48">
+                <option :value="null">— All Orgs —</option>
                 <option v-for="org in orgs" :key="org.id" :value="org.id">{{ org.name }}</option>
               </select>
             </div>
@@ -354,13 +355,17 @@
                 <input type="checkbox" v-model="launchActiveOnly" class="checkbox checkbox-sm" />
               </label>
             </div>
-            <button @click="loadLevels" class="btn btn-sm btn-outline mt-5" :disabled="levelsLoading">
+            <button @click="loadLevels" class="btn btn-sm btn-outline mt-5" :disabled="levelsLoading || launchOrgId === null">
               <span v-if="levelsLoading" class="loading loading-spinner loading-xs"></span>
               Load Levels
             </button>
           </div>
 
-          <div v-if="levels.length" class="mb-4">
+          <div v-if="launchOrgId === null" class="alert alert-warning text-sm py-2 mb-4">
+            ⚠️ Select a specific org to launch or update fantasy seasons. The league list below shows all orgs.
+          </div>
+
+          <div v-if="levels.length && launchOrgId !== null" class="mb-4">
             <div class="text-xs text-base-content/60 mb-2">Select levels to launch ({{ selectedLevelIds.length }} selected):</div>
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
               <label v-for="lvl in levels" :key="lvl.level_id" class="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-base-300">
@@ -389,7 +394,7 @@
 
           <div class="flex items-center gap-3">
             <button @click="launchSeason" class="btn btn-primary btn-sm"
-              :disabled="!selectedLevelIds.length || !launchStartDate || launching">
+              :disabled="!selectedLevelIds.length || !launchStartDate || launching || launchOrgId === null">
               <span v-if="launching" class="loading loading-spinner loading-xs"></span>
               🚀 Launch Season
             </button>
@@ -765,7 +770,7 @@ watch(activeTab, (tab) => {
 
 // ── Launch/Update Fantasy Season ──────────────────────────────────────────────────
 const orgs = ref([])
-const launchOrgId = ref(1)
+const launchOrgId = ref(1)  // null = All Orgs (view-only mode)
 const launchLeagueId = ref(2)  // default: SharksIce at San Jose
 const hbLeagues = ref([])
 
@@ -896,7 +901,8 @@ async function loadAdminLeagues() {
   confirmBatchDelete.value = false
   deleteResult.value = null
   try {
-    const { data } = await api.get(`/api/admin/fantasy/leagues?org_id=${launchOrgId.value}`)
+    const url = launchOrgId.value !== null ? `/api/admin/fantasy/leagues?org_id=${launchOrgId.value}` : '/api/admin/fantasy/leagues'
+    const { data } = await api.get(url)
     adminLeagues.value = data.leagues
   } catch { /* ignore */ } finally {
     adminLeaguesLoading.value = false

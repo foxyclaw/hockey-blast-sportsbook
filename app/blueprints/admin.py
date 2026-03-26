@@ -662,11 +662,13 @@ def list_fantasy_leagues():
     from app.models.fantasy_league import FantasyLeague
     from app.db import PredSession
 
-    org_id = request.args.get("org_id", 1, type=int)
+    org_id = request.args.get("org_id", None, type=int)
     pred = PredSession()
+    stmt = select(FantasyLeague)
+    if org_id is not None:
+        stmt = stmt.where(FantasyLeague.org_id == org_id)
     leagues = pred.execute(
-        select(FantasyLeague)
-        .where(FantasyLeague.org_id == org_id)
+        stmt
         .order_by(
             sa.case(
                 {"active": 0, "drafting": 1, "draft_open": 2, "forming": 3, "completed": 4},
