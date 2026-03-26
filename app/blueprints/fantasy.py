@@ -207,6 +207,35 @@ def list_active_levels():
     return jsonify({"levels": levels})
 
 
+
+@fantasy_bp.route("/level-pool", methods=["GET"])
+def get_level_pool():
+    """GET /api/fantasy/level-pool?level_id=X&hb_league_id=Y&org_id=1 — returns max_managers for a level (public)."""
+    from hockey_blast_common_lib.models import Level
+    from app.db import HBSession
+    from app.services.fantasy_pool_service import get_player_pool
+
+    level_id = request.args.get("level_id", type=int)
+    hb_league_id = request.args.get("hb_league_id", type=int)
+    org_id = request.args.get("org_id", 1, type=int)
+
+    if not level_id:
+        return jsonify({"error": "level_id required"}), 400
+
+    hb = HBSession()
+    level = hb.execute(select(Level).where(Level.id == level_id)).scalar_one_or_none()
+    if not level:
+        return jsonify({"error": "Level not found"}), 404
+
+    try:
+        pool = get_player_pool(level_id, org_id=org_id, league_id=hb_league_id)
+        return jsonify({
+            "max_managers": pool["max_managers"],
+            "roster_skaters": pool["roster_skaters"],
+        })
+    except Exception as e:
+        return jsonify({"max_managers": 12, "roster_skaters": 8})  # fallback
+
 # ── Leagues ───────────────────────────────────────────────────────────────────
 
 @fantasy_bp.route("/leagues", methods=["POST"])
@@ -252,6 +281,16 @@ def create_league():
 
     roster_skaters = pool_info["roster_skaters"]
     max_managers = pool_info["max_managers"]
+
+    # Allow user to set a lower cap (but never exceed the pool-calculated max)
+    override = data.get("max_managers_override")
+    if override is not None:
+        try:
+            override = int(override)
+            if 2 <= override <= max_managers:
+                max_managers = override
+        except (ValueError, TypeError):
+            pass
 
     if max_managers < 4:
         return error_response("VALIDATION_ERROR", "Not enough players at this level to form a league (need 4+ managers worth of players)", 400)
