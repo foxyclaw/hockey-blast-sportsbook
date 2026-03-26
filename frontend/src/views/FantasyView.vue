@@ -106,7 +106,7 @@
     </div>
 
     <!-- Create League Modal -->
-    <div v-if="showCreateModal" class="modal modal-open">
+    <div v-if="showCreateModal" :key="createModalKey" class="modal modal-open">
       <div class="modal-box max-w-md">
         <h3 class="font-bold text-lg mb-4">Create Fantasy League</h3>
 
@@ -228,6 +228,7 @@ const loading = ref(true)
 
 // Create modal state
 const showCreateModal = ref(false)
+const createModalKey = ref(0)
 const creating = ref(false)
 const createError = ref('')
 const createForm = ref({
@@ -365,6 +366,7 @@ async function loadPoolInfo(levelId, hbLeagueId) {
 }
 
 async function openCreateModal() {
+  createModalKey.value++
   showCreateModal.value = true
   createError.value = ''
   poolMaxManagers.value = null
