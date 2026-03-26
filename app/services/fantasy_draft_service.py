@@ -242,7 +242,10 @@ def advance_draft(league_id: int) -> None:
     # Timeout — auto-pick best available
     best = _best_available(league_id, current.user_id, pred, league)
     if best is not None:
-        _record_pick(league_id, current, best["hb_human_id"], best["is_goalie"], pred, now, is_ref=best.get("is_ref", False))
+        _record_pick(league_id, current, best["hb_human_id"],
+            is_goalie=current.is_goalie_pick and best.get("is_goalie", False),
+            pred=pred, now=now,
+            is_ref=current.is_ref_pick and best.get("is_ref", False))
 
         # Notify the manager that we picked for them (immediate SMS)
         _notify_manager(
@@ -325,18 +328,22 @@ def make_pick(league_id: int, user_id: int, hb_human_id: int) -> dict:
     if player_info is None:
         raise ValueError("Player not in eligible pool for this league")
 
-    # Enforce pick type
-    if current.is_goalie_pick and not player_info["is_goalie"]:
+    # Enforce pick type using role flags
+    if current.is_goalie_pick and not player_info.get("is_goalie"):
         raise ValueError("This is a goalie pick — please select a goalie")
     if current.is_ref_pick and not player_info.get("is_ref"):
         raise ValueError("This is a referee pick — please select a referee")
-    if not current.is_goalie_pick and not current.is_ref_pick and player_info["is_goalie"]:
-        raise ValueError("Goalies can only be picked in the goalie round")
-    if not current.is_goalie_pick and not current.is_ref_pick and player_info.get("is_ref"):
-        raise ValueError("Referees can only be picked in the referee round")
+    if not current.is_goalie_pick and not current.is_ref_pick:
+        if player_info.get("is_goalie") and not player_info.get("is_skater"):
+            raise ValueError("Goalies can only be picked in the goalie round")
+        if player_info.get("is_ref") and not player_info.get("is_skater"):
+            raise ValueError("Referees can only be picked in the referee round")
 
     now = datetime.now(timezone.utc)
-    _record_pick(league_id, current, hb_human_id, player_info["is_goalie"], pred, now, is_ref=player_info.get("is_ref", False))
+    _record_pick(league_id, current, hb_human_id,
+        is_goalie=current.is_goalie_pick and player_info.get("is_goalie", False),
+        pred=pred, now=now,
+        is_ref=current.is_ref_pick and player_info.get("is_ref", False))
 
     # Clear this user's draft notifications now that they've picked
     _clear_stale_draft_notifications(user_id, league_id, pred)
