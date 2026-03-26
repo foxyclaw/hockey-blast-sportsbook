@@ -76,8 +76,13 @@
         <div class="flex gap-6 mt-3 text-sm text-base-content/60">
           <span>👥 {{ league.manager_count }} / {{ league.max_managers }} managers</span>
           <span>📋 {{ league.roster_skaters }} skaters + {{ league.roster_goalies }} goalie(s){{ league.roster_refs ? ' + ' + league.roster_refs + ' ref(s)' : '' }} per team</span>
-          <span v-if="league.draft_closes_at && league.draft_opens_at">⏱ Draft: {{ formatDeadline(league.draft_opens_at) }} – {{ formatDeadline(league.draft_closes_at) }}</span>
-          <span v-else>⏱ {{ league.draft_pick_hours }}h per pick</span>
+          <template v-if="['active','completed'].includes(league.status)">
+            <span v-if="league.season_starts_at">📅 Season started: {{ formatDeadline(league.season_starts_at) }}</span>
+          </template>
+          <template v-else>
+            <span v-if="league.draft_closes_at && league.draft_opens_at">⏱ Draft: {{ formatDeadline(league.draft_opens_at) }} – {{ formatDeadline(league.draft_closes_at) }}</span>
+            <span v-else>⏱ {{ league.draft_pick_hours }}h per pick</span>
+          </template>
         </div>
       </div>
 
