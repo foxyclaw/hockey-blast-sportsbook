@@ -877,7 +877,9 @@ watch(activeTab, (tab) => {
 // Auto-switch pool tab based on pick type
 watch(currentPick, (pick) => {
   if (!pick || pick.user_id !== myUserId.value) return
-  poolTab.value = pick.is_goalie_pick ? 'goalies' : 'skaters'
+  if (pick.is_goalie_pick) poolTab.value = 'goalies'
+  else if (pick.is_ref_pick) poolTab.value = 'refs'
+  else poolTab.value = 'skaters'
 })
 
 onMounted(async () => {
