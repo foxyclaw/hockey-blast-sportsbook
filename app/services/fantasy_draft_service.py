@@ -308,10 +308,20 @@ def make_pick(league_id: int, user_id: int, hb_human_id: int) -> dict:
 
     # Determine if goalie
     pool = _get_pool(league_id)
-    player_info = next(
-        (p for p in pool["goalies"] + pool.get("refs", []) + pool["skaters"] if p["hb_human_id"] == hb_human_id),
-        None,
-    )
+    # Search the correct pool based on pick type to avoid cross-contamination
+    if current.is_goalie_pick:
+        search_pool = pool["goalies"]
+    elif current.is_ref_pick:
+        search_pool = pool.get("refs", [])
+    else:
+        search_pool = pool["skaters"]
+    player_info = next((p for p in search_pool if p["hb_human_id"] == hb_human_id), None)
+    # Fallback: search all pools (handles edge cases like a player in multiple pools)
+    if player_info is None:
+        player_info = next(
+            (p for p in pool["goalies"] + pool.get("refs", []) + pool["skaters"] if p["hb_human_id"] == hb_human_id),
+            None,
+        )
     if player_info is None:
         raise ValueError("Player not in eligible pool for this league")
 
