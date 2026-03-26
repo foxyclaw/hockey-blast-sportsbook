@@ -125,13 +125,24 @@
           <!-- Level selector -->
           <div class="form-control">
             <label class="label py-1"><span class="label-text text-sm">Level</span></label>
-            <select v-model.number="createForm.level_id" class="select select-bordered select-sm" required :disabled="!createForm.hb_league_id || levelsLoading">
+            <select v-model.number="createForm.level_id" class="select select-bordered select-sm" required :disabled="!createForm.hb_league_id || levelsLoading" @change="onLevelChange">
               <option :value="null" disabled>{{ createForm.hb_league_id ? (levelsLoading ? 'Loading…' : 'Select a level…') : 'Select a league first…' }}</option>
               <option v-for="lvl in levels" :key="lvl.level_id" :value="lvl.level_id">
                 {{ lvl.short_name || lvl.level_name }}
               </option>
             </select>
-            <div v-if="levelsLoading" class="text-xs text-base-content/40 mt-1">Loading levels…</div>
+          </div>
+
+          <!-- Max managers (shown after level selected, capped by pool) -->
+          <div v-if="createForm.level_id" class="form-control">
+            <label class="label py-1">
+              <span class="label-text text-sm">Max Managers</span>
+              <span v-if="poolLoading" class="label-text-alt text-xs text-base-content/40">calculating…</span>
+              <span v-else-if="poolMaxManagers" class="label-text-alt text-xs text-base-content/40">up to {{ poolMaxManagers }} based on player pool</span>
+            </label>
+            <select v-model.number="createForm.max_managers" class="select select-bordered select-sm" :disabled="poolLoading">
+              <option v-for="n in managerOptions" :key="n" :value="n">{{ n }}</option>
+            </select>
           </div>
 
           <!-- Team name -->
@@ -146,18 +157,22 @@
             <input v-model="createForm.season_label" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-sm" />
           </div>
 
-          <!-- Draft dates -->
+          <!-- Season start + draft dates -->
           <div class="grid grid-cols-2 gap-3">
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Season Starts</span></label>
+              <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered input-sm" />
+            </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
               <input v-model="createForm.draft_opens_at" type="datetime-local" class="input input-bordered input-sm" />
             </div>
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Draft Closes *</span></label>
-              <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered input-sm" required />
-            </div>
           </div>
-          <div class="text-xs text-base-content/40">* Draft close time is required — after this picks auto-advance. Season starts automatically when draft completes.</div>
+          <div class="form-control">
+            <label class="label py-1"><span class="label-text text-xs">Draft Closes *</span></label>
+            <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered input-sm" required />
+            <div class="text-xs text-base-content/40 mt-1">* Required — after this picks auto-advance. Season starts on the date above once draft completes.</div>
+          </div>
 
           <!-- Private toggle -->
           <div class="form-control">
@@ -215,15 +230,36 @@ const loading = ref(true)
 const showCreateModal = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const createForm = ref({ hb_league_id: null, level_id: null, team_name: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' })
+const createForm = ref({
+  hb_league_id: null,
+  level_id: null,
+  team_name: '',
+  is_private: false,
+  season_label: '',
+  season_starts_at: '',
+  draft_opens_at: '',
+  draft_closes_at: '',
+  max_managers: null,
+})
 const createdJoinCode = ref('')
 const showJoinCodeModal = ref(false)
 
-// League + level selectors for create form
+// League + level selectors
 const hbLeagues = ref([])
 const hbLeaguesLoading = ref(false)
 const levels = ref([])
 const levelsLoading = ref(false)
+
+// Pool info (max managers cap)
+const poolMaxManagers = ref(null)
+const poolLoading = ref(false)
+
+const managerOptions = computed(() => {
+  const max = poolMaxManagers.value || 12
+  const opts = []
+  for (let i = 2; i <= max; i++) opts.push(i)
+  return opts
+})
 
 // Private join modal
 const showPrivateJoinModal = ref(false)
@@ -308,10 +344,41 @@ async function loadLevels(leagueId) {
   }
 }
 
+async function loadPoolInfo(levelId, hbLeagueId) {
+  poolMaxManagers.value = null
+  createForm.value.max_managers = null
+  if (!levelId) return
+  poolLoading.value = true
+  try {
+    const { data } = await api.get('/api/fantasy/level-pool', {
+      params: { level_id: levelId, hb_league_id: hbLeagueId, org_id: 1 }
+    })
+    poolMaxManagers.value = data.max_managers || 12
+    // Default to max
+    createForm.value.max_managers = poolMaxManagers.value
+  } catch {
+    poolMaxManagers.value = 12
+    createForm.value.max_managers = 12
+  } finally {
+    poolLoading.value = false
+  }
+}
+
 async function openCreateModal() {
   showCreateModal.value = true
   createError.value = ''
-  createForm.value = { hb_league_id: null, level_id: null, team_name: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' }
+  poolMaxManagers.value = null
+  createForm.value = {
+    hb_league_id: null,
+    level_id: null,
+    team_name: '',
+    is_private: false,
+    season_label: '',
+    season_starts_at: '',
+    draft_opens_at: '',
+    draft_closes_at: '',
+    max_managers: null,
+  }
   levels.value = []
   if (!hbLeagues.value.length) {
     await loadHbLeagues()
@@ -320,7 +387,13 @@ async function openCreateModal() {
 
 function onLeagueChange() {
   createForm.value.level_id = null
+  createForm.value.max_managers = null
+  poolMaxManagers.value = null
   loadLevels(createForm.value.hb_league_id)
+}
+
+function onLevelChange() {
+  loadPoolInfo(createForm.value.level_id, createForm.value.hb_league_id)
 }
 
 async function createLeague() {
@@ -339,6 +412,8 @@ async function createLeague() {
       hb_league_id: createForm.value.hb_league_id,
       season_label: seasonLabel,
       is_private: createForm.value.is_private,
+      max_managers_override: createForm.value.max_managers,
+      season_starts_at: createForm.value.season_starts_at ? new Date(createForm.value.season_starts_at).toISOString() : undefined,
       draft_opens_at: createForm.value.draft_opens_at ? new Date(createForm.value.draft_opens_at).toISOString() : undefined,
       draft_closes_at: new Date(createForm.value.draft_closes_at).toISOString(),
     })
@@ -350,7 +425,10 @@ async function createLeague() {
     } else {
       router.push(`/fantasy/${data.id}`)
     }
-    createForm.value = { hb_league_id: null, level_id: null, team_name: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' }
+    createForm.value = {
+      hb_league_id: null, level_id: null, team_name: '', is_private: false,
+      season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '', max_managers: null,
+    }
   } catch (e) {
     createError.value = e?.response?.data?.message || 'Failed to create league'
   } finally {
