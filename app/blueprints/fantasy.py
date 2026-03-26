@@ -145,6 +145,68 @@ def list_levels():
     return jsonify({"levels": levels})
 
 
+
+# ── Public level/league selectors (for user create form) ──────────────────────
+
+@fantasy_bp.route("/hb-leagues", methods=["GET"])
+def list_hb_leagues():
+    """GET /api/fantasy/hb-leagues?org_id=1 — list HB leagues for org (public)."""
+    from hockey_blast_common_lib.models import League
+    from app.db import HBSession
+    org_id = request.args.get("org_id", 1, type=int)
+    hb = HBSession()
+    leagues = hb.execute(
+        select(League).where(League.org_id == org_id).order_by(League.league_name)
+    ).scalars().all()
+    return jsonify({"leagues": [{"id": l.id, "league_name": l.league_name} for l in leagues]})
+
+
+@fantasy_bp.route("/active-levels", methods=["GET"])
+def list_active_levels():
+    """GET /api/fantasy/active-levels?org_id=1&league_id=2 — active levels (public)."""
+    from datetime import date, timedelta
+    from hockey_blast_common_lib.models import Season, Division, Level
+    from app.db import HBSession
+    import re
+
+    org_id = request.args.get("org_id", 1, type=int)
+    league_id = request.args.get("league_id", None, type=int)
+
+    hb = HBSession()
+    cutoff = date.today() - timedelta(days=30)
+
+    stmt = (
+        select(Division.level_id, Level.level_name, Level.short_name)
+        .join(Season, Season.id == Division.season_id)
+        .join(Level, Level.id == Division.level_id)
+        .where(Season.org_id == org_id, Season.end_date >= cutoff)
+        .distinct()
+    )
+    if league_id:
+        stmt = stmt.where(Season.league_id == league_id)
+
+    rows = hb.execute(stmt).all()
+
+    seen = {}
+    for row in rows:
+        if row.level_id not in seen:
+            seen[row.level_id] = {
+                "level_id": row.level_id,
+                "level_name": row.level_name,
+                "short_name": row.short_name,
+            }
+
+    def _natural_sort_key(x):
+        name = x["short_name"] or x["level_name"] or ""
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', name)]
+
+    levels = sorted(
+        [v for v in seen.values() if v["short_name"] or v["level_name"]],
+        key=_natural_sort_key,
+    )
+    return jsonify({"levels": levels})
+
+
 # ── Leagues ───────────────────────────────────────────────────────────────────
 
 @fantasy_bp.route("/leagues", methods=["POST"])

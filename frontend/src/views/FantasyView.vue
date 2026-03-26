@@ -15,7 +15,7 @@
         <h1 class="text-2xl font-extrabold tracking-tight">🏒 Fantasy Hockey</h1>
         <p class="text-base-content/60 text-sm mt-1">Draft players, score points, win glory.</p>
       </div>
-      <button class="btn btn-primary btn-sm" @click="showCreateModal = true">
+      <button class="btn btn-primary btn-sm" @click="openCreateModal">
         + Create League
       </button>
     </div>
@@ -112,28 +112,41 @@
 
         <form @submit.prevent="createLeague" class="space-y-4">
 
+          <!-- HB League selector -->
           <div class="form-control">
-            <label class="label"><span class="label-text text-sm">Your Level</span></label>
-            <select v-model="createForm.level_key" class="select select-bordered select-sm" required>
-              <option value="" disabled>Select your level...</option>
-              <option v-for="(lvl, idx) in levels" :key="idx" :value="idx">
-                {{ lvl.display_name || ('Level ' + lvl.level_name) }}
+            <label class="label py-1"><span class="label-text text-sm">League</span></label>
+            <select v-model.number="createForm.hb_league_id" class="select select-bordered select-sm" required @change="onLeagueChange">
+              <option :value="null" disabled>Select a league…</option>
+              <option v-for="lg in hbLeagues" :key="lg.id" :value="lg.id">{{ lg.league_name }}</option>
+            </select>
+            <div v-if="hbLeaguesLoading" class="text-xs text-base-content/40 mt-1">Loading leagues…</div>
+          </div>
+
+          <!-- Level selector -->
+          <div class="form-control">
+            <label class="label py-1"><span class="label-text text-sm">Level</span></label>
+            <select v-model.number="createForm.level_id" class="select select-bordered select-sm" required :disabled="!createForm.hb_league_id || levelsLoading">
+              <option :value="null" disabled>{{ createForm.hb_league_id ? (levelsLoading ? 'Loading…' : 'Select a level…') : 'Select a league first…' }}</option>
+              <option v-for="lvl in levels" :key="lvl.level_id" :value="lvl.level_id">
+                {{ lvl.short_name || lvl.level_name }}
               </option>
             </select>
             <div v-if="levelsLoading" class="text-xs text-base-content/40 mt-1">Loading levels…</div>
-            <div class="text-xs text-base-content/40 mt-1">📊 Stats will pull from the current active season for your level automatically.</div>
           </div>
 
+          <!-- Team name -->
           <div class="form-control">
-            <label class="label"><span class="label-text text-sm">Your Team Name</span></label>
+            <label class="label py-1"><span class="label-text text-sm">Your Team Name</span></label>
             <input v-model="createForm.team_name" type="text" placeholder="e.g. Ice Bandits" class="input input-bordered input-sm" required />
           </div>
 
+          <!-- Season label -->
           <div class="form-control">
-            <label class="label"><span class="label-text text-sm">Season Label <span class="text-base-content/40">(optional)</span></span></label>
-            <input v-model="createForm.season_label" type="text" placeholder="e.g. Winter 2026" class="input input-bordered input-sm" />
+            <label class="label py-1"><span class="label-text text-sm">Season Label <span class="text-base-content/40">(optional)</span></span></label>
+            <input v-model="createForm.season_label" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-sm" />
           </div>
 
+          <!-- Draft dates -->
           <div class="grid grid-cols-2 gap-3">
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
@@ -146,6 +159,7 @@
           </div>
           <div class="text-xs text-base-content/40">* Draft close time is required — after this picks auto-advance. Season starts automatically when draft completes.</div>
 
+          <!-- Private toggle -->
           <div class="form-control">
             <label class="label cursor-pointer justify-start gap-3">
               <input type="checkbox" v-model="createForm.is_private" class="toggle toggle-sm" />
@@ -196,16 +210,22 @@ const api = useApiClient()
 
 const leagues = ref([])
 const loading = ref(true)
-const levels = ref([])
-const levelsLoading = ref(false)
 
+// Create modal state
 const showCreateModal = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const createForm = ref({ team_name: '', level_key: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' })
+const createForm = ref({ hb_league_id: null, level_id: null, team_name: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' })
 const createdJoinCode = ref('')
 const showJoinCodeModal = ref(false)
 
+// League + level selectors for create form
+const hbLeagues = ref([])
+const hbLeaguesLoading = ref(false)
+const levels = ref([])
+const levelsLoading = ref(false)
+
+// Private join modal
 const showPrivateJoinModal = ref(false)
 const privateJoinLeague = ref(null)
 const privateJoinCode = ref('')
@@ -262,11 +282,25 @@ async function loadLeagues() {
   }
 }
 
-async function loadLevels() {
+async function loadHbLeagues() {
+  hbLeaguesLoading.value = true
+  try {
+    const { data } = await api.get('/api/fantasy/hb-leagues', { params: { org_id: 1 } })
+    hbLeagues.value = data.leagues || []
+  } catch {
+    hbLeagues.value = []
+  } finally {
+    hbLeaguesLoading.value = false
+  }
+}
+
+async function loadLevels(leagueId) {
+  levels.value = []
+  if (!leagueId) return
   levelsLoading.value = true
   try {
-    const { data } = await api.get('/api/fantasy/levels')
-    levels.value = (data.levels || []).sort((a, b) => a.level_name.localeCompare(b.level_name, undefined, {numeric: true, sensitivity: "base"}))
+    const { data } = await api.get('/api/fantasy/active-levels', { params: { org_id: 1, league_id: leagueId } })
+    levels.value = data.levels || []
   } catch {
     levels.value = []
   } finally {
@@ -274,20 +308,35 @@ async function loadLevels() {
   }
 }
 
+async function openCreateModal() {
+  showCreateModal.value = true
+  createError.value = ''
+  createForm.value = { hb_league_id: null, level_id: null, team_name: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' }
+  levels.value = []
+  if (!hbLeagues.value.length) {
+    await loadHbLeagues()
+  }
+}
+
+function onLeagueChange() {
+  createForm.value.level_id = null
+  loadLevels(createForm.value.hb_league_id)
+}
+
 async function createLeague() {
   createError.value = ''
   creating.value = true
   try {
-    // Find selected level using index key (supports duplicate level_ids with different hb_league_ids)
-    const lvl = levels.value[createForm.value.level_key]
-    const levelLabel = lvl ? `Level ${lvl.level_name}` : 'Level ?'
+    const lvl = levels.value.find(l => l.level_id === createForm.value.level_id)
+    const levelLabel = lvl ? (lvl.short_name || lvl.level_name) : 'Level ?'
     const seasonLabel = createForm.value.season_label || undefined
     const leagueName = seasonLabel ? `${levelLabel} — ${seasonLabel}` : levelLabel
+
     const { data } = await api.post('/api/fantasy/leagues', {
       name: leagueName,
       team_name: createForm.value.team_name,
-      level_id: lvl?.level_id,
-      hb_league_id: lvl?.hb_league_id ?? null,
+      level_id: createForm.value.level_id,
+      hb_league_id: createForm.value.hb_league_id,
       season_label: seasonLabel,
       is_private: createForm.value.is_private,
       draft_opens_at: createForm.value.draft_opens_at ? new Date(createForm.value.draft_opens_at).toISOString() : undefined,
@@ -297,12 +346,11 @@ async function createLeague() {
     if (data.is_private && data.join_code) {
       createdJoinCode.value = data.join_code
       showJoinCodeModal.value = true
-      // Navigate after a moment
       setTimeout(() => router.push(`/fantasy/${data.id}`), 0)
     } else {
       router.push(`/fantasy/${data.id}`)
     }
-    createForm.value = { team_name: '', level_key: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' }
+    createForm.value = { hb_league_id: null, level_id: null, team_name: '', is_private: false, season_label: '', draft_opens_at: '', draft_closes_at: '' }
   } catch (e) {
     createError.value = e?.response?.data?.message || 'Failed to create league'
   } finally {
@@ -326,6 +374,5 @@ function goToPrivateLeague() {
 
 onMounted(() => {
   loadLeagues()
-  loadLevels()
 })
 </script>
