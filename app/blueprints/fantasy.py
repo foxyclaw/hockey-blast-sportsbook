@@ -689,6 +689,7 @@ def get_roster(league_id: int, user_id: int):
     # Find games scheduled within the last 3 hours (approximate game duration)
     # that are still in Scheduled status (not yet Final) for this league's divisions.
     live_human_ids: set[int] = set()
+    live_game_id_map: dict[int, int] = {}
     try:
         league_row = pred.execute(
             sa_text("SELECT level_id, hb_season_id FROM fantasy_leagues WHERE id = :lid"),
@@ -716,9 +717,10 @@ def get_roster(league_id: int, user_id: int):
                     live_game_ids = [g.id for g in live_games]
                     lg_ids_sql = ",".join(str(g) for g in live_game_ids)
                     live_players = hb.execute(sa_text(
-                        f"SELECT DISTINCT human_id FROM game_rosters WHERE game_id IN ({lg_ids_sql})"
+                        f"SELECT human_id, game_id FROM game_rosters WHERE game_id IN ({lg_ids_sql})"
                     )).fetchall()
                     live_human_ids = {r.human_id for r in live_players}
+                    live_game_id_map = {r.human_id: r.game_id for r in live_players}
     except Exception as e:
         pass  # live status is best-effort
 
@@ -737,6 +739,7 @@ def get_roster(league_id: int, user_id: int):
         d["gp"] = s.get("gp", 0)
         d["fantasy_points"] = s.get("total_pts", 0.0)
         d["is_live"] = r.hb_human_id in live_human_ids
+        d["live_game_id"] = live_game_id_map.get(r.hb_human_id) if r.hb_human_id in live_human_ids else None
         result.append(d)
 
     # Sort: goalies last, then by fantasy_points desc

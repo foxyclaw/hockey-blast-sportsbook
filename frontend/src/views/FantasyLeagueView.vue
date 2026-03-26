@@ -447,7 +447,13 @@ const RosterList = {
         const liveChip = p.is_live
           ? h('span', { class: 'inline-flex items-center gap-1 ml-1' }, [
               h('span', { class: 'w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block' }),
-              h('span', { class: 'text-green-400 text-xs font-semibold' }, 'LIVE'),
+              p.live_game_id
+                ? h('a', {
+                    href: `https://hockey-blast.com/game_card?game_id=${p.live_game_id}`,
+                    target: '_blank',
+                    class: 'text-green-400 text-xs font-semibold hover:underline',
+                  }, 'LIVE')
+                : h('span', { class: 'text-green-400 text-xs font-semibold' }, 'LIVE'),
             ])
           : null
         const nameCell = h('td', { class: 'pr-4 py-1' }, [
