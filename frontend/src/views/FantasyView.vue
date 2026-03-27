@@ -200,21 +200,21 @@
             <input v-model="createForm.season_label" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-sm" />
           </div>
 
-          <!-- Season start + draft dates -->
+          <!-- Draft dates row 1, Season Starts row 2 -->
           <div class="grid grid-cols-2 gap-3">
-            <div class="form-control">
-              <label class="label py-1"><span class="label-text text-xs">Season Starts</span></label>
-              <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered input-sm" />
-            </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
               <input v-model="createForm.draft_opens_at" type="datetime-local" class="input input-bordered input-sm" />
             </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs">Draft Closes *</span></label>
+              <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered input-sm" required />
+            </div>
           </div>
+          <div class="text-xs text-base-content/40 -mt-2 mb-1">* Required — after this picks auto-advance.</div>
           <div class="form-control">
-            <label class="label py-1"><span class="label-text text-xs">Draft Closes *</span></label>
-            <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered input-sm" required />
-            <div class="text-xs text-base-content/40 mt-1">* Required — after this picks auto-advance. Season starts on the date above once draft completes.</div>
+            <label class="label py-1"><span class="label-text text-xs">Season Starts</span></label>
+            <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered input-sm" />
           </div>
 
           <!-- Private toggle -->
