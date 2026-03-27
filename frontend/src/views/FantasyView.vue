@@ -15,9 +15,14 @@
         <h1 class="text-2xl font-extrabold tracking-tight">🏒 Fantasy Hockey</h1>
         <p class="text-base-content/60 text-sm mt-1">Draft players, score points, win glory.</p>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        + Create League
-      </button>
+      <div class="flex gap-2">
+        <button class="btn btn-outline btn-sm" @click="showJoinCodeEntry = true">
+          🔑 Join with Code
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          + Create League
+        </button>
+      </div>
     </div>
 
     <!-- Status groups -->
@@ -105,12 +110,50 @@
       <div class="modal-backdrop" @click="showPrivateJoinModal = false"></div>
     </div>
 
+    <!-- Join Private League by Code Modal -->
+    <div v-if="showJoinCodeEntry" class="modal modal-open">
+      <div class="modal-box max-w-sm">
+        <h3 class="font-bold text-lg mb-2">Join Private League</h3>
+        <p class="text-sm text-base-content/60 mb-4">Enter the invite code you received from the league creator.</p>
+        <form @submit.prevent="submitJoinCode" class="space-y-3">
+          <div class="form-control">
+            <input
+              v-model="joinCodeEntry"
+              type="text"
+              placeholder="e.g. X7K2M9"
+              class="input input-bordered input-sm uppercase tracking-widest text-center text-lg font-mono"
+              maxlength="6"
+              required
+              autofocus
+            />
+          </div>
+          <div v-if="joinCodeError" class="alert alert-error text-sm py-2">{{ joinCodeError }}</div>
+          <div class="modal-action">
+            <button type="button" class="btn btn-ghost btn-sm" @click="showJoinCodeEntry = false; joinCodeEntry = ''; joinCodeError = ''">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm" :disabled="joinCodeEntry.length < 6">Join →</button>
+          </div>
+        </form>
+      </div>
+      <div class="modal-backdrop" @click="showJoinCodeEntry = false; joinCodeEntry = ''; joinCodeError = ''"></div>
+    </div>
+
     <!-- Create League Modal -->
     <div v-if="showCreateModal" :key="createModalKey" class="modal modal-open">
       <div class="modal-box max-w-md">
         <h3 class="font-bold text-lg mb-4">Create Fantasy League</h3>
 
         <form @submit.prevent="createLeague" class="space-y-4">
+
+          <!-- Organization (locked to org 1 for now) -->
+          <div class="form-control">
+            <label class="label py-1">
+              <span class="label-text text-sm">Organization</span>
+              <span class="label-text-alt text-xs text-base-content/30">more orgs coming soon</span>
+            </label>
+            <select class="select select-bordered select-sm opacity-60" disabled>
+              <option selected>SIAHL at San Jose</option>
+            </select>
+          </div>
 
           <!-- HB League selector -->
           <div class="form-control">
@@ -244,6 +287,9 @@ const createForm = ref({
 })
 const createdJoinCode = ref('')
 const showJoinCodeModal = ref(false)
+const showJoinCodeEntry = ref(false)
+const joinCodeEntry = ref('')
+const joinCodeError = ref('')
 
 // League + level selectors
 const hbLeagues = ref([])
@@ -435,6 +481,20 @@ async function createLeague() {
     createError.value = e?.response?.data?.message || 'Failed to create league'
   } finally {
     creating.value = false
+  }
+}
+
+async function submitJoinCode() {
+  joinCodeError.value = ''
+  const code = joinCodeEntry.value.trim().toUpperCase()
+  if (code.length < 6) return
+  try {
+    const { data } = await api.get(`/api/fantasy/league-by-code/${code}`)
+    showJoinCodeEntry.value = false
+    joinCodeEntry.value = ''
+    router.push(`/fantasy/${data.id}?join_code=${code}`)
+  } catch (e) {
+    joinCodeError.value = e?.response?.data?.message || 'Code not found. Check with your league creator.'
   }
 }
 

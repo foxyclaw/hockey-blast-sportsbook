@@ -623,7 +623,7 @@ def launch_fantasy_season():
                 roster_skaters = min(roster_skaters, 10)
 
             display_level = level.short_name or level_name if level else str(level_id)
-            league_name = f"Level {display_level} — Spring 2026"
+            league_name = f"Level {display_level} — {season_label}"
             new_league = FantasyLeague(
                 name=league_name,
                 level_id=level_id,

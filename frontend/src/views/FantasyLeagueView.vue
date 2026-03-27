@@ -76,8 +76,13 @@
         <div class="flex gap-6 mt-3 text-sm text-base-content/60">
           <span>👥 {{ league.manager_count }} / {{ league.max_managers }} managers</span>
           <span>📋 {{ league.roster_skaters }} skaters + {{ league.roster_goalies }} goalie(s){{ league.roster_refs ? ' + ' + league.roster_refs + ' ref(s)' : '' }} per team</span>
-          <span v-if="league.draft_closes_at && league.draft_opens_at">⏱ Draft: {{ formatDeadline(league.draft_opens_at) }} – {{ formatDeadline(league.draft_closes_at) }}</span>
-          <span v-else>⏱ {{ league.draft_pick_hours }}h per pick</span>
+          <template v-if="['active','completed'].includes(league.status)">
+            <span v-if="league.season_starts_at">📅 Season started: {{ formatDeadline(league.season_starts_at) }}</span>
+          </template>
+          <template v-else>
+            <span v-if="league.draft_closes_at && league.draft_opens_at">⏱ Draft: {{ formatDeadline(league.draft_opens_at) }} – {{ formatDeadline(league.draft_closes_at) }}</span>
+            <span v-else>⏱ {{ league.draft_pick_hours }}h per pick</span>
+          </template>
         </div>
       </div>
 
@@ -156,7 +161,7 @@
                     :disabled="currentPick && !currentPick?.is_goalie_pick && currentPick?.user_id === myUserId">
                     Goalies <span v-if="currentPick?.is_goalie_pick && currentPick?.user_id === myUserId" class="badge badge-xs badge-error ml-1">Pick now!</span>
                   </button>
-                  <button v-if="(pool.refs || []).length > 0" class="tab" :class="{ 'tab-active': poolTab === 'refs' }" @click="poolTab = 'refs'"
+                  <button v-if="league.roster_refs > 0" class="tab" :class="{ 'tab-active': poolTab === 'refs' }" @click="poolTab = 'refs'"
                     :disabled="currentPick && !currentPick?.is_ref_pick && currentPick?.user_id === myUserId">
                     🎮 Refs <span v-if="currentPick?.is_ref_pick && currentPick?.user_id === myUserId" class="badge badge-xs badge-error ml-1">Last Pick!</span>
                   </button>
@@ -224,7 +229,8 @@
                         <th class="text-right">GP</th>
                         <th class="text-right">GAA</th>
                         <th class="text-right">SV%</th>
-                        <th class="text-right">F.Pts</th>
+                        <th class="text-right">FP</th>
+                        <th class="text-right">FPPG</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -238,7 +244,8 @@
                         <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_goalie ?? p.fantasy_points }}</td>
+                        <td class="text-right text-base-content/60">{{ p.goalie_games > 0 ? ((p.fantasy_points_goalie ?? p.fantasy_points) / p.goalie_games).toFixed(2) : '—' }}</td>
                         <td class="text-right">
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
@@ -256,7 +263,7 @@
                         </td>
                       </tr>
                       <tr v-if="filteredGoalies.length === 0">
-                        <td colspan="6" class="text-center text-base-content/40 py-4">No goalies found</td>
+                        <td colspan="7" class="text-center text-base-content/40 py-4">No goalies found</td>
                       </tr>
                     </tbody>
                   </table>
@@ -271,7 +278,8 @@
                         <th class="text-right">Games</th>
                         <th class="text-right">Penalties</th>
                         <th class="text-right">GMs</th>
-                        <th class="text-right">F.Pts</th>
+                        <th class="text-right">FP</th>
+                        <th class="text-right">FPPG</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -285,7 +293,8 @@
                         <td class="text-right">{{ p.games_reffed }}</td>
                         <td class="text-right">{{ p.penalties_given }}</td>
                         <td class="text-right">{{ p.gm_given }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_ref ?? p.fantasy_points }}</td>
+                        <td class="text-right text-base-content/60">{{ p.games_reffed > 0 ? ((p.fantasy_points_ref ?? p.fantasy_points) / p.games_reffed).toFixed(2) : '—' }}</td>
                         <td class="text-right">
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member && currentPick.is_ref_pick">
@@ -297,13 +306,14 @@
                         </td>
                       </tr>
                       <tr v-if="filteredRefs.length === 0">
-                        <td colspan="6" class="text-center text-base-content/40 py-4">No referees found</td>
+                        <td colspan="7" class="text-center text-base-content/40 py-4">No referees found</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
                 <div v-if="pickError" class="text-error text-xs mt-2">{{ pickError }}</div>
+                <div class="text-xs text-base-content/30 mt-2">FP = Fantasy Points &nbsp;·&nbsp; FPPG = Fantasy Points Per Game</div>
               </div>
             </div>
           </div>
@@ -872,8 +882,10 @@ watch(activeTab, (tab) => {
 // Auto-switch pool tab based on pick type
 watch(currentPick, (pick) => {
   if (!pick || pick.user_id !== myUserId.value) return
-  poolTab.value = pick.is_goalie_pick ? 'goalies' : 'skaters'
-})
+  if (pick.is_goalie_pick) poolTab.value = 'goalies'
+  else if (pick.is_ref_pick) poolTab.value = 'refs'
+  else poolTab.value = 'skaters'
+}, { immediate: true })
 
 onMounted(async () => {
   await loadLeague()

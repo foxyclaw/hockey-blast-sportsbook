@@ -236,6 +236,21 @@ def get_level_pool():
     except Exception as e:
         return jsonify({"max_managers": 12, "roster_skaters": 8})  # fallback
 
+@fantasy_bp.route("/league-by-code/<string:code>", methods=["GET"])
+def get_league_by_code(code: str):
+    """GET /api/fantasy/league-by-code/<code> — look up a private league by join code."""
+    from app.models.fantasy_league import FantasyLeague
+    from app.db import PredSession
+    code = code.strip().upper()
+    pred = PredSession()
+    league = pred.execute(
+        select(FantasyLeague).where(FantasyLeague.join_code == code)
+    ).scalar_one_or_none()
+    if league is None:
+        return error_response("NOT_FOUND", "Invalid code — no league found", 404)
+    return jsonify({"id": league.id, "name": league.name, "status": league.status})
+
+
 # ── Leagues ───────────────────────────────────────────────────────────────────
 
 @fantasy_bp.route("/leagues", methods=["POST"])
