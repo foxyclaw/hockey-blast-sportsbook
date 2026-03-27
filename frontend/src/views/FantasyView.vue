@@ -13,7 +13,7 @@
     <div class="mb-6 flex items-start justify-between flex-wrap gap-4">
       <div>
         <h1 class="text-2xl font-extrabold tracking-tight">🏒 Fantasy Hockey</h1>
-        <p class="text-base-content/60 text-sm mt-1">Draft players, score points, win glory.</p>
+        <p class="text-base-content/60 text-sm mt-1">Draft skaters, goalies, and refs — score points, win glory (and maybe cash). Set up a private league for your crew.</p>
       </div>
       <div class="flex gap-2">
         <button class="btn btn-outline btn-sm" @click="showJoinCodeEntry = true">
