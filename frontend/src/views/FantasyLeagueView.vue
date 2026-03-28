@@ -163,6 +163,7 @@
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
+                        <th></th>
                         <th class="cursor-pointer" @click="setSortKey('name')">Player <span v-if="sortKey === 'name'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('games_played')">GP <span v-if="sortKey === 'games_played'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('goals')">G <span v-if="sortKey === 'goals'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
@@ -171,7 +172,6 @@
                         <th class="cursor-pointer text-right" @click="setSortKey('penalties')">Pen <span v-if="sortKey === 'penalties'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('fantasy_points')">FP <span v-if="sortKey === 'fantasy_points'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('fantasy_ppg')">FPPG <span v-if="sortKey === 'fantasy_ppg'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
-                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -180,15 +180,7 @@
                         :key="p.hb_human_id"
                         :class="p.drafted_by ? 'opacity-40' : 'hover'"
                       >
-                        <td>{{ p.first_name }} {{ p.last_name }}</td>
-                        <td class="text-right">{{ p.games_played }}</td>
-                        <td class="text-right">{{ p.goals }}</td>
-                        <td class="text-right">{{ p.assists }}</td>
-                        <td class="text-right">{{ p.points }}</td>
-                        <td class="text-right">{{ p.penalties }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points }}</td>
-                        <td class="text-right text-base-content/60">{{ p.fantasy_ppg }}</td>
-                        <td class="text-right">
+                        <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
                             <button
@@ -203,6 +195,14 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
                           </template>
                         </td>
+                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td class="text-right">{{ p.games_played }}</td>
+                        <td class="text-right">{{ p.goals }}</td>
+                        <td class="text-right">{{ p.assists }}</td>
+                        <td class="text-right">{{ p.points }}</td>
+                        <td class="text-right">{{ p.penalties }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points }}</td>
+                        <td class="text-right text-base-content/60">{{ p.fantasy_ppg }}</td>
                       </tr>
                       <tr v-if="sortedSkaters.length === 0">
                         <td colspan="9" class="text-center text-base-content/40 py-4">No skaters found</td>
@@ -219,10 +219,10 @@
                         <th>Player</th>
                         <th class="text-right">GP</th>
                         <th class="text-right">GAA</th>
+                        <th></th>
                         <th class="text-right">SV%</th>
                         <th class="text-right">FP</th>
                         <th class="text-right">FPPG</th>
-                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -231,27 +231,21 @@
                         :key="p.hb_human_id"
                         :class="p.drafted_by ? 'opacity-40' : 'hover'"
                       >
+                        <td>
+                          <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
+                          <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
+                            <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                          </template>
+                          <template v-else>
+                            <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
+                          </template>
+                        </td>
                         <td>{{ p.first_name }} {{ p.last_name }}</td>
                         <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
                         <td class="text-right font-bold text-primary">{{ p.fantasy_points_goalie ?? p.fantasy_points }}</td>
                         <td class="text-right text-base-content/60">{{ p.goalie_games > 0 ? ((p.fantasy_points_goalie ?? p.fantasy_points) / p.goalie_games).toFixed(2) : '—' }}</td>
-                        <td class="text-right">
-                          <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
-                          <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
-                            <button
-                              class="btn btn-xs btn-primary"
-                              :disabled="picking"
-                              @click="pickPlayer(p)"
-                            >
-                              Draft
-                            </button>
-                          </template>
-                          <template v-else>
-                            <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
-                          </template>
-                        </td>
                       </tr>
                       <tr v-if="filteredGoalies.length === 0">
                         <td colspan="7" class="text-center text-base-content/40 py-4">No goalies found</td>
@@ -265,13 +259,13 @@
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
+                        <th></th>
                         <th>Referee</th>
                         <th class="text-right">Games</th>
                         <th class="text-right">Penalties</th>
                         <th class="text-right">GMs</th>
                         <th class="text-right">FP</th>
                         <th class="text-right">FPPG</th>
-                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -280,13 +274,7 @@
                         :key="p.hb_human_id"
                         :class="p.drafted_by ? 'opacity-40' : 'hover'"
                       >
-                        <td>{{ p.first_name }} {{ p.last_name }}</td>
-                        <td class="text-right">{{ p.games_reffed }}</td>
-                        <td class="text-right">{{ p.penalties_given }}</td>
-                        <td class="text-right">{{ p.gm_given }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_ref ?? p.fantasy_points }}</td>
-                        <td class="text-right text-base-content/60">{{ p.games_reffed > 0 ? ((p.fantasy_points_ref ?? p.fantasy_points) / p.games_reffed).toFixed(2) : '—' }}</td>
-                        <td class="text-right">
+                        <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member && currentPick.is_ref_pick">
                             <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
@@ -295,6 +283,12 @@
                             <button class="btn btn-xs btn-disabled" disabled>Draft</button>
                           </template>
                         </td>
+                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td class="text-right">{{ p.games_reffed }}</td>
+                        <td class="text-right">{{ p.penalties_given }}</td>
+                        <td class="text-right">{{ p.gm_given }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_ref ?? p.fantasy_points }}</td>
+                        <td class="text-right text-base-content/60">{{ p.games_reffed > 0 ? ((p.fantasy_points_ref ?? p.fantasy_points) / p.games_reffed).toFixed(2) : '—' }}</td>
                       </tr>
                       <tr v-if="filteredRefs.length === 0">
                         <td colspan="7" class="text-center text-base-content/40 py-4">No referees found</td>
