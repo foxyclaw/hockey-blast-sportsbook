@@ -417,21 +417,27 @@
                 <div class="flex-1 text-left text-sm font-medium truncate">{{ game.home_team_name }}</div>
               </div>
               <!-- My rostered players -->
-              <div v-if="game.my_players && game.my_players.length" class="mt-2 pt-2 border-t border-base-300 flex flex-wrap gap-1">
-                <div
-                  v-for="p in game.my_players"
-                  :key="p.hb_human_id"
-                  class="flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-base-300"
-                  :class="{ 'opacity-40': p.points === 0 && !p.games_played && !p.ref_games }"
-                >
-                  <span class="font-medium">{{ p.display_name }}</span>
-                  <span class="font-bold text-primary">{{ Number(p.points).toFixed(1) }}</span>
-                  <span v-if="p.goals" class="text-success">{{ p.goals }}G</span>
-                  <span v-if="p.assists" class="text-info">{{ p.assists }}A</span>
-                  <span v-if="p.is_goalie_win" class="text-warning">W</span>
-                  <span v-if="p.is_shutout" class="text-accent">SO</span>
-                  <span v-if="p.penalties" class="text-error">{{ p.penalties }}PIM</span>
-                  <span v-if="p.ref_games" class="text-secondary">REF</span>
+              <div v-if="game.my_players && game.my_players.length" class="mt-2 pt-2 border-t border-base-300">
+                <!-- Scorers: players who got points -->
+                <div class="flex flex-wrap gap-1 mb-1">
+                  <div
+                    v-for="p in game.my_players.filter(p => p.points !== 0 || p.penalties > 0)"
+                    :key="p.hb_human_id"
+                    class="flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-base-300"
+                  >
+                    <span class="font-medium">{{ p.display_name }}</span>
+                    <span class="font-bold" :class="p.points < 0 ? 'text-error' : 'text-primary'">{{ Number(p.points).toFixed(1) }}</span>
+                    <span v-if="p.goals" class="text-success">{{ p.goals }}G</span>
+                    <span v-if="p.assists" class="text-info">{{ p.assists }}A</span>
+                    <span v-if="p.is_goalie_win" class="text-warning">W</span>
+                    <span v-if="p.is_shutout" class="text-accent">SO</span>
+                    <span v-if="p.penalties" class="text-error">{{ p.penalties }}PIM</span>
+                    <span v-if="p.ref_games" class="text-secondary">REF</span>
+                  </div>
+                </div>
+                <!-- Zeroes: just names, dimmed -->
+                <div v-if="game.my_players.some(p => p.points === 0 && !p.penalties)" class="text-xs text-base-content/35 leading-relaxed">
+                  {{ game.my_players.filter(p => p.points === 0 && !p.penalties).map(p => p.display_name).join(', ') }}
                 </div>
               </div>
               <!-- Stats link -->
