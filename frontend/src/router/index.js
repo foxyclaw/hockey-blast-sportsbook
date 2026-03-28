@@ -51,6 +51,11 @@ const router = createRouter({
       component: () => import('@/views/FantasyView.vue'),
     },
     {
+      path: '/my-fantasy',
+      name: 'my-fantasy',
+      component: () => import('@/views/MyFantasyView.vue'),
+    },
+    {
       path: '/fantasy/:id',
       name: 'fantasy-league',
       component: () => import('@/views/FantasyLeagueView.vue'),
