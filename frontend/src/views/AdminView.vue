@@ -496,7 +496,7 @@
                             <option v-for="s in hbSeasons" :key="s.id" :value="s.id">{{ s.season_name }} ({{ s.start_date }} → {{ s.end_date }})</option>
                           </select>
                         </div>
-                        <div class="form-control">
+                        <div v-if="l.status === 'forming'" class="form-control">
                           <label class="label py-0"><span class="label-text text-xs">Max Managers</span></label>
                           <input v-model.number="leagueEditForm.max_managers" type="number" min="2" max="20" class="input input-bordered input-xs w-20" placeholder="e.g. 8" />
                         </div>
