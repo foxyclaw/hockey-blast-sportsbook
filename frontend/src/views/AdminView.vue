@@ -872,6 +872,8 @@ function openLeagueEdit(league) {
     max_managers: league.max_managers || null,
   }
   editingLeagueId.value = league.id
+  // Auto-load seasons if one is already selected so the dropdown shows it
+  if (league.hb_league_id) loadHbSeasons(league.hb_league_id)
 }
 
 async function loadHbSeasons(leagueId) {
