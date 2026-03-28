@@ -20,7 +20,7 @@ import string
 from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 
 from app.auth.jwt_validator import require_auth, optional_auth
 from app.db import HBSession, PredSession
@@ -918,6 +918,121 @@ def get_standings(league_id: int):
             })
 
     return jsonify({"standings": standings})
+
+
+
+@fantasy_bp.route("/leagues/<int:league_id>/games", methods=["GET"])
+@optional_auth
+def get_league_games(league_id: int):
+    """GET /api/fantasy/leagues/<id>/games — games for the league division."""
+    pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    if league is None:
+        return error_response("NOT_FOUND", "League not found", 404)
+
+    if not league.hb_division_id:
+        return jsonify({"games": []})
+
+    hb = HBSession()
+    FINAL = {"Final", "Final.", "Final/OT", "Final/OT2", "Final/SO", "Final(SO)"}
+
+    # All games for this division — one fast indexed query
+    game_rows = hb.execute(
+        text(
+            "SELECT id, game_number, date, time, status, location, game_type, "
+            "home_team_id, visitor_team_id, home_final_score, visitor_final_score "
+            "FROM games WHERE division_id = :div_id ORDER BY date DESC, time DESC"
+        ),
+        {"div_id": league.hb_division_id},
+    ).fetchall()
+
+    if not game_rows:
+        return jsonify({"games": []})
+
+    # Batch team names
+    team_ids = {r.home_team_id for r in game_rows} | {r.visitor_team_id for r in game_rows}
+    team_ids.discard(None)
+    team_names = {}
+    if team_ids:
+        ids_sql = ",".join(str(i) for i in team_ids)
+        team_rows = hb.execute(text(f"SELECT id, name FROM teams WHERE id IN ({ids_sql})")).fetchall()
+        team_names = {r.id: r.name for r in team_rows}
+
+    # My rostered players (if authenticated)
+    my_roster = {}  # hb_human_id -> FantasyRoster
+    human_names = {}  # hb_human_id -> display_name
+    if g.pred_user:
+        from app.models.fantasy_roster import FantasyRoster
+        roster_rows = pred.execute(
+            select(FantasyRoster).where(
+                FantasyRoster.league_id == league_id,
+                FantasyRoster.user_id == g.pred_user.id,
+            )
+        ).scalars().all()
+        my_roster = {r.hb_human_id: r for r in roster_rows}
+        if my_roster:
+            hids_sql = ",".join(str(h) for h in my_roster)
+            human_rows = hb.execute(
+                text(f"SELECT id, first_name, last_name FROM humans WHERE id IN ({hids_sql})")
+            ).fetchall()
+            human_names = {r.id: f"{r.first_name or ''} {r.last_name or ''}".strip() for r in human_rows}
+
+    # Batch-load my scores for completed games
+    scored_games = {r.id for r in game_rows if r.status in FINAL}
+    my_scores = {}  # game_id -> {hb_human_id -> row}
+    if my_roster and scored_games:
+        from app.models.fantasy_game_scores import FantasyGameScores
+        score_rows = pred.execute(
+            select(FantasyGameScores).where(
+                FantasyGameScores.league_id == league_id,
+                FantasyGameScores.user_id == g.pred_user.id,
+                FantasyGameScores.game_id.in_(scored_games),
+            )
+        ).scalars().all()
+        for s in score_rows:
+            my_scores.setdefault(s.game_id, {})[s.hb_human_id] = s
+
+    games = []
+    for g_row in game_rows:
+        my_players = []
+        if my_roster and g_row.status in FINAL:
+            game_score_map = my_scores.get(g_row.id, {})
+            for hb_human_id, roster_entry in my_roster.items():
+                sc = game_score_map.get(hb_human_id)
+                my_players.append({
+                    "hb_human_id": hb_human_id,
+                    "display_name": human_names.get(hb_human_id, str(hb_human_id)),
+                    "points": float(sc.points) if sc else 0.0,
+                    "goals": sc.goals if sc else 0,
+                    "assists": sc.assists if sc else 0,
+                    "penalties": sc.penalties if sc else 0,
+                    "games_played": sc.games_played if sc else 0,
+                    "is_goalie_win": sc.is_goalie_win if sc else False,
+                    "is_shutout": sc.is_shutout if sc else False,
+                    "ref_games": sc.ref_games if sc else 0,
+                })
+            # Sort: points desc, then name
+            my_players.sort(key=lambda p: (-p["points"], p["display_name"]))
+
+        games.append({
+            "id": g_row.id,
+            "game_number": g_row.game_number,
+            "date": g_row.date.isoformat() if g_row.date else None,
+            "time": g_row.time.strftime("%H:%M") if g_row.time else None,
+            "status": g_row.status,
+            "location": g_row.location,
+            "game_type": g_row.game_type,
+            "home_team_id": g_row.home_team_id,
+            "visitor_team_id": g_row.visitor_team_id,
+            "home_team_name": team_names.get(g_row.home_team_id, "Home"),
+            "visitor_team_name": team_names.get(g_row.visitor_team_id, "Visitor"),
+            "home_final_score": g_row.home_final_score,
+            "visitor_final_score": g_row.visitor_final_score,
+            "game_card_url": f"https://hockey-blast.com/game_card/{g_row.game_number}",
+            "my_players": my_players,
+        })
+
+    return jsonify({"games": games})
 
 
 # ── Admin actions ─────────────────────────────────────────────────────────────

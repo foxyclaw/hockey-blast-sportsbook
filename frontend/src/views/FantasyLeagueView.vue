@@ -379,6 +379,70 @@
         </div>
       </div>
 
+
+      <!-- ── Games Tab ── -->
+      <div v-if="activeTab === 'games'">
+        <div v-if="gamesLoading" class="flex justify-center py-10">
+          <span class="loading loading-spinner loading-md"></span>
+        </div>
+        <div v-else-if="!games.length" class="text-center text-base-content/50 py-10">
+          No games found for this season.
+        </div>
+        <div v-else class="space-y-2">
+          <div v-for="game in games" :key="game.id" class="card card-compact bg-base-200 shadow-sm">
+            <div class="card-body p-3">
+              <!-- Meta row -->
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="text-xs text-base-content/50 flex items-center gap-2">
+                  <span>{{ game.date }}</span>
+                  <span v-if="game.time">{{ game.time }}</span>
+                  <span v-if="game.location" class="hidden sm:inline">· {{ game.location }}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <span v-if="game.game_type" class="badge badge-xs badge-outline">{{ game.game_type }}</span>
+                  <span class="badge badge-xs" :class="{
+                    'badge-success': game.status && game.status.startsWith('Final'),
+                    'badge-warning': game.status === 'Scheduled',
+                    'badge-info': game.status && game.status.toLowerCase().includes('live'),
+                  }">{{ game.status }}</span>
+                </div>
+              </div>
+              <!-- Score row -->
+              <div class="flex items-center justify-between gap-2 mt-1">
+                <div class="flex-1 text-right text-sm font-medium truncate">{{ game.visitor_team_name }}</div>
+                <div class="text-center font-bold w-20 shrink-0">
+                  <span v-if="game.visitor_final_score != null">{{ game.visitor_final_score }} – {{ game.home_final_score }}</span>
+                  <span v-else class="text-base-content/30 text-xs">vs</span>
+                </div>
+                <div class="flex-1 text-left text-sm font-medium truncate">{{ game.home_team_name }}</div>
+              </div>
+              <!-- My rostered players -->
+              <div v-if="game.my_players && game.my_players.length" class="mt-2 pt-2 border-t border-base-300 flex flex-wrap gap-1">
+                <div
+                  v-for="p in game.my_players"
+                  :key="p.hb_human_id"
+                  class="flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-base-300"
+                  :class="{ 'opacity-40': p.points === 0 && !p.games_played && !p.ref_games }"
+                >
+                  <span class="font-medium">{{ p.display_name }}</span>
+                  <span class="font-bold text-primary">{{ Number(p.points).toFixed(1) }}</span>
+                  <span v-if="p.goals" class="text-success">{{ p.goals }}G</span>
+                  <span v-if="p.assists" class="text-info">{{ p.assists }}A</span>
+                  <span v-if="p.is_goalie_win" class="text-warning">W</span>
+                  <span v-if="p.is_shutout" class="text-accent">SO</span>
+                  <span v-if="p.penalties" class="text-error">{{ p.penalties }}PIM</span>
+                  <span v-if="p.ref_games" class="text-secondary">REF</span>
+                </div>
+              </div>
+              <!-- Stats link -->
+              <div class="text-right mt-1">
+                <a :href="game.game_card_url" target="_blank" rel="noopener" class="link link-primary text-xs opacity-50 hover:opacity-100">📊 Stats</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── My Team Tab ── -->
       <div v-if="activeTab === 'myteam'">
         <div v-if="!league.is_member" class="text-center py-10 text-base-content/40">
@@ -539,9 +603,12 @@ const draftQueue = ref([])
 const pool = ref({ skaters: [], goalies: [], refs: [] })
 const standings = ref([])
 const standingsLoading = ref(false)
+const games = ref([])
+const gamesLoading = ref(false)
 
 const allTabs = [
   { id: 'standings', label: '🏆 Standings' },
+  { id: 'games', label: '🏒 Games' },
   { id: 'myteam', label: '⭐ My Team' },
   { id: 'rosters', label: '👥 Rosters' },
   { id: 'draft', label: '📋 Draft' },
@@ -768,6 +835,18 @@ async function loadPool() {
   }
 }
 
+async function loadGames() {
+  gamesLoading.value = true
+  try {
+    const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/games`)
+    games.value = data.games || []
+  } catch {
+    games.value = []
+  } finally {
+    gamesLoading.value = false
+  }
+}
+
 async function loadStandings() {
   standingsLoading.value = true
   try {
@@ -862,6 +941,7 @@ watch(() => league.value?.status, (status) => {
 
 watch(activeTab, (tab) => {
   if (tab === 'standings') loadStandings()
+  if (tab === 'games') loadGames()
 })
 
 // Auto-switch pool tab based on pick type
