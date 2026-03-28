@@ -35,7 +35,7 @@ def get_notifications():
 
     session = PredSession()
     from datetime import datetime, timezone, timedelta
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     stmt = (
         select(PredNotification)
         .where(

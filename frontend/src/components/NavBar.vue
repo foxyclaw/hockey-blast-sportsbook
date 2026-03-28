@@ -200,9 +200,12 @@ async function markAllRead() {
 
 function openNotification(n) {
   api.post(`/api/notifications/${n.id}/read`).catch(() => {})
-  // Remove from list immediately — delete on read
-  notifications.value = notifications.value.filter(x => x.id !== n.id)
-  unreadCount.value = Math.max(0, unreadCount.value - 1)
+  // Mark as read in UI but keep visible — don't remove from list
+  const notif = notifications.value.find(x => x.id === n.id)
+  if (notif && !notif.is_read) {
+    notif.is_read = true
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
   showNotifications.value = false
   if (n.link) {
     setTimeout(() => router.push(n.link), 100)

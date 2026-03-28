@@ -423,16 +423,17 @@ def _get_pool(league_id: int) -> dict:
 
 
 def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None:
-    """Delete only pending 'your turn' notifications — keep auto-pick history."""
+    """Mark stale 'your turn' prompts as read — keep them in history, don't delete."""
     from app.models.pred_notification import PredNotification
     try:
         stale = pred.query(PredNotification).filter(
             PredNotification.user_id == user_id,
             PredNotification.type == "fantasy_draft",
             PredNotification.title.like("%Your Pick%"),
+            PredNotification.is_read == False,
         ).all()
         for n in stale:
-            pred.delete(n)
+            n.is_read = True
     except Exception:
         pass
 
@@ -449,12 +450,21 @@ def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: da
         from app.services.notify_service import notify_user, DRAFT_NOTIFY_DELAY_SECONDS
         deadline_str = deadline.astimezone().strftime("%b %d %I:%M %p %Z") if deadline else "soon"
 
+        # Get league name for context
+        league_name = ""
+        try:
+            league_obj = pred.get(FantasyLeague, league_id)
+            if league_obj:
+                league_name = f" · {league_obj.name}"
+        except Exception:
+            pass
+
         if auto_picked:
-            title = "🏒 Auto-picked for you!"
+            title = f"🏒 Auto-picked for you!{league_name}"
             body = f"Pick #{pick_number} was made automatically (you missed your turn). Check your roster."
             delay = 0  # immediate — they need to know
         else:
-            title = "🏒 Your Pick!"
+            title = f"🏒 Your Pick!{league_name}"
             body = f"Pick #{pick_number} — deadline {deadline_str}."
             delay = DRAFT_NOTIFY_DELAY_SECONDS  # 2 min
 
@@ -463,7 +473,7 @@ def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: da
             user_id=user_id,
             title=title,
             body=body,
-            url=f"/fantasy/{league_id}",
+            url=f"/fantasy/{league_id}?tab=draft",
             notif_type="fantasy_draft",
             delay_seconds=delay,
         )

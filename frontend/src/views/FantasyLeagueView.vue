@@ -964,6 +964,11 @@ watch(currentPick, (pick) => {
 
 onMounted(async () => {
   await loadLeague()
+  // Honor ?tab=draft (or other tab) from notification link
+  const tabParam = route.query.tab
+  if (tabParam && tabs.value.some(t => t.id === tabParam)) {
+    activeTab.value = tabParam
+  }
   // Pre-fill join code if arriving from private league card
   const urlCode = route.query.join_code
   if (urlCode && league.value?.is_private && !league.value?.is_member) {
