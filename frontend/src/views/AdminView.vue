@@ -330,11 +330,11 @@
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
-              <input v-model="launchDraftOpens" type="datetime-local" class="input input-bordered input-sm" />
+              <input v-model="launchDraftOpens" type="datetime-local" class="input input-bordered input-sm" :min="nowLocal" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Closes</span></label>
-              <input v-model="launchDraftCloses" type="datetime-local" class="input input-bordered input-sm" />
+              <input v-model="launchDraftCloses" type="datetime-local" class="input input-bordered input-sm" :min="nowLocal" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Season Label</span></label>
@@ -815,6 +815,10 @@ function nextWeekday(dayOfWeek, hour, minute) {
 const launchStartDate = ref(nextWeekday(1, 0, 1))    // next Monday 00:01
 const launchDraftOpens = ref(nextWeekday(6, 16, 0))  // next Saturday 16:00
 const launchDraftCloses = ref(nextWeekday(1, 23, 0)) // next Monday 23:00
+const nowLocal = computed(() => {
+  const d = new Date(); const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+})
 const launchActiveOnly = ref(true)
 const levels = ref([])
 const selectedLevelIds = ref([])
@@ -981,6 +985,17 @@ async function launchSeason() {
   launchError.value = null
   launchResult.value = null
   // Client-side date sanity checks
+  const now = new Date()
+  if (launchDraftOpens.value && new Date(launchDraftOpens.value) < now) {
+    launchError.value = 'Draft open time cannot be in the past'
+    launching.value = false
+    return
+  }
+  if (launchDraftCloses.value && new Date(launchDraftCloses.value) < now) {
+    launchError.value = 'Draft close time cannot be in the past'
+    launching.value = false
+    return
+  }
   if (launchDraftOpens.value && launchDraftCloses.value) {
     if (new Date(launchDraftOpens.value) >= new Date(launchDraftCloses.value)) {
       launchError.value = 'Draft open time must be before draft close time'
