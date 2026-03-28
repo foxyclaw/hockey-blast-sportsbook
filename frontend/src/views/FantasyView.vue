@@ -229,9 +229,12 @@
 
           <div class="modal-action mt-2">
             <button type="button" class="btn btn-ghost btn-sm" @click="showCreateModal = false">Cancel</button>
-            <button type="submit" class="btn btn-primary btn-sm" :disabled="creating">
+            <button v-if="isAuthenticated" type="submit" class="btn btn-primary btn-sm" :disabled="creating">
               <span v-if="creating" class="loading loading-spinner loading-xs"></span>
               Create
+            </button>
+            <button v-else type="button" class="btn btn-warning btn-sm" @click="loginWithRedirect()">
+              Login to Create
             </button>
           </div>
         </form>
@@ -262,9 +265,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApiClient } from '@/api/client'
+import { useAuth0 } from '@auth0/auth0-vue'
 
 const router = useRouter()
 const api = useApiClient()
+const { isAuthenticated, loginWithRedirect } = useAuth0()
 
 const leagues = ref([])
 const loading = ref(true)
@@ -280,9 +285,9 @@ const createForm = ref({
   team_name: '',
   is_private: true,
   season_label: '',
-  season_starts_at: '',
-  draft_opens_at: '',
-  draft_closes_at: '',
+  season_starts_at: '2026-04-01T00:00',
+  draft_opens_at: '2026-03-28T16:00',
+  draft_closes_at: '2026-03-30T23:00',
   max_managers: null,
 })
 const createdJoinCode = ref('')
