@@ -448,7 +448,7 @@
                       <input type="checkbox" class="checkbox checkbox-xs"
                         :value="l.id" v-model="selectedLeagueIds" />
                     </td>
-                    <td class="font-medium">{{ l.name }}</td>
+                    <td class="font-medium">{{ l.name }}<span v-if="l.is_private" class="ml-1 text-warning" title="Private">🔒</span></td>
                     <td>
                       {{ l.level_name }}
                       <span v-if="l.hb_league_name" class="text-xs opacity-50 ml-1">({{ l.hb_league_name }})</span>
