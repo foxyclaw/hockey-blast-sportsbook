@@ -22,7 +22,7 @@
             My Picks
           </RouterLink>
         </li>
-        <li v-if="isFullyAuthenticated">
+        <li>
           <RouterLink to="/fantasy" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
             Fantasy
           </RouterLink>
@@ -129,7 +129,7 @@
           <li><RouterLink to="/">Games</RouterLink></li>
           <li v-if="isFullyAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
           <!-- Leagues hidden -->
-          <li v-if="isFullyAuthenticated"><RouterLink to="/fantasy">Fantasy</RouterLink></li>
+          <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li v-if="isFullyAuthenticated && predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
         </ul>
       </div>
