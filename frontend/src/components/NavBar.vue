@@ -61,6 +61,8 @@
             {{ unreadCount > 9 ? '9+' : unreadCount }}
           </span>
         </button>
+        <!-- Click outside overlay -->
+        <div v-if="showNotifications" class="fixed inset-0 z-40" @click="showNotifications = false"></div>
         <!-- Dropdown -->
         <div
           v-if="showNotifications"
