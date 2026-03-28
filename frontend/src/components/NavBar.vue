@@ -104,12 +104,11 @@
             </div>
           </div>
         </div>
+        <!-- Avatar dropdown: account only -->
         <ul tabindex="0" class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-200 rounded-box w-52">
           <li class="menu-title px-3 py-1">
             <span class="text-xs opacity-60">{{ user?.email }}</span>
           </li>
-          <li><RouterLink to="/picks">My Picks</RouterLink></li>
-          <li><RouterLink to="/my-fantasy">My Leagues</RouterLink></li>
           <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
           <li v-if="predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
           <li><hr class="my-1 opacity-20" /></li>
@@ -120,12 +119,8 @@
           </li>
         </ul>
       </div>
-      <button v-else @click="doLogin()" class="btn btn-primary btn-sm" :disabled="loginInProgress">
-        <span v-if="loginInProgress" class="loading loading-spinner loading-xs"></span>
-        Sign In
-      </button>
 
-      <!-- Mobile hamburger -->
+      <!-- Mobile hamburger: full site nav -->
       <div class="dropdown dropdown-end sm:hidden">
         <label tabindex="0" class="btn btn-ghost btn-sm">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -133,14 +128,21 @@
           </svg>
         </label>
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-200 rounded-box w-52">
-          <li><RouterLink to="/">Games</RouterLink></li>
-          <li v-if="isFullyAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
-          <!-- Leagues hidden -->
-          <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
-          <li v-if="isFullyAuthenticated"><RouterLink to="/my-fantasy">My Leagues</RouterLink></li>
+          <li><RouterLink to="/">🏒 Games</RouterLink></li>
+          <li><RouterLink to="/fantasy">🏆 Fantasy</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/my-fantasy">⭐ My Leagues</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/picks">🎯 My Picks</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><hr class="my-1 opacity-20" /></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/player-prefs">👤 Player Profile</RouterLink></li>
           <li v-if="isFullyAuthenticated && predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
+          <li v-if="!isFullyAuthenticated"><hr class="my-1 opacity-20" /></li>
+          <li v-if="!isFullyAuthenticated"><button @click="doLogin()" class="text-primary font-medium">Sign In</button></li>
         </ul>
       </div>
+      <button v-if="!isFullyAuthenticated && !isLoading" @click="doLogin()" class="btn btn-primary btn-sm sm:flex hidden" :disabled="loginInProgress">
+        <span v-if="loginInProgress" class="loading loading-spinner loading-xs"></span>
+        Sign In
+      </button>
     </div>
   </div>
 </template>
