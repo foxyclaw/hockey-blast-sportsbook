@@ -109,7 +109,7 @@
             <span class="text-xs opacity-60">{{ user?.email }}</span>
           </li>
           <li><RouterLink to="/picks">My Picks</RouterLink></li>
-          <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
+          <li><RouterLink to="/my-fantasy">My Leagues</RouterLink></li>
           <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
           <li v-if="predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
           <li><hr class="my-1 opacity-20" /></li>
