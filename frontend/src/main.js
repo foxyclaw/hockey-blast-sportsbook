@@ -18,6 +18,7 @@ app.use(
       scope: 'openid profile email',
     },
     cacheLocation: 'localstorage',
+    useRefreshTokens: true,
     cookieDomain: '.hockey-blast.com',
   })
 )
