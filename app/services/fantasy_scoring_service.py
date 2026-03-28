@@ -289,8 +289,8 @@ def resolve_and_cache_division(league_id: int) -> int | None:
     if not league or not league.hb_season_id:
         return None
     rows = hb.execute(
-        text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid LIMIT 1"),
-        {"lvl": league.level_id, "sid": league.hb_season_id},
+        text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid AND org_id = :org LIMIT 1"),
+        {"lvl": league.level_id, "sid": league.hb_season_id, "org": league.org_id},
     ).fetchall()
     if not rows:
         return None
@@ -329,8 +329,8 @@ def score_active_leagues() -> dict:
                 div_ids_sql = str(league.hb_division_id)
             else:
                 div_rows = hb.execute(
-                    text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
-                    {"lvl": league.level_id, "sid": league.hb_season_id},
+                    text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid AND org_id = :org"),
+                    {"lvl": league.level_id, "sid": league.hb_season_id, "org": league.org_id},
                 ).fetchall()
                 if not div_rows:
                     continue
