@@ -277,6 +277,30 @@ def score_game(league_id: int, game_id: int) -> None:
     _update_standings(league_id, pred)
 
 
+def resolve_and_cache_division(league_id: int) -> int | None:
+    """
+    Look up division_id for a league from HB (level_id + hb_season_id),
+    cache it on the league row, and return it. Returns None if not found.
+    """
+    pred = PredSession()
+    hb = HBSession()
+    from app.models.fantasy_league import FantasyLeague
+    league = pred.get(FantasyLeague, league_id)
+    if not league or not league.hb_season_id:
+        return None
+    rows = hb.execute(
+        text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid LIMIT 1"),
+        {"lvl": league.level_id, "sid": league.hb_season_id},
+    ).fetchall()
+    if not rows:
+        return None
+    div_id = rows[0].id
+    if league.hb_division_id != div_id:
+        league.hb_division_id = div_id
+        pred.commit()
+    return div_id
+
+
 def score_active_leagues() -> dict:
     """
     Find all active fantasy leagues, discover completed-but-unscored games,
@@ -300,15 +324,26 @@ def score_active_leagues() -> dict:
         summary["leagues"] += 1
         hb = HBSession()  # Fresh session per league to avoid transaction cascade failures
         try:
-            div_rows = hb.execute(
-                text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
-                {"lvl": league.level_id, "sid": league.hb_season_id},
-            ).fetchall()
-
-            if not div_rows:
-                continue
-
-            div_ids_sql = ",".join(str(r.id) for r in div_rows)
+            # Use cached division_id when available for fast lookup
+            if league.hb_division_id:
+                div_ids_sql = str(league.hb_division_id)
+            else:
+                div_rows = hb.execute(
+                    text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
+                    {"lvl": league.level_id, "sid": league.hb_season_id},
+                ).fetchall()
+                if not div_rows:
+                    continue
+                div_ids_sql = ",".join(str(r.id) for r in div_rows)
+                # Cache it for next time
+                try:
+                    pred.execute(
+                        text("UPDATE fantasy_leagues SET hb_division_id=:did WHERE id=:lid"),
+                        {"did": div_rows[0].id, "lid": league.id}
+                    )
+                    pred.commit()
+                except Exception:
+                    pred.rollback()
             final_games = hb.execute(
                 text(
                     f"SELECT id FROM games WHERE division_id IN ({div_ids_sql}) "

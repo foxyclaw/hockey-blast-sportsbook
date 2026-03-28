@@ -816,10 +816,11 @@ def update_fantasy_league(league_id: int):
 
     if should_score:
         try:
-            from app.services.fantasy_scoring_service import score_active_leagues
+            from app.services.fantasy_scoring_service import resolve_and_cache_division, score_active_leagues
             import threading
-            t = threading.Thread(target=score_active_leagues, daemon=True)
-            t.start()
+            # Resolve + cache division_id synchronously first, then score in background
+            resolve_and_cache_division(league_id)
+            threading.Thread(target=score_active_leagues, daemon=True).start()
         except Exception as se:
             import logging
             logging.getLogger(__name__).warning("Could not kick off scoring after hb_season_id update: %s", se)

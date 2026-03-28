@@ -984,11 +984,12 @@ def start_season(league_id: int):
     league.season_starts_at = datetime.now(timezone.utc)
     pred.commit()
 
-    # Kick off scoring immediately if hb_season_id is set
+    # Resolve + cache division_id, then kick off scoring immediately
     if league.hb_season_id:
         try:
-            from app.services.fantasy_scoring_service import score_active_leagues
+            from app.services.fantasy_scoring_service import resolve_and_cache_division, score_active_leagues
             import threading
+            resolve_and_cache_division(league.id)
             threading.Thread(target=score_active_leagues, daemon=True).start()
         except Exception as se:
             import logging
