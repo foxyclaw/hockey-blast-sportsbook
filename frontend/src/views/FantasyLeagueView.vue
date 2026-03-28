@@ -201,8 +201,8 @@
                         <td class="text-right">{{ p.assists }}</td>
                         <td class="text-right hidden sm:table-cell">{{ p.points }}</td>
                         <td class="text-right hidden sm:table-cell">{{ p.penalties }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points }}</td>
-                        <td class="text-right text-base-content/60">{{ p.fantasy_ppg }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points != null ? Number(p.fantasy_points).toFixed(1) : '—' }}</td>
+                        <td class="text-right text-base-content/60">{{ p.fantasy_ppg != null ? Number(p.fantasy_ppg).toFixed(1) : '—' }}</td>
                       </tr>
                       <tr v-if="sortedSkaters.length === 0">
                         <td colspan="9" class="text-center text-base-content/40 py-4">No skaters found</td>
@@ -244,8 +244,8 @@
                         <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_goalie ?? p.fantasy_points }}</td>
-                        <td class="text-right text-base-content/60">{{ p.goalie_games > 0 ? ((p.fantasy_points_goalie ?? p.fantasy_points) / p.goalie_games).toFixed(2) : '—' }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_goalie != null ? Number(p.fantasy_points_goalie ?? p.fantasy_points).toFixed(1) : '—' }}</td>
+                        <td class="text-right text-base-content/60">{{ p.goalie_games > 0 ? ((p.fantasy_points_goalie ?? p.fantasy_points) / p.goalie_games).toFixed(1) : '—' }}</td>
                       </tr>
                       <tr v-if="filteredGoalies.length === 0">
                         <td colspan="7" class="text-center text-base-content/40 py-4">No goalies found</td>
@@ -287,8 +287,8 @@
                         <td class="text-right">{{ p.games_reffed }}</td>
                         <td class="text-right">{{ p.penalties_given }}</td>
                         <td class="text-right">{{ p.gm_given }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_ref ?? p.fantasy_points }}</td>
-                        <td class="text-right text-base-content/60">{{ p.games_reffed > 0 ? ((p.fantasy_points_ref ?? p.fantasy_points) / p.games_reffed).toFixed(2) : '—' }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_ref != null ? Number(p.fantasy_points_ref ?? p.fantasy_points).toFixed(1) : '—' }}</td>
+                        <td class="text-right text-base-content/60">{{ p.games_reffed > 0 ? ((p.fantasy_points_ref ?? p.fantasy_points) / p.games_reffed).toFixed(1) : '—' }}</td>
                       </tr>
                       <tr v-if="filteredRefs.length === 0">
                         <td colspan="7" class="text-center text-base-content/40 py-4">No referees found</td>
