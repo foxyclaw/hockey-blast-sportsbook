@@ -457,7 +457,7 @@
                     <td>{{ l.manager_count ?? '—' }}</td>
                     <td class="text-xs">
                       <span v-if="l.season_label" class="font-medium">{{ l.season_label }}</span>
-                      <span v-else class="font-bold text-warning animate-pulse">⚠️ SET SEASON!</span>
+                      <span v-else class="font-bold text-warning animate-pulse">⚠️ SET LABEL!</span>
                     </td>
                     <td class="text-xs">
                       <span v-if="l.season_starts_at">{{ fmtDt(l.season_starts_at) }}</span>
