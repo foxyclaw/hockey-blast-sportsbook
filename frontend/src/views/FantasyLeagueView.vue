@@ -409,12 +409,12 @@
               </div>
               <!-- Score row -->
               <div class="flex items-center justify-between gap-2 mt-1">
-                <div class="flex-1 text-right text-sm font-medium truncate">{{ game.visitor_team_name }}</div>
-                <div class="text-center font-bold w-20 shrink-0">
-                  <span v-if="game.visitor_final_score != null">{{ game.visitor_final_score }} – {{ game.home_final_score }}</span>
-                  <span v-else class="text-base-content/30 text-xs">vs</span>
+                <div class="flex-1 text-right font-bold text-base leading-tight truncate">{{ game.visitor_team_name }}</div>
+                <div class="text-center w-20 shrink-0">
+                  <span v-if="game.visitor_final_score != null" class="text-2xl font-black tracking-tight">{{ game.visitor_final_score }}–{{ game.home_final_score }}</span>
+                  <span v-else class="text-base-content/30 text-sm font-medium">vs</span>
                 </div>
-                <div class="flex-1 text-left text-sm font-medium truncate">{{ game.home_team_name }}</div>
+                <div class="flex-1 text-left font-bold text-base leading-tight truncate">{{ game.home_team_name }}</div>
               </div>
               <!-- My rostered players -->
               <div v-if="game.my_players && game.my_players.length" class="mt-2 pt-2 border-t border-base-300">
