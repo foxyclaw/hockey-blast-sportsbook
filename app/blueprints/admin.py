@@ -803,12 +803,26 @@ def update_fantasy_league(league_id: int):
                 import logging
                 logging.getLogger(__name__).warning("Failed to build draft queue for league %d: %s", league_id, qe)
 
+    # If hb_season_id was just set/changed and league is active, kick off scoring immediately
+    hb_season_changed = "hb_season_id" in data and data["hb_season_id"]
+    should_score = hb_season_changed and league.status == "active"
+
     try:
         pred.commit()
         pred.refresh(league)
     except Exception as e:
         pred.rollback()
         return jsonify({"error": "INTERNAL_ERROR", "message": str(e)}), 500
+
+    if should_score:
+        try:
+            from app.services.fantasy_scoring_service import score_active_leagues
+            import threading
+            t = threading.Thread(target=score_active_leagues, daemon=True)
+            t.start()
+        except Exception as se:
+            import logging
+            logging.getLogger(__name__).warning("Could not kick off scoring after hb_season_id update: %s", se)
 
     return jsonify(league.to_dict())
 

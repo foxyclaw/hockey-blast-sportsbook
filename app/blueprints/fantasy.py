@@ -984,4 +984,14 @@ def start_season(league_id: int):
     league.season_starts_at = datetime.now(timezone.utc)
     pred.commit()
 
+    # Kick off scoring immediately if hb_season_id is set
+    if league.hb_season_id:
+        try:
+            from app.services.fantasy_scoring_service import score_active_leagues
+            import threading
+            threading.Thread(target=score_active_leagues, daemon=True).start()
+        except Exception as se:
+            import logging
+            logging.getLogger(__name__).warning("Could not kick off scoring on season start: %s", se)
+
     return jsonify(league.to_dict())
