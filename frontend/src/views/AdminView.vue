@@ -813,8 +813,8 @@ function nextWeekday(dayOfWeek, hour, minute) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(hour)}:${pad(minute)}`
 }
 const launchStartDate = ref(nextWeekday(1, 0, 1))    // next Monday 00:01
-const launchDraftOpens = ref(nextWeekday(5, 19, 0))  // next Friday 19:00
-const launchDraftCloses = ref(nextWeekday(0, 23, 0)) // next Sunday 23:00
+const launchDraftOpens = ref(nextWeekday(6, 16, 0))  // next Saturday 16:00
+const launchDraftCloses = ref(nextWeekday(1, 23, 0)) // next Monday 23:00
 const launchActiveOnly = ref(true)
 const levels = ref([])
 const selectedLevelIds = ref([])
