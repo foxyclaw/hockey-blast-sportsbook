@@ -1028,7 +1028,7 @@ def get_league_games(league_id: int):
             "visitor_team_name": team_names.get(g_row.visitor_team_id, "Visitor"),
             "home_final_score": g_row.home_final_score,
             "visitor_final_score": g_row.visitor_final_score,
-            "game_card_url": f"https://hockey-blast.com/game_card/{g_row.game_number}",
+            "game_card_url": f"https://hockey-blast.com/game_card?game_id={g_row.id}",
             "my_players": my_players,
         })
 
