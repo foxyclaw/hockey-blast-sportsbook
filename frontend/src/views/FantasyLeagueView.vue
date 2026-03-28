@@ -615,10 +615,13 @@ const allTabs = [
 ]
 const tabs = computed(() => {
   if (!league.value) return allTabs
-  if (['active', 'completed'].includes(league.value.status)) {
-    return allTabs.filter(t => t.id !== 'draft')
-  }
-  return allTabs
+  const isLive = ['active', 'completed'].includes(league.value.status)
+  const hasGames = !!league.value.hb_division_id
+  return allTabs.filter(t => {
+    if (t.id === 'draft' && isLive) return false
+    if (t.id === 'games' && !hasGames) return false
+    return true
+  })
 })
 const activeTab = ref('draft')
 // Once league loads, switch to standings if draft is done
