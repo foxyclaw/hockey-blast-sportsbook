@@ -465,7 +465,11 @@
                     </td>
                     <td class="text-xs">{{ fmtDt(l.draft_opens_at) }}</td>
                     <td class="text-xs">{{ fmtDt(l.draft_closes_at) }}</td>
-                    <td class="text-xs opacity-60">{{ l.hb_season_name || (l.hb_season_id ? String(l.hb_season_id) : 'auto') }}</td>
+                    <td class="text-xs">
+                      <span v-if="l.hb_season_name" class="font-medium">{{ l.hb_season_name }}</span>
+                      <span v-else-if="l.hb_season_id" class="opacity-60">{{ l.hb_season_id }}</span>
+                      <span v-else class="badge badge-xs badge-warning">auto</span>
+                    </td>
                     <td class="text-xs opacity-70">{{ l.creator_name || '—' }}</td>
                     <td>
                       <button class="btn btn-xs btn-ghost" @click="openLeagueEdit(l)">✏️</button>

@@ -80,6 +80,14 @@ def score_game(league_id: int, game_id: int) -> None:
         }
     except Exception as e:
         logger.warning("score_game: could not query game_rosters for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
+        try:
+            hb.rollback()
+        except Exception:
+            pass
         return
 
     # ── Goals: goal_scorer_id, assist_1_id, assist_2_id ──────────────────────
@@ -100,6 +108,10 @@ def score_game(league_id: int, game_id: int) -> None:
                 assists_by_player[g.assist_2_id] = assists_by_player.get(g.assist_2_id, 0) + 1
     except Exception as e:
         logger.warning("score_game: could not query goals for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
 
     # ── Penalties: penalized_player_id ───────────────────────────────────────
     penalties_by_player: dict[int, int] = {}
@@ -115,6 +127,10 @@ def score_game(league_id: int, game_id: int) -> None:
                 )
     except Exception as e:
         logger.warning("score_game: could not query penalties for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
 
     # ── Goalie win/shutout from games table ───────────────────────────────────
     goalie_results: dict[int, dict] = {}
@@ -139,6 +155,10 @@ def score_game(league_id: int, game_id: int) -> None:
                 }
     except Exception as e:
         logger.warning("score_game: could not query goalie data for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
 
     # ── Referee stats for this game ──────────────────────────────────────────
     ref_stats: dict[int, dict] = {}
@@ -165,6 +185,10 @@ def score_game(league_id: int, game_id: int) -> None:
                 ref_stats[r.referee_id]["gm"] = int(r.gm_cnt or 0)
     except Exception as e:
         logger.debug("score_game: ref stats unavailable for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
 
     now = datetime.now(timezone.utc)
     scored = 0
@@ -272,10 +296,9 @@ def score_active_leagues() -> dict:
         logger.exception("[fantasy] Could not load active leagues: %s", e)
         return summary
 
-    hb = HBSession()
-
     for league in leagues:
         summary["leagues"] += 1
+        hb = HBSession()  # Fresh session per league to avoid transaction cascade failures
         try:
             div_rows = hb.execute(
                 text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
@@ -317,6 +340,10 @@ def score_active_leagues() -> dict:
         except Exception as le:
             logger.exception("[fantasy] Error processing league %d: %s", league.id, le)
             summary["errors"] += 1
+            try:
+                hb.rollback()
+            except Exception:
+                pass
 
     return summary
 
@@ -379,6 +406,10 @@ def _update_standings(league_id: int, pred) -> None:
     except Exception as e:
         logger.warning("week_points calculation failed, falling back to 0: %s", e)
         week_map = {}
+        try:
+            hb.rollback()
+        except Exception:
+            pass
 
     sorted_users = sorted(total_map.keys(), key=lambda uid: total_map[uid], reverse=True)
 
