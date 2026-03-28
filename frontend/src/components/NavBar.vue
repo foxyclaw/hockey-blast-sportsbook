@@ -6,7 +6,7 @@
       </RouterLink>
       <span class="text-base-content/20">|</span>
       <a href="https://hockey-blast.com" class="btn btn-ghost font-bold tracking-tight text-sm sm:text-xl">
-        🏒 <span class="text-primary font-bold">HB</span><span class="text-base-content/80 font-bold">Stats</span>
+        🏒 <span class="text-primary font-bold">HB</span><span class="text-base-content/30 mx-1">|</span><span class="text-base-content/60 font-bold">Stats</span>
       </a>
     </div>
 
