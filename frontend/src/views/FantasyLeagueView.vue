@@ -165,11 +165,11 @@
                       <tr>
                         <th class="w-16"></th>
                         <th class="cursor-pointer" @click="setSortKey('name')">Player <span v-if="sortKey === 'name'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
-                        <th class="cursor-pointer text-right hidden xs:table-cell" @click="setSortKey('games_played')">GP <span v-if="sortKey === 'games_played'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setSortKey('games_played')">GP <span v-if="sortKey === 'games_played'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('goals')">G <span v-if="sortKey === 'goals'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('assists')">A <span v-if="sortKey === 'assists'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
-                        <th class="cursor-pointer text-right hidden sm:table-cell" @click="setSortKey('points')">Pts <span v-if="sortKey === 'points'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
-                        <th class="cursor-pointer text-right hidden sm:table-cell" @click="setSortKey('penalties')">Pen <span v-if="sortKey === 'penalties'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setSortKey('points')">Pts <span v-if="sortKey === 'points'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setSortKey('penalties')">Pen <span v-if="sortKey === 'penalties'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('fantasy_points')">FP <span v-if="sortKey === 'fantasy_points'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('fantasy_ppg')">FPPG <span v-if="sortKey === 'fantasy_ppg'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                       </tr>
@@ -196,11 +196,11 @@
                           </template>
                         </td>
                         <td>{{ p.first_name }} {{ p.last_name }}</td>
-                        <td class="text-right hidden xs:table-cell">{{ p.games_played }}</td>
+                        <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals }}</td>
                         <td class="text-right">{{ p.assists }}</td>
-                        <td class="text-right hidden sm:table-cell">{{ p.points }}</td>
-                        <td class="text-right hidden sm:table-cell">{{ p.penalties }}</td>
+                        <td class="text-right">{{ p.points }}</td>
+                        <td class="text-right">{{ p.penalties }}</td>
                         <td class="text-right font-bold text-primary">{{ p.fantasy_points != null ? Number(p.fantasy_points).toFixed(1) : '—' }}</td>
                         <td class="text-right text-base-content/60">{{ p.fantasy_ppg != null ? Number(p.fantasy_ppg).toFixed(1) : '—' }}</td>
                       </tr>
