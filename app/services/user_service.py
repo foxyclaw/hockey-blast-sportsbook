@@ -31,6 +31,19 @@ def get_or_create_pred_user(token_payload: dict[str, Any], session: Session) -> 
     now = datetime.now(timezone.utc)
 
     if user is None:
+        # Check if same email exists from a different auth provider — link accounts
+        email = token_payload.get(email)
+        if email:
+            existing = session.execute(
+                select(PredUser).where(PredUser.email == email)
+            ).scalar_one_or_none()
+            if existing:
+                # Link this sub to the existing account instead of creating duplicate
+                existing.auth0_sub = sub
+                existing.last_login_at = now
+                return existing
+
+    if user is None:
         # First login — create new user
         display_name = (
             token_payload.get("name")
