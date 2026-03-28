@@ -214,7 +214,7 @@
           <div class="text-xs text-base-content/40 -mt-2 mb-1">All picks must be made between Draft Opens and Draft Closes. If you miss your turn, a pick is automatically made for you — the highest Fantasy Points player still available.</div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text text-xs">Season Starts</span></label>
-            <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered input-sm" />
+            <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered input-sm" required :min="nowLocal" />
           </div>
 
           <!-- Private toggle -->
@@ -270,6 +270,10 @@ import { useAuth0 } from '@auth0/auth0-vue'
 const router = useRouter()
 const api = useApiClient()
 const { isAuthenticated, loginWithRedirect } = useAuth0()
+const nowLocal = computed(() => {
+  const d = new Date(); const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+})
 
 const leagues = ref([])
 const loading = ref(true)
@@ -480,7 +484,7 @@ async function createLeague() {
     }
     createForm.value = {
       hb_league_id: null, level_id: null, team_name: '', is_private: true,
-      season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '', max_managers: null,
+      season_label: '', season_starts_at: '2026-04-01T00:00', draft_opens_at: '2026-03-28T16:00', draft_closes_at: '2026-03-30T23:00', max_managers: null,
     }
   } catch (e) {
     createError.value = e?.response?.data?.message || 'Failed to create league'
