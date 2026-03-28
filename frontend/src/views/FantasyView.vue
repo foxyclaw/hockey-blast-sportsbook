@@ -196,8 +196,8 @@
 
           <!-- Season label -->
           <div class="form-control">
-            <label class="label py-1"><span class="label-text text-sm">Season Label <span class="text-base-content/40">(optional)</span></span></label>
-            <input v-model="createForm.season_label" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-sm" />
+            <label class="label py-1"><span class="label-text text-sm">Season Label</span></label>
+            <input v-model="createForm.season_label" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-sm" required />
           </div>
 
           <!-- Draft dates row 1, Season Starts row 2 -->

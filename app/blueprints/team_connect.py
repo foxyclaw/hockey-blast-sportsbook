@@ -34,9 +34,14 @@ def get_notifications():
     from app.models.pred_notification import PredNotification
 
     session = PredSession()
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     stmt = (
         select(PredNotification)
-        .where(PredNotification.user_id == g.pred_user.id)
+        .where(
+            PredNotification.user_id == g.pred_user.id,
+            PredNotification.created_at >= cutoff,
+        )
         .order_by(PredNotification.created_at.desc())
         .limit(20)
     )
