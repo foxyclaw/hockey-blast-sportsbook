@@ -195,7 +195,7 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
                           </template>
                         </td>
-                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover">{{ p.first_name }} {{ p.last_name }}</a></td>
                         <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals }}</td>
                         <td class="text-right">{{ p.assists }}</td>
@@ -240,7 +240,7 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
                           </template>
                         </td>
-                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover">{{ p.first_name }} {{ p.last_name }}</a></td>
                         <td class="text-right">{{ p.goalie_games ?? p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
@@ -283,7 +283,7 @@
                             <button class="btn btn-xs btn-disabled" disabled>Draft</button>
                           </template>
                         </td>
-                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover">{{ p.first_name }} {{ p.last_name }}</a></td>
                         <td class="text-right">{{ p.games_reffed }}</td>
                         <td class="text-right">{{ p.penalties_given }}</td>
                         <td class="text-right">{{ p.gm_given }}</td>
