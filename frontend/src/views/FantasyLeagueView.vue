@@ -11,7 +11,7 @@
         <div class="flex items-start justify-between flex-wrap gap-3">
           <div>
             <div class="text-xs text-base-content/40 mb-1">
-              <RouterLink to="/fantasy" class="link link-hover">Fantasy</RouterLink> /
+              <RouterLink to="/fantasy" class="link link-hover text-blue-400">Fantasy</RouterLink> /
             </div>
             <div class="flex items-center gap-2">
               <h1 class="text-2xl font-extrabold tracking-tight">{{ league.name }}</h1>
@@ -195,7 +195,7 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
                           </template>
                         </td>
-                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover">{{ p.first_name }} {{ p.last_name }}</a></td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
                         <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals }}</td>
                         <td class="text-right">{{ p.assists }}</td>
@@ -240,7 +240,7 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
                           </template>
                         </td>
-                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover">{{ p.first_name }} {{ p.last_name }}</a></td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
                         <td class="text-right">{{ p.goalie_games ?? p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
@@ -283,7 +283,7 @@
                             <button class="btn btn-xs btn-disabled" disabled>Draft</button>
                           </template>
                         </td>
-                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover">{{ p.first_name }} {{ p.last_name }}</a></td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
                         <td class="text-right">{{ p.games_reffed }}</td>
                         <td class="text-right">{{ p.penalties_given }}</td>
                         <td class="text-right">{{ p.gm_given }}</td>
