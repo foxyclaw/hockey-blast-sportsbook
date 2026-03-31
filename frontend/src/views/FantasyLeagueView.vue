@@ -241,7 +241,7 @@
                           </template>
                         </td>
                         <td>{{ p.first_name }} {{ p.last_name }}</td>
-                        <td class="text-right">{{ p.games_played }}</td>
+                        <td class="text-right">{{ p.goalie_games ?? p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
                         <td class="text-right font-bold text-primary">{{ p.fantasy_points_goalie != null ? Number(p.fantasy_points_goalie ?? p.fantasy_points).toFixed(1) : '—' }}</td>
