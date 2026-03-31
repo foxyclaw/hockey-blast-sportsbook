@@ -1,13 +1,14 @@
 <template>
   <div class="navbar bg-base-300 shadow-lg sticky top-0 z-50 border-b border-base-content/10 px-2">
-    <div class="navbar-start w-auto shrink-0 gap-1">
-      <RouterLink to="/" class="btn btn-ghost text-xl font-bold tracking-tight">
-        🏒 <span class="text-primary">HB</span><span class="text-base-content/80">Picks</span>
+    <div class="navbar-start w-auto shrink-0 gap-1 flex-none">
+      <RouterLink to="/" class="text-xl font-bold tracking-tight px-2 py-1 rounded-lg hover:bg-base-content/10">
+        🏒 <span class="text-primary font-bold">HB</span>
       </RouterLink>
       <span class="text-base-content/20">|</span>
-      <a href="https://hockey-blast.com" class="btn btn-ghost font-bold tracking-tight text-sm sm:text-xl">
-        🏒 <span class="text-base-content/30">HB</span><span class="text-base-content/20">Stats</span>
+      <a href="https://hockey-blast.com" class="font-bold tracking-tight text-sm px-2 py-1 rounded-lg hover:bg-base-content/10">
+        <span class="text-base-content/40">Stats</span>
       </a>
+
     </div>
 
     <div class="navbar-center hidden sm:flex flex-1">
@@ -22,9 +23,14 @@
             My Picks
           </RouterLink>
         </li>
-        <li v-if="isFullyAuthenticated">
+        <li>
           <RouterLink to="/fantasy" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
             Fantasy
+          </RouterLink>
+        </li>
+        <li v-if="isFullyAuthenticated">
+          <RouterLink to="/my-fantasy" class="rounded-lg text-sm font-medium" active-class="bg-primary/20 text-primary">
+            My Leagues
           </RouterLink>
         </li>
         <li v-if="isFullyAuthenticated && predUser?.is_admin">
@@ -39,7 +45,7 @@
     </div>
     <HelpButton ref="helpButtonRef" />
 
-    <div class="navbar-end gap-2 w-auto shrink-0">
+    <div class="navbar-end gap-2 flex-1 justify-end">
       <!-- Balance badge -->
       <div v-if="isFullyAuthenticated && !isLoading" class="badge badge-outline badge-primary font-mono text-xs hidden sm:flex">
         💰 {{ balance.toLocaleString() }} pts
@@ -56,6 +62,8 @@
             {{ unreadCount > 9 ? '9+' : unreadCount }}
           </span>
         </button>
+        <!-- Click outside overlay -->
+        <div v-if="showNotifications" class="fixed inset-0 z-10" @click="showNotifications = false"></div>
         <!-- Dropdown -->
         <div
           v-if="showNotifications"
@@ -97,12 +105,11 @@
             </div>
           </div>
         </div>
+        <!-- Avatar dropdown: account only -->
         <ul tabindex="0" class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-200 rounded-box w-52">
           <li class="menu-title px-3 py-1">
             <span class="text-xs opacity-60">{{ user?.email }}</span>
           </li>
-          <li><RouterLink to="/picks">My Picks</RouterLink></li>
-          <li><RouterLink to="/fantasy">Fantasy</RouterLink></li>
           <li><RouterLink to="/player-prefs">Player Profile</RouterLink></li>
           <li v-if="predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
           <li><hr class="my-1 opacity-20" /></li>
@@ -113,12 +120,8 @@
           </li>
         </ul>
       </div>
-      <button v-else @click="doLogin()" class="btn btn-primary btn-sm" :disabled="loginInProgress">
-        <span v-if="loginInProgress" class="loading loading-spinner loading-xs"></span>
-        Sign In
-      </button>
 
-      <!-- Mobile hamburger -->
+      <!-- Mobile hamburger: full site nav -->
       <div class="dropdown dropdown-end sm:hidden">
         <label tabindex="0" class="btn btn-ghost btn-sm">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -126,13 +129,21 @@
           </svg>
         </label>
         <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-200 rounded-box w-52">
-          <li><RouterLink to="/">Games</RouterLink></li>
-          <li v-if="isFullyAuthenticated"><RouterLink to="/picks">My Picks</RouterLink></li>
-          <!-- Leagues hidden -->
-          <li v-if="isFullyAuthenticated"><RouterLink to="/fantasy">Fantasy</RouterLink></li>
+          <li><RouterLink to="/">🏒 Games</RouterLink></li>
+          <li><RouterLink to="/fantasy">🏆 Fantasy</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/my-fantasy">⭐ My Leagues</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/picks">🎯 My Picks</RouterLink></li>
+          <li v-if="isFullyAuthenticated"><hr class="my-1 opacity-20" /></li>
+          <li v-if="isFullyAuthenticated"><RouterLink to="/player-prefs">👤 Player Profile</RouterLink></li>
           <li v-if="isFullyAuthenticated && predUser?.is_admin"><RouterLink to="/admin">🛡️ Admin</RouterLink></li>
+          <li v-if="!isFullyAuthenticated"><hr class="my-1 opacity-20" /></li>
+          <li v-if="!isFullyAuthenticated"><button @click="doLogin()" class="text-primary font-medium">Sign In</button></li>
         </ul>
       </div>
+      <button v-if="!isFullyAuthenticated && !isLoading" @click="doLogin()" class="btn btn-primary btn-sm sm:flex hidden" :disabled="loginInProgress">
+        <span v-if="loginInProgress" class="loading loading-spinner loading-xs"></span>
+        Sign In
+      </button>
     </div>
   </div>
 </template>
@@ -189,9 +200,12 @@ async function markAllRead() {
 
 function openNotification(n) {
   api.post(`/api/notifications/${n.id}/read`).catch(() => {})
-  // Remove from list immediately — delete on read
-  notifications.value = notifications.value.filter(x => x.id !== n.id)
-  unreadCount.value = Math.max(0, unreadCount.value - 1)
+  // Mark as read in UI but keep visible — don't remove from list
+  const notif = notifications.value.find(x => x.id === n.id)
+  if (notif && !notif.is_read) {
+    notif.is_read = true
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
   showNotifications.value = false
   if (n.link) {
     setTimeout(() => router.push(n.link), 100)

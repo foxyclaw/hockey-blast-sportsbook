@@ -183,6 +183,14 @@ def list_games():
 
     # Count + fetch
     all_games = hb_session.execute(stmt).scalars().all()
+
+    # Filter out games that have already started (today's past games)
+    now = datetime.now()
+    all_games = [
+        gm for gm in all_games
+        if _game_start_dt(gm) is None or _game_start_dt(gm) >= now
+    ]
+
     total = len(all_games)
     games = all_games[offset : offset + per_page]
 

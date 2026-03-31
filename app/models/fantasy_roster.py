@@ -22,6 +22,7 @@ class FantasyRoster(PredBase):
     user_id: Mapped[int] = mapped_column(Integer, sa.ForeignKey("pred_users.id"), nullable=False)
     hb_human_id: Mapped[int] = mapped_column(Integer, nullable=False)
     is_goalie: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_ref: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     round_picked: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pick_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     drafted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -36,6 +37,7 @@ class FantasyRoster(PredBase):
             "user_id": self.user_id,
             "hb_human_id": self.hb_human_id,
             "is_goalie": self.is_goalie,
+            "is_ref": self.is_ref,
             "round_picked": self.round_picked,
             "pick_number": self.pick_number,
             "drafted_at": self.drafted_at.isoformat() if self.drafted_at else None,

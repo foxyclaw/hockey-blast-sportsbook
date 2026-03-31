@@ -26,6 +26,7 @@ class FantasyDraftQueue(PredBase):
     hb_human_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_skipped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_goalie_pick: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_ref_pick: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     picked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -43,6 +44,7 @@ class FantasyDraftQueue(PredBase):
             "hb_human_id": self.hb_human_id,
             "is_skipped": self.is_skipped,
             "is_goalie_pick": self.is_goalie_pick,
+            "is_ref_pick": self.is_ref_pick,
             "deadline": self.deadline.isoformat() if self.deadline else None,
             "picked_at": self.picked_at.isoformat() if self.picked_at else None,
         }

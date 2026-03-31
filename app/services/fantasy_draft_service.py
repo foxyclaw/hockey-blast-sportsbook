@@ -114,7 +114,7 @@ def build_draft_queue(league_id: int) -> None:
         raise ValueError("No managers in league")
 
     n = len(managers)
-    total_rounds = league.roster_skaters + league.roster_goalies
+    total_rounds = league.roster_skaters + league.roster_goalies + league.roster_refs
     total_picks = n * total_rounds
 
     # Compute pick_hours dynamically from the draft window so the draft
@@ -134,9 +134,12 @@ def build_draft_queue(league_id: int) -> None:
 
     overall = 1
     entries = []
-    # Round 1 = goalie picks; remaining rounds = skater picks
+    # Round 1 = goalie picks; last round = ref picks; remaining = skater picks
+    goalie_round = 1
+    ref_round = total_rounds if league.roster_refs > 0 else None
     for rnd in range(1, total_rounds + 1):
-        is_goalie_round = (rnd == 1)
+        is_goalie_round = (rnd == goalie_round)
+        is_ref_round = (rnd == ref_round)
         # Snake: odd rounds forward, even rounds reverse
         if rnd % 2 == 1:
             order = list(range(n))
@@ -154,6 +157,7 @@ def build_draft_queue(league_id: int) -> None:
                 "hb_human_id": None,
                 "is_skipped": False,
                 "is_goalie_pick": is_goalie_round,
+                "is_ref_pick": is_ref_round or False,
                 "deadline": None,
                 "picked_at": None,
             })
@@ -210,7 +214,8 @@ def advance_draft(league_id: int) -> None:
 
     now = datetime.now(timezone.utc)
 
-    # Find current pick
+    # Find current pick — use FOR UPDATE SKIP LOCKED to prevent duplicate auto-picks
+    # if the scheduler fires concurrently
     stmt = (
         select(FantasyDraftQueue)
         .where(
@@ -220,6 +225,7 @@ def advance_draft(league_id: int) -> None:
         )
         .order_by(FantasyDraftQueue.overall_pick.asc())
         .limit(1)
+        .with_for_update(skip_locked=True)
     )
     current = pred.execute(stmt).scalar_one_or_none()
 
@@ -236,7 +242,10 @@ def advance_draft(league_id: int) -> None:
     # Timeout — auto-pick best available
     best = _best_available(league_id, current.user_id, pred, league)
     if best is not None:
-        _record_pick(league_id, current, best["hb_human_id"], best["is_goalie"], pred, now)
+        _record_pick(league_id, current, best["hb_human_id"],
+            is_goalie=current.is_goalie_pick and best.get("is_goalie", False),
+            pred=pred, now=now,
+            is_ref=current.is_ref_pick and best.get("is_ref", False))
 
         # Notify the manager that we picked for them (immediate SMS)
         _notify_manager(
@@ -302,21 +311,39 @@ def make_pick(league_id: int, user_id: int, hb_human_id: int) -> dict:
 
     # Determine if goalie
     pool = _get_pool(league_id)
-    player_info = next(
-        (p for p in pool["skaters"] + pool["goalies"] if p["hb_human_id"] == hb_human_id),
-        None,
-    )
+    # Search the correct pool based on pick type to avoid cross-contamination
+    if current.is_goalie_pick:
+        search_pool = pool["goalies"]
+    elif current.is_ref_pick:
+        search_pool = pool.get("refs", [])
+    else:
+        search_pool = pool["skaters"]
+    player_info = next((p for p in search_pool if p["hb_human_id"] == hb_human_id), None)
+    # Fallback: search all pools (handles edge cases like a player in multiple pools)
+    if player_info is None:
+        player_info = next(
+            (p for p in pool["goalies"] + pool.get("refs", []) + pool["skaters"] if p["hb_human_id"] == hb_human_id),
+            None,
+        )
     if player_info is None:
         raise ValueError("Player not in eligible pool for this league")
 
-    # Enforce pick type — round 1 is goalie-only, all others are skater-only
-    if current.is_goalie_pick and not player_info["is_goalie"]:
-        raise ValueError("Round 1 is goalie picks only — please select a goalie")
-    if not current.is_goalie_pick and player_info["is_goalie"]:
-        raise ValueError("Goalies can only be picked in Round 1")
+    # Enforce pick type using role flags
+    if current.is_goalie_pick and not player_info.get("is_goalie"):
+        raise ValueError("This is a goalie pick — please select a goalie")
+    if current.is_ref_pick and not player_info.get("is_ref"):
+        raise ValueError("This is a referee pick — please select a referee")
+    if not current.is_goalie_pick and not current.is_ref_pick:
+        if player_info.get("is_goalie") and not player_info.get("is_skater"):
+            raise ValueError("Goalies can only be picked in the goalie round")
+        if player_info.get("is_ref") and not player_info.get("is_skater"):
+            raise ValueError("Referees can only be picked in the referee round")
 
     now = datetime.now(timezone.utc)
-    _record_pick(league_id, current, hb_human_id, player_info["is_goalie"], pred, now)
+    _record_pick(league_id, current, hb_human_id,
+        is_goalie=current.is_goalie_pick and player_info.get("is_goalie", False),
+        pred=pred, now=now,
+        is_ref=current.is_ref_pick and player_info.get("is_ref", False))
 
     # Clear this user's draft notifications now that they've picked
     _clear_stale_draft_notifications(user_id, league_id, pred)
@@ -332,7 +359,7 @@ def make_pick(league_id: int, user_id: int, hb_human_id: int) -> dict:
     return current.to_dict()
 
 
-def _record_pick(league_id, slot, hb_human_id, is_goalie, pred, now) -> None:
+def _record_pick(league_id, slot, hb_human_id, is_goalie, pred, now, is_ref=False) -> None:
     slot.hb_human_id = hb_human_id
     slot.picked_at = now
 
@@ -341,6 +368,7 @@ def _record_pick(league_id, slot, hb_human_id, is_goalie, pred, now) -> None:
         user_id=slot.user_id,
         hb_human_id=hb_human_id,
         is_goalie=is_goalie,
+        is_ref=is_ref,
         round_picked=slot.round,
         pick_number=slot.overall_pick,
         drafted_at=now,
@@ -368,10 +396,14 @@ def _best_available(league_id: int, user_id: int, pred, league) -> dict | None:
 
     needs_goalie = goalie_count < league.roster_goalies
     needs_skater = skater_count < league.roster_skaters
+    ref_count = sum(1 for r in manager_roster if r.is_ref)
+    needs_ref = ref_count < league.roster_refs
 
     candidates = []
     if needs_goalie:
         candidates += [p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids]
+    if needs_ref:
+        candidates += [p for p in pool.get("refs", []) if p["hb_human_id"] not in drafted_ids]
     if needs_skater:
         candidates += [p for p in pool["skaters"] if p["hb_human_id"] not in drafted_ids]
 
@@ -387,19 +419,21 @@ def _get_pool(league_id: int) -> dict:
     from app.services.fantasy_pool_service import get_player_pool
     pred = PredSession()
     league = pred.get(FantasyLeague, league_id)
-    return get_player_pool(league.level_id, league_id=league.hb_league_id, season_id=league.hb_season_id)
+    return get_player_pool(league.level_id, org_id=league.org_id, league_id=league.hb_league_id, season_id=league.hb_season_id)
 
 
 def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None:
-    """Delete ALL previous draft pick notifications for this user."""
+    """Mark stale 'your turn' prompts as read — keep them in history, don't delete."""
     from app.models.pred_notification import PredNotification
     try:
         stale = pred.query(PredNotification).filter(
             PredNotification.user_id == user_id,
             PredNotification.type == "fantasy_draft",
+            PredNotification.title.like("%Your Pick%"),
+            PredNotification.is_read == False,
         ).all()
         for n in stale:
-            pred.delete(n)
+            n.is_read = True
     except Exception:
         pass
 
@@ -416,12 +450,21 @@ def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: da
         from app.services.notify_service import notify_user, DRAFT_NOTIFY_DELAY_SECONDS
         deadline_str = deadline.astimezone().strftime("%b %d %I:%M %p %Z") if deadline else "soon"
 
+        # Get league name for context
+        league_name = ""
+        try:
+            league_obj = pred.get(FantasyLeague, league_id)
+            if league_obj:
+                league_name = f" · {league_obj.name}"
+        except Exception:
+            pass
+
         if auto_picked:
-            title = "🏒 Auto-picked for you!"
+            title = f"🏒 Auto-picked for you!{league_name}"
             body = f"Pick #{pick_number} was made automatically (you missed your turn). Check your roster."
             delay = 0  # immediate — they need to know
         else:
-            title = "🏒 Your Pick!"
+            title = f"🏒 Your Pick!{league_name}"
             body = f"Pick #{pick_number} — deadline {deadline_str}."
             delay = DRAFT_NOTIFY_DELAY_SECONDS  # 2 min
 
@@ -430,7 +473,7 @@ def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: da
             user_id=user_id,
             title=title,
             body=body,
-            url=f"/fantasy/{league_id}",
+            url=f"/fantasy/{league_id}?tab=draft",
             notif_type="fantasy_draft",
             delay_seconds=delay,
         )

@@ -28,6 +28,9 @@ class FantasyGameScores(PredBase):
     games_played: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_goalie_win: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_shutout: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ref_games: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ref_penalties: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ref_gm: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points: Mapped[float] = mapped_column(Numeric(6, 1), nullable=False, default=0)
     scored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -48,6 +51,9 @@ class FantasyGameScores(PredBase):
             "games_played": self.games_played,
             "is_goalie_win": self.is_goalie_win,
             "is_shutout": self.is_shutout,
+            "ref_games": self.ref_games,
+            "ref_penalties": self.ref_penalties,
+            "ref_gm": self.ref_gm,
             "points": float(self.points),
             "scored_at": self.scored_at.isoformat() if self.scored_at else None,
         }

@@ -307,12 +307,13 @@
     <div v-if="activeTab === 'launch'">
       <div class="card bg-base-200 shadow-md">
         <div class="card-body p-4">
-          <h2 class="card-title text-base mb-4">🏒 Launch Fantasy Season</h2>
+          <h2 class="card-title text-base mb-4">🏒 Launch/Update Fantasy Season</h2>
 
           <div class="flex flex-wrap gap-3 mb-4 items-end">
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Organization</span></label>
-              <select v-model.number="launchOrgId" class="select select-bordered select-sm w-48">
+              <select v-model="launchOrgId" class="select select-bordered select-sm w-48">
+                <option :value="null">— All Orgs —</option>
                 <option v-for="org in orgs" :key="org.id" :value="org.id">{{ org.name }}</option>
               </select>
             </div>
@@ -329,11 +330,11 @@
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
-              <input v-model="launchDraftOpens" type="datetime-local" class="input input-bordered input-sm" />
+              <input v-model="launchDraftOpens" type="datetime-local" class="input input-bordered input-sm" :min="nowLocal" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Closes</span></label>
-              <input v-model="launchDraftCloses" type="datetime-local" class="input input-bordered input-sm" />
+              <input v-model="launchDraftCloses" type="datetime-local" class="input input-bordered input-sm" :min="nowLocal" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Season Label</span></label>
@@ -354,13 +355,17 @@
                 <input type="checkbox" v-model="launchActiveOnly" class="checkbox checkbox-sm" />
               </label>
             </div>
-            <button @click="loadLevels" class="btn btn-sm btn-outline mt-5" :disabled="levelsLoading">
+            <button @click="loadLevels" class="btn btn-sm btn-outline mt-5" :disabled="levelsLoading || launchOrgId === null">
               <span v-if="levelsLoading" class="loading loading-spinner loading-xs"></span>
               Load Levels
             </button>
           </div>
 
-          <div v-if="levels.length" class="mb-4">
+          <div v-if="launchOrgId === null" class="alert alert-warning text-sm py-2 mb-4">
+            ⚠️ Select a specific org to launch or update fantasy seasons. The league list below shows all orgs.
+          </div>
+
+          <div v-if="levels.length && launchOrgId !== null" class="mb-4">
             <div class="text-xs text-base-content/60 mb-2">Select levels to launch ({{ selectedLevelIds.length }} selected):</div>
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
               <label v-for="lvl in levels" :key="lvl.level_id" class="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-base-300">
@@ -389,7 +394,7 @@
 
           <div class="flex items-center gap-3">
             <button @click="launchSeason" class="btn btn-primary btn-sm"
-              :disabled="!selectedLevelIds.length || !launchStartDate || launching">
+              :disabled="!selectedLevelIds.length || !launchStartDate || launching || launchOrgId === null">
               <span v-if="launching" class="loading loading-spinner loading-xs"></span>
               🚀 Launch Season
             </button>
@@ -432,6 +437,7 @@
                   <th>Draft Opens</th>
                   <th>Draft Closes</th>
                   <th>HB Season</th>
+                  <th>Creator</th>
                   <th></th>
                 </tr>
               </thead>
@@ -442,7 +448,7 @@
                       <input type="checkbox" class="checkbox checkbox-xs"
                         :value="l.id" v-model="selectedLeagueIds" />
                     </td>
-                    <td class="font-medium">{{ l.name }}</td>
+                    <td class="font-medium">{{ l.name }}<span v-if="l.is_private" class="ml-1 text-warning" title="Private">🔒</span></td>
                     <td>
                       {{ l.level_name }}
                       <span v-if="l.hb_league_name" class="text-xs opacity-50 ml-1">({{ l.hb_league_name }})</span>
@@ -451,7 +457,7 @@
                     <td>{{ l.manager_count ?? '—' }}</td>
                     <td class="text-xs">
                       <span v-if="l.season_label" class="font-medium">{{ l.season_label }}</span>
-                      <span v-else class="font-bold text-warning animate-pulse">⚠️ SET SEASON!</span>
+                      <span v-else class="font-bold text-warning animate-pulse">⚠️ SET LABEL!</span>
                     </td>
                     <td class="text-xs">
                       <span v-if="l.season_starts_at">{{ fmtDt(l.season_starts_at) }}</span>
@@ -459,7 +465,12 @@
                     </td>
                     <td class="text-xs">{{ fmtDt(l.draft_opens_at) }}</td>
                     <td class="text-xs">{{ fmtDt(l.draft_closes_at) }}</td>
-                    <td class="text-xs opacity-60">{{ l.hb_season_id || 'auto' }}</td>
+                    <td class="text-xs">
+                      <span v-if="l.hb_season_name" class="font-medium">{{ l.hb_season_name }}</span>
+                      <span v-else-if="l.hb_season_id" class="opacity-60">{{ l.hb_season_id }}</span>
+                      <span v-else class="badge badge-xs badge-warning">auto</span>
+                    </td>
+                    <td class="text-xs opacity-70">{{ l.creator_name || '—' }}</td>
                     <td>
                       <button class="btn btn-xs btn-ghost" @click="openLeagueEdit(l)">✏️</button>
                     </td>
@@ -490,6 +501,10 @@
                             <option :value="null">— auto (latest) —</option>
                             <option v-for="s in hbSeasons" :key="s.id" :value="s.id">{{ s.season_name }} ({{ s.start_date }} → {{ s.end_date }})</option>
                           </select>
+                        </div>
+                        <div v-if="l.status === 'forming'" class="form-control">
+                          <label class="label py-0"><span class="label-text text-xs">Max Managers</span></label>
+                          <input v-model.number="leagueEditForm.max_managers" type="number" min="2" max="20" class="input input-bordered input-xs w-20" placeholder="e.g. 8" />
                         </div>
                         <div class="flex gap-2 mt-4">
                           <button class="btn btn-xs btn-primary" :disabled="leagueEditSaving" @click="saveLeagueEdit(l.id)">
@@ -763,9 +778,9 @@ watch(activeTab, (tab) => {
   else if (tab === 'launch') loadOrgs()
 })
 
-// ── Launch Fantasy Season ──────────────────────────────────────────────────
+// ── Launch/Update Fantasy Season ──────────────────────────────────────────────────
 const orgs = ref([])
-const launchOrgId = ref(1)
+const launchOrgId = ref(1)  // null = All Orgs (view-only mode)
 const launchLeagueId = ref(2)  // default: SharksIce at San Jose
 const hbLeagues = ref([])
 
@@ -804,8 +819,12 @@ function nextWeekday(dayOfWeek, hour, minute) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(hour)}:${pad(minute)}`
 }
 const launchStartDate = ref(nextWeekday(1, 0, 1))    // next Monday 00:01
-const launchDraftOpens = ref(nextWeekday(5, 19, 0))  // next Friday 19:00
-const launchDraftCloses = ref(nextWeekday(0, 23, 0)) // next Sunday 23:00
+const launchDraftOpens = ref(nextWeekday(6, 16, 0))  // next Saturday 16:00
+const launchDraftCloses = ref(nextWeekday(1, 23, 0)) // next Monday 23:00
+const nowLocal = computed(() => {
+  const d = new Date(); const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+})
 const launchActiveOnly = ref(true)
 const levels = ref([])
 const selectedLevelIds = ref([])
@@ -824,7 +843,7 @@ const deleteResult = ref(null)
 
 // ── Inline league edit ───────────────────────────────────────────────────────
 const editingLeagueId = ref(null)
-const leagueEditForm = ref({ season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '', hb_season_id: null })
+const leagueEditForm = ref({ season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '', hb_season_id: null, max_managers: null })
 const hbSeasons = ref([])
 const leagueEditSaving = ref(false)
 const leagueEditError = ref(null)
@@ -840,7 +859,7 @@ function toLocalDtInput(isoStr) {
 function fmtDt(isoStr) {
   if (!isoStr) return '—'
   const d = new Date(isoStr)
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
 }
 
 function openLeagueEdit(league) {
@@ -856,8 +875,11 @@ function openLeagueEdit(league) {
     draft_opens_at: toLocalDtInput(league.draft_opens_at),
     draft_closes_at: toLocalDtInput(league.draft_closes_at),
     hb_season_id: league.hb_season_id || null,
+    max_managers: league.max_managers || null,
   }
   editingLeagueId.value = league.id
+  // Auto-load seasons if one is already selected so the dropdown shows it
+  if (league.hb_league_id) loadHbSeasons(league.hb_league_id)
 }
 
 async function loadHbSeasons(leagueId) {
@@ -874,10 +896,11 @@ async function saveLeagueEdit(leagueId) {
   try {
     const { data } = await api.patch(`/api/admin/fantasy/leagues/${leagueId}`, {
       season_label: leagueEditForm.value.season_label || null,
-      season_starts_at: leagueEditForm.value.season_starts_at || null,
-      draft_opens_at: leagueEditForm.value.draft_opens_at || null,
-      draft_closes_at: leagueEditForm.value.draft_closes_at || null,
+      season_starts_at: leagueEditForm.value.season_starts_at ? new Date(leagueEditForm.value.season_starts_at).toISOString() : null,
+      draft_opens_at: leagueEditForm.value.draft_opens_at ? new Date(leagueEditForm.value.draft_opens_at).toISOString() : null,
+      draft_closes_at: leagueEditForm.value.draft_closes_at ? new Date(leagueEditForm.value.draft_closes_at).toISOString() : null,
       hb_season_id: leagueEditForm.value.hb_season_id || null,
+      max_managers: leagueEditForm.value.max_managers ? parseInt(leagueEditForm.value.max_managers) : null,
     })
     // Update in-place
     const idx = adminLeagues.value.findIndex(l => l.id === leagueId)
@@ -896,7 +919,8 @@ async function loadAdminLeagues() {
   confirmBatchDelete.value = false
   deleteResult.value = null
   try {
-    const { data } = await api.get(`/api/admin/fantasy/leagues?org_id=${launchOrgId.value}`)
+    const url = launchOrgId.value !== null ? `/api/admin/fantasy/leagues?org_id=${launchOrgId.value}` : '/api/admin/fantasy/leagues'
+    const { data } = await api.get(url)
     adminLeagues.value = data.leagues
   } catch { /* ignore */ } finally {
     adminLeaguesLoading.value = false
@@ -961,7 +985,7 @@ function applyTestMode() {
   launchDraftCloses.value = fmt(closes)
   launchStartDate.value = fmt(season)
   launchMaxManagers.value = 2
-  launchSeasonLabel.value = 'Test ' + now.toLocaleDateString()
+  const rand = Math.random().toString(36).slice(2,5).toUpperCase(); launchSeasonLabel.value = 'Test ' + rand + ' ' + now.toLocaleDateString()
 }
 
 async function launchSeason() {
@@ -969,6 +993,17 @@ async function launchSeason() {
   launchError.value = null
   launchResult.value = null
   // Client-side date sanity checks
+  const now = new Date()
+  if (launchDraftOpens.value && new Date(launchDraftOpens.value) < now) {
+    launchError.value = 'Draft open time cannot be in the past'
+    launching.value = false
+    return
+  }
+  if (launchDraftCloses.value && new Date(launchDraftCloses.value) < now) {
+    launchError.value = 'Draft close time cannot be in the past'
+    launching.value = false
+    return
+  }
   if (launchDraftOpens.value && launchDraftCloses.value) {
     if (new Date(launchDraftOpens.value) >= new Date(launchDraftCloses.value)) {
       launchError.value = 'Draft open time must be before draft close time'
@@ -983,16 +1018,22 @@ async function launchSeason() {
       return
     }
   }
+  // Convert datetime-local string (no tz) to ISO with local offset
+  function localDtToISO(val) {
+    if (!val) return undefined
+    return new Date(val).toISOString()
+  }
+
   try {
     const { data } = await api.post('/api/admin/fantasy/launch-season', {
       org_id: launchOrgId.value,
       level_ids: selectedLevelIds.value,
-      season_start_date: launchStartDate.value,
+      season_start_date: localDtToISO(launchStartDate.value),
       season_label: launchSeasonLabel.value || undefined,
       max_managers: launchMaxManagers.value || undefined,
       hb_league_id: launchLeagueId.value || undefined,
-      draft_opens_at: launchDraftOpens.value || undefined,
-      draft_closes_at: launchDraftCloses.value || undefined,
+      draft_opens_at: localDtToISO(launchDraftOpens.value),
+      draft_closes_at: localDtToISO(launchDraftCloses.value),
     })
     launchResult.value = data
     selectedLevelIds.value = []

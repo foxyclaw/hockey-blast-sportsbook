@@ -55,3 +55,4 @@ dmypy.json
 
 # Alembic
 # migrations/versions/ — don't ignore, we want these in git
+frontend/node_modules/

@@ -20,7 +20,7 @@ import string
 from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 
 from app.auth.jwt_validator import require_auth, optional_auth
 from app.db import HBSession, PredSession
@@ -145,6 +145,113 @@ def list_levels():
     return jsonify({"levels": levels})
 
 
+
+# ── Public level/league selectors (for user create form) ──────────────────────
+
+@fantasy_bp.route("/hb-leagues", methods=["GET"])
+def list_hb_leagues():
+    """GET /api/fantasy/hb-leagues?org_id=1 — list HB leagues for org (public)."""
+    from hockey_blast_common_lib.models import League
+    from app.db import HBSession
+    org_id = request.args.get("org_id", 1, type=int)
+    hb = HBSession()
+    leagues = hb.execute(
+        select(League).where(League.org_id == org_id).order_by(League.league_name)
+    ).scalars().all()
+    return jsonify({"leagues": [{"id": l.id, "league_name": l.league_name} for l in leagues]})
+
+
+@fantasy_bp.route("/active-levels", methods=["GET"])
+def list_active_levels():
+    """GET /api/fantasy/active-levels?org_id=1&league_id=2 — active levels (public)."""
+    from datetime import date, timedelta
+    from hockey_blast_common_lib.models import Season, Division, Level
+    from app.db import HBSession
+    import re
+
+    org_id = request.args.get("org_id", 1, type=int)
+    league_id = request.args.get("league_id", None, type=int)
+
+    hb = HBSession()
+    cutoff = date.today() - timedelta(days=30)
+
+    stmt = (
+        select(Division.level_id, Level.level_name, Level.short_name)
+        .join(Season, Season.id == Division.season_id)
+        .join(Level, Level.id == Division.level_id)
+        .where(Season.org_id == org_id, Season.end_date >= cutoff)
+        .distinct()
+    )
+    if league_id:
+        stmt = stmt.where(Season.league_id == league_id)
+
+    rows = hb.execute(stmt).all()
+
+    seen = {}
+    for row in rows:
+        if row.level_id not in seen:
+            seen[row.level_id] = {
+                "level_id": row.level_id,
+                "level_name": row.level_name,
+                "short_name": row.short_name,
+            }
+
+    def _natural_sort_key(x):
+        name = x["short_name"] or x["level_name"] or ""
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', name)]
+
+    levels = sorted(
+        [v for v in seen.values() if v["short_name"] or v["level_name"]],
+        key=_natural_sort_key,
+    )
+    return jsonify({"levels": levels})
+
+
+
+@fantasy_bp.route("/level-pool", methods=["GET"])
+def get_level_pool():
+    """GET /api/fantasy/level-pool?level_id=X&hb_league_id=Y&org_id=1 — returns max_managers for a level (public)."""
+    from hockey_blast_common_lib.models import Level
+    from app.db import HBSession
+    from app.services.fantasy_pool_service import get_player_pool
+
+    level_id = request.args.get("level_id", type=int)
+    hb_league_id = request.args.get("hb_league_id", type=int)
+    org_id = request.args.get("org_id", 1, type=int)
+
+    if not level_id:
+        return jsonify({"error": "level_id required"}), 400
+
+    hb = HBSession()
+    level = hb.execute(select(Level).where(Level.id == level_id)).scalar_one_or_none()
+    if not level:
+        return jsonify({"error": "Level not found"}), 404
+
+    try:
+        pool = get_player_pool(level_id, org_id=org_id, league_id=hb_league_id)
+        return jsonify({
+            "max_managers": pool["max_managers"],
+            "roster_skaters": pool["roster_skaters"],
+        })
+    except Exception as e:
+        return jsonify({"max_managers": 12, "roster_skaters": 8})  # fallback
+
+@fantasy_bp.route("/league-by-code/<string:code>", methods=["GET"])
+@require_auth
+def get_league_by_code(code: str):
+    """GET /api/fantasy/league-by-code/<code> — look up a private league by join code."""
+    from app.models.fantasy_league import FantasyLeague
+    from app.db import PredSession
+    code = code.strip().upper()
+    pred = PredSession()
+    league = pred.execute(
+        select(FantasyLeague).where(FantasyLeague.join_code == code)
+    ).scalar_one_or_none()
+    if league is None:
+        return error_response("NOT_FOUND", "Invalid code — no league found", 404)
+    return jsonify({"id": league.id, "name": league.name, "status": league.status})
+
+
 # ── Leagues ───────────────────────────────────────────────────────────────────
 
 @fantasy_bp.route("/leagues", methods=["POST"])
@@ -178,18 +285,31 @@ def create_league():
     # Critical: determines which HB league's stats are used for the player pool.
     hb_league_id = data.get("hb_league_id") or None
 
-    # Compute roster sizing using the correct hb_league_id
+    # Compute roster sizing using the correct hb_league_id and org_id
     from app.services.fantasy_pool_service import get_player_pool
     try:
-        pool_info = get_player_pool(level_id, league_id=hb_league_id)
+        pool_info = get_player_pool(level_id, org_id=level.org_id, league_id=hb_league_id)
     except Exception as e:
         return error_response("INTERNAL_ERROR", f"Could not load player pool: {e}", 500)
+
+    # Capture the resolved season_id so scoring works correctly
+    hb_season_id = pool_info.get("resolved_season_id")
 
     roster_skaters = pool_info["roster_skaters"]
     max_managers = pool_info["max_managers"]
 
-    if max_managers < 4:
-        return error_response("VALIDATION_ERROR", "Not enough players at this level to form a league (need 4+ managers worth of players)", 400)
+    if max_managers < 2:
+        return error_response("VALIDATION_ERROR", "Not enough players at this level to form a league", 400)
+
+    # Allow user to set a lower cap (but never exceed the pool-calculated max)
+    override = data.get("max_managers_override")
+    if override is not None:
+        try:
+            override = int(override)
+            if 2 <= override <= max_managers:
+                max_managers = override
+        except (ValueError, TypeError):
+            pass
 
     # draft_closes_at is mandatory — the entire deadline system depends on it
     if not data.get("draft_closes_at"):
@@ -208,6 +328,12 @@ def create_league():
             if not val:
                 return None
             from datetime import timezone as _tz
+            # Normalize Z suffix for broad compatibility
+            normalized = val.replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(normalized)
+            except ValueError:
+                pass
             for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
                 try:
                     dt = datetime.strptime(val, fmt)
@@ -221,12 +347,14 @@ def create_league():
             level_id=level_id,
             level_name=level_name,
             hb_league_id=hb_league_id,
+            hb_season_id=hb_season_id,
             org_id=level.org_id,
             season_label=data.get("season_label"),
             status="forming",
             max_managers=max_managers,
             roster_skaters=roster_skaters,
             roster_goalies=1,
+            roster_refs=1,
             draft_pick_hours=data.get("draft_pick_hours", 24),
             created_by=user.id,
             is_private=is_private,
@@ -539,6 +667,7 @@ def get_pool(league_id: int):
 
     all_skaters = [enrich_drafted(p) for p in pool["skaters"]]
     all_goalies = [enrich_drafted(p) for p in pool["goalies"]]
+    all_refs = [enrich_drafted(p) for p in pool.get("refs", [])]
 
     # Sort: skaters by fantasy_ppg DESC, goalies by fantasy_points DESC
     all_skaters.sort(key=lambda p: p.get("fantasy_ppg", 0), reverse=True)
@@ -552,6 +681,7 @@ def get_pool(league_id: int):
     return jsonify({
         "skaters": all_skaters,
         "goalies": all_goalies,
+        "refs": all_refs,
     })
 
 
@@ -631,8 +761,11 @@ def get_draft_queue(league_id: int):
 @fantasy_bp.route("/leagues/<int:league_id>/roster/<int:user_id>", methods=["GET"])
 @optional_auth
 def get_roster(league_id: int, user_id: int):
-    """GET /api/fantasy/leagues/<id>/roster/<user_id> — a manager's roster."""
+    """GET /api/fantasy/leagues/<id>/roster/<user_id> — a manager's roster with stats."""
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import func, text as sa_text
     pred = PredSession()
+    hb = HBSession()
 
     stmt = select(FantasyRoster).where(
         FantasyRoster.league_id == league_id,
@@ -643,12 +776,79 @@ def get_roster(league_id: int, user_id: int):
     if not roster:
         return jsonify({"roster": []})
 
-    # Enrich with player names
     human_ids = [r.hb_human_id for r in roster]
+
+    # Player names
     from hockey_blast_common_lib.models import Human
-    hb = HBSession()
     humans = hb.execute(select(Human).where(Human.id.in_(human_ids))).scalars().all()
     human_map = {h.id: h for h in humans}
+
+    # Fantasy stats per player (aggregated across all scored games)
+    from app.models.fantasy_game_scores import FantasyGameScores
+    stats_rows = pred.execute(
+        select(
+            FantasyGameScores.hb_human_id,
+            func.sum(FantasyGameScores.goals).label("goals"),
+            func.sum(FantasyGameScores.assists).label("assists"),
+            func.sum(FantasyGameScores.penalties).label("penalties"),
+            func.sum(FantasyGameScores.games_played).label("gp"),
+            func.sum(FantasyGameScores.points).label("total_pts"),
+        )
+        .where(
+            FantasyGameScores.league_id == league_id,
+            FantasyGameScores.hb_human_id.in_(human_ids),
+        )
+        .group_by(FantasyGameScores.hb_human_id)
+    ).all()
+    stats_map = {
+        r.hb_human_id: {
+            "goals": int(r.goals or 0),
+            "assists": int(r.assists or 0),
+            "penalties": int(r.penalties or 0),
+            "gp": int(r.gp or 0),
+            "total_pts": float(r.total_pts or 0),
+        }
+        for r in stats_rows
+    }
+
+    # Determine which players are "live" right now:
+    # Find games scheduled within the last 3 hours (approximate game duration)
+    # that are still in Scheduled status (not yet Final) for this league's divisions.
+    live_human_ids: set[int] = set()
+    live_game_id_map: dict[int, int] = {}
+    try:
+        league_row = pred.execute(
+            sa_text("SELECT level_id, hb_season_id FROM fantasy_leagues WHERE id = :lid"),
+            {"lid": league_id},
+        ).fetchone()
+        if league_row:
+            now_utc = datetime.now(timezone.utc)
+            window_start = now_utc - timedelta(hours=3)
+            div_rows = hb.execute(
+                sa_text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
+                {"lvl": league_row.level_id, "sid": league_row.hb_season_id},
+            ).fetchall()
+            if div_rows:
+                div_ids_sql = ",".join(str(r.id) for r in div_rows)
+                # Games with status Scheduled that started within the last 3h
+                # HB stores date + time separately; use last_update_ts as proxy for recent activity
+                live_games = hb.execute(sa_text(
+                    "SELECT id FROM games "
+                    f"WHERE division_id IN ({div_ids_sql}) "
+                    "AND status NOT IN ('Final','Final.','Final/OT','Final/OT2','Final/SO',"
+                    "'Final(SO)','CANCELED','FORFEIT','Forfeit','NOEVENTS','FAILED','UnKnown') "
+                    "AND last_update_ts >= :ws"
+                ), {"ws": window_start}).fetchall()
+                if live_games:
+                    live_game_ids = [g.id for g in live_games]
+                    lg_ids_sql = ",".join(str(g) for g in live_game_ids)
+                    live_players = hb.execute(sa_text(
+                        f"SELECT human_id, game_id FROM game_rosters WHERE game_id IN ({lg_ids_sql})"
+                    )).fetchall()
+                    live_human_ids = {r.human_id for r in live_players}
+                    live_game_id_map = {r.human_id: r.game_id for r in live_players}
+    except Exception as e:
+        pass  # live status is best-effort
 
     result = []
     for r in roster:
@@ -658,7 +858,18 @@ def get_roster(league_id: int, user_id: int):
             d["first_name"] = h.first_name
             d["last_name"] = h.last_name
             d["player_name"] = f"{h.first_name} {h.last_name}".strip()
+        s = stats_map.get(r.hb_human_id, {})
+        d["goals"] = s.get("goals", 0)
+        d["assists"] = s.get("assists", 0)
+        d["penalties"] = s.get("penalties", 0)
+        d["gp"] = s.get("gp", 0)
+        d["fantasy_points"] = s.get("total_pts", 0.0)
+        d["is_live"] = r.hb_human_id in live_human_ids
+        d["live_game_id"] = live_game_id_map.get(r.hb_human_id) if r.hb_human_id in live_human_ids else None
         result.append(d)
+
+    # Sort: goalies last, then by fantasy_points desc
+    result.sort(key=lambda p: (p.get("is_goalie", False), -p.get("fantasy_points", 0)))
 
     return jsonify({"roster": result})
 
@@ -707,6 +918,126 @@ def get_standings(league_id: int):
             })
 
     return jsonify({"standings": standings})
+
+
+
+@fantasy_bp.route("/leagues/<int:league_id>/games", methods=["GET"])
+@optional_auth
+def get_league_games(league_id: int):
+    """GET /api/fantasy/leagues/<id>/games — games for the league division."""
+    pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    if league is None:
+        return error_response("NOT_FOUND", "League not found", 404)
+
+    if not league.hb_division_id:
+        return jsonify({"games": []})
+
+    hb = HBSession()
+    FINAL = {"Final", "Final.", "Final/OT", "Final/OT2", "Final/SO", "Final(SO)"}
+
+    # All games for this division — one fast indexed query
+    game_rows = hb.execute(
+        text(
+            "SELECT id, game_number, date, time, status, location, game_type, "
+            "home_team_id, visitor_team_id, home_final_score, visitor_final_score "
+            "FROM games WHERE division_id = :div_id ORDER BY date DESC, time DESC"
+        ),
+        {"div_id": league.hb_division_id},
+    ).fetchall()
+
+    if not game_rows:
+        return jsonify({"games": []})
+
+    # Batch team names
+    team_ids = {r.home_team_id for r in game_rows} | {r.visitor_team_id for r in game_rows}
+    team_ids.discard(None)
+    team_names = {}
+    if team_ids:
+        ids_sql = ",".join(str(i) for i in team_ids)
+        team_rows = hb.execute(text(f"SELECT id, name FROM teams WHERE id IN ({ids_sql})")).fetchall()
+        team_names = {r.id: r.name for r in team_rows}
+
+    # Rostered players — optionally view another manager's roster via ?user_id=X
+    # Authenticated users can always view any manager's roster in the same league
+    view_user_id = request.args.get("user_id", None, type=int)
+    if not view_user_id and g.pred_user:
+        view_user_id = g.pred_user.id
+
+    my_roster = {}  # hb_human_id -> FantasyRoster
+    human_names = {}  # hb_human_id -> display_name
+    if view_user_id:
+        from app.models.fantasy_roster import FantasyRoster
+        roster_rows = pred.execute(
+            select(FantasyRoster).where(
+                FantasyRoster.league_id == league_id,
+                FantasyRoster.user_id == view_user_id,
+            )
+        ).scalars().all()
+        my_roster = {r.hb_human_id: r for r in roster_rows}
+        if my_roster:
+            hids_sql = ",".join(str(h) for h in my_roster)
+            human_rows = hb.execute(
+                text(f"SELECT id, first_name, last_name FROM humans WHERE id IN ({hids_sql})")
+            ).fetchall()
+            human_names = {r.id: f"{r.first_name or ''} {r.last_name or ''}".strip() for r in human_rows}
+
+    # Batch-load scores for completed games
+    scored_games = {r.id for r in game_rows if r.status in FINAL}
+    my_scores = {}  # game_id -> {hb_human_id -> row}
+    if my_roster and scored_games:
+        from app.models.fantasy_game_scores import FantasyGameScores
+        score_rows = pred.execute(
+            select(FantasyGameScores).where(
+                FantasyGameScores.league_id == league_id,
+                FantasyGameScores.user_id == view_user_id,
+                FantasyGameScores.game_id.in_(scored_games),
+            )
+        ).scalars().all()
+        for s in score_rows:
+            my_scores.setdefault(s.game_id, {})[s.hb_human_id] = s
+
+    games = []
+    for g_row in game_rows:
+        my_players = []
+        if my_roster and g_row.status in FINAL:
+            game_score_map = my_scores.get(g_row.id, {})
+            for hb_human_id, roster_entry in my_roster.items():
+                sc = game_score_map.get(hb_human_id)
+                my_players.append({
+                    "hb_human_id": hb_human_id,
+                    "display_name": human_names.get(hb_human_id, str(hb_human_id)),
+                    "points": float(sc.points) if sc else 0.0,
+                    "goals": sc.goals if sc else 0,
+                    "assists": sc.assists if sc else 0,
+                    "penalties": sc.penalties if sc else 0,
+                    "games_played": sc.games_played if sc else 0,
+                    "is_goalie_win": sc.is_goalie_win if sc else False,
+                    "is_shutout": sc.is_shutout if sc else False,
+                    "ref_games": sc.ref_games if sc else 0,
+                })
+            # Sort: points desc, then name
+            my_players.sort(key=lambda p: (-p["points"], p["display_name"]))
+
+        games.append({
+            "id": g_row.id,
+            "game_number": g_row.game_number,
+            "date": g_row.date.isoformat() if g_row.date else None,
+            "time": g_row.time.strftime("%H:%M") if g_row.time else None,
+            "status": g_row.status,
+            "location": g_row.location,
+            "game_type": g_row.game_type,
+            "home_team_id": g_row.home_team_id,
+            "visitor_team_id": g_row.visitor_team_id,
+            "home_team_name": team_names.get(g_row.home_team_id, "Home"),
+            "visitor_team_name": team_names.get(g_row.visitor_team_id, "Visitor"),
+            "home_final_score": g_row.home_final_score,
+            "visitor_final_score": g_row.visitor_final_score,
+            "game_card_url": f"https://hockey-blast.com/game_card?game_id={g_row.id}",
+            "my_players": my_players,
+        })
+
+    return jsonify({"games": games})
 
 
 # ── Admin actions ─────────────────────────────────────────────────────────────
@@ -772,5 +1103,16 @@ def start_season(league_id: int):
     league.status = "active"
     league.season_starts_at = datetime.now(timezone.utc)
     pred.commit()
+
+    # Resolve + cache division_id, then kick off scoring immediately
+    if league.hb_season_id:
+        try:
+            from app.services.fantasy_scoring_service import resolve_and_cache_division, score_active_leagues
+            import threading
+            resolve_and_cache_division(league.id)
+            threading.Thread(target=score_active_leagues, daemon=True).start()
+        except Exception as se:
+            import logging
+            logging.getLogger(__name__).warning("Could not kick off scoring on season start: %s", se)
 
     return jsonify(league.to_dict())

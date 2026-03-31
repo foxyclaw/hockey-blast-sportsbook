@@ -1,9 +1,9 @@
 """
 fantasy_pool_service — builds the eligible player pool for a fantasy league.
 
-Uses HBSession (read-only) to query division-level stats for skaters and goalies
-from the most recent season for the given level/org. Fantasy points are computed
-from stats.
+Each human gets ONE entry with boolean flags: is_skater, is_goalie, is_ref.
+Role-specific stats and fantasy points are stored per-role.
+This handles multi-role players (e.g. someone who skates AND goalies AND refs).
 """
 
 from sqlalchemy import select, func
@@ -15,68 +15,80 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
     """
     Returns the eligible player pool for a fantasy league at the given HB level.
 
-    Fantasy scoring:
-      Skaters: fantasy_points = (goals * 3) + (assists * 2) + (games_played * 1) - (penalties * 0.5)
-               fantasy_ppg    = fantasy_points / games_played
-      Goalies:  fantasy_points = (wins * 5) + (shutouts * 3) + (games_played * 1)
+    Scoring:
+      Skater:  fantasy_points = (goals*3) + (assists*2) + (gp*1) - (penalties*0.5)
+      Goalie:  fantasy_points = gp*1 + save_pct*5*gp
+      Ref:     fantasy_points = games_reffed*1 + penalties_given*1.5 + gm_given*8
 
-    Returns:
-        {
-            "skaters": [...sorted by fantasy_ppg DESC...],
-            "goalies": [...sorted by fantasy_points DESC...],
-            "roster_skaters": int,
-            "max_managers": int,
-        }
+    Returns unified player list — each entry has is_skater/is_goalie/is_ref flags
+    and role-specific stats. Sublists (skaters/goalies/refs) are derived from it.
     """
     from hockey_blast_common_lib.stats_models import DivisionStatsSkater, DivisionStatsGoalie
     from hockey_blast_common_lib.models import Human, Division, Season
     from hockey_blast_common_lib.utils import get_non_human_ids
 
     hb = HBSession()
-
-    # Exclude fake/placeholder players
     non_human_ids = get_non_human_ids(hb)
 
-    # Find the most recent season_id for this level, org, and optionally league
+    # ── Resolve season ────────────────────────────────────────────────────────
     from hockey_blast_common_lib.models import Season as HBSeason
-    season_filter = [
-        Division.level_id == level_id,
-        Division.org_id == org_id,
-    ]
+    season_filter = [Division.level_id == level_id, Division.org_id == org_id]
     if league_id is not None:
         season_filter.append(
             Division.season_id.in_(
-                select(HBSeason.id).where(
-                    HBSeason.league_id == league_id,
-                    HBSeason.org_id == org_id,
-                )
+                select(HBSeason.id).where(HBSeason.league_id == league_id, HBSeason.org_id == org_id)
             )
         )
 
-    if season_id is not None:
-        # Admin-pinned season — use it directly
-        div_ids_stmt = select(Division.id).where(
-            Division.level_id == level_id,
-            Division.season_id == season_id,
-        )
-    else:
-        season_subq = (
-            select(func.max(Division.season_id))
-            .where(*season_filter)
-            .scalar_subquery()
-        )
-        div_ids_stmt = select(Division.id).where(
-            Division.level_id == level_id,
-            Division.org_id == org_id,
-            Division.season_id == season_subq,
-        )
+    if season_id is None:
+        season_id = hb.execute(select(func.max(Division.season_id)).where(*season_filter)).scalar()
 
-    # ── Skaters ──────────────────────────────────────────────────────────────
+    div_ids_stmt = select(Division.id).where(
+        Division.level_id == level_id,
+        Division.org_id == org_id,
+        Division.season_id == season_id,
+    )
+
+    # ── Unified player dict keyed by human_id ─────────────────────────────────
+    players: dict[int, dict] = {}
+
+    def _base_entry(human_id, first_name, last_name):
+        return {
+            "hb_human_id": human_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            # Role flags
+            "is_skater": False,
+            "is_goalie": False,
+            "is_ref": False,
+            # Skater stats
+            "games_played": 0,
+            "goals": 0,
+            "assists": 0,
+            "points": 0,
+            "penalties": 0,
+            "fantasy_points_skater": 0.0,
+            "fantasy_ppg": 0.0,
+            # Goalie stats
+            "goalie_games": 0,
+            "goals_allowed": 0,
+            "goals_against_avg": 0.0,
+            "save_percentage": 0.0,
+            "fantasy_points_goalie": 0.0,
+            # Ref stats
+            "games_reffed": 0,
+            "penalties_given": 0,
+            "gm_given": 0,
+            "fantasy_points_ref": 0.0,
+            # Primary fantasy_points — set per-role at access time, default to best role
+            "fantasy_points": 0.0,
+        }
+
+    # ── Skaters ───────────────────────────────────────────────────────────────
     skater_stmt = (
         select(
             DivisionStatsSkater.human_id,
-            Human.first_name,
-            Human.last_name,
+            Human.first_name, Human.last_name,
             func.sum(DivisionStatsSkater.games_played).label("games_played"),
             func.sum(DivisionStatsSkater.goals).label("goals"),
             func.sum(DivisionStatsSkater.assists).label("assists"),
@@ -89,43 +101,29 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.last_name)
         .having(func.sum(DivisionStatsSkater.games_played) >= 1)
     )
-
-    skater_rows = hb.execute(skater_stmt).all()
-    skaters = []
-    for row in skater_rows:
+    for row in hb.execute(skater_stmt).all():
         gp = row.games_played or 1
         goals = row.goals or 0
         assists = row.assists or 0
         penalties = row.penalties or 0
-        pts = goals + assists
-        fantasy_points = (goals * 3) + (assists * 2) + (gp * 1) - (penalties * 0.5)
-        fantasy_ppg = round(fantasy_points / gp, 3) if gp > 0 else 0.0
-        skaters.append({
-            "hb_human_id": row.human_id,
-            "first_name": row.first_name,
-            "last_name": row.last_name,
-            "games_played": row.games_played,
-            "goals": goals,
-            "assists": assists,
-            "points": pts,
-            "penalties": penalties,
-            "fantasy_points": round(fantasy_points, 2),
-            "fantasy_ppg": fantasy_ppg,
-            "is_goalie": False,
-        })
-
-    # Sort by total fantasy points descending (FP); FPPG is available as secondary column
-    skaters.sort(key=lambda p: p["fantasy_points"], reverse=True)
+        fp = (goals * 3) + (assists * 2) + (gp * 1) - (penalties * 0.5)
+        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
+        p["is_skater"] = True
+        p["games_played"] = row.games_played
+        p["goals"] = goals
+        p["assists"] = assists
+        p["points"] = row.points or (goals + assists)
+        p["penalties"] = penalties
+        p["fantasy_points_skater"] = round(fp, 2)
+        p["fantasy_ppg"] = round(fp / gp, 3) if gp > 0 else 0.0
 
     # ── Goalies ───────────────────────────────────────────────────────────────
     goalie_stmt = (
         select(
             DivisionStatsGoalie.human_id,
-            Human.first_name,
-            Human.last_name,
+            Human.first_name, Human.last_name,
             func.sum(DivisionStatsGoalie.games_played).label("games_played"),
             func.sum(DivisionStatsGoalie.goals_allowed).label("goals_allowed"),
-            func.sum(DivisionStatsGoalie.shots_faced).label("shots_faced"),
             func.avg(DivisionStatsGoalie.goals_allowed_per_game).label("goals_against_avg"),
             func.avg(DivisionStatsGoalie.save_percentage).label("save_percentage"),
         )
@@ -135,55 +133,87 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .group_by(DivisionStatsGoalie.human_id, Human.first_name, Human.last_name)
         .having(func.sum(DivisionStatsGoalie.games_played) >= 1)
     )
-
-    goalie_rows = hb.execute(goalie_stmt).all()
-    goalies = []
-    for row in goalie_rows:
+    for row in hb.execute(goalie_stmt).all():
         gp = row.games_played or 1
-        # DivisionStatsGoalie has no wins/shutouts columns, derive what we can
-        # Use games_played as base; fantasy_points = gp * 1 + (save_pct bonus)
-        # Since no wins/shutouts: fantasy_points = games_played * 1
-        # (saves-based proxy: save_pct * 3 bonus per game if > 0.9)
         save_pct = float(row.save_percentage or 0)
-        gaa = float(row.goals_against_avg or 0)
-        fantasy_points = float(gp) * 1.0 + (save_pct * 5.0 * gp)
-        goalies.append({
-            "hb_human_id": row.human_id,
-            "first_name": row.first_name,
-            "last_name": row.last_name,
-            "games_played": row.games_played,
-            "goals_allowed": int(row.goals_allowed or 0),
-            "shots_faced": int(row.shots_faced or 0),
-            "goals_against_avg": round(gaa, 3),
-            "save_percentage": round(save_pct, 3),
-            "fantasy_points": round(fantasy_points, 2),
-            "fantasy_ppg": round(fantasy_points / gp, 3) if gp > 0 else 0.0,
-            "is_goalie": True,
-            # Keep compatibility fields
-            "goals": 0,
-            "assists": 0,
-            "points": 0,
-            "penalties": 0,
-        })
+        fp = float(gp) * 1.0 + (save_pct * 5.0 * gp)
+        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
+        p["is_goalie"] = True
+        p["goalie_games"] = row.games_played
+        p["goals_allowed"] = int(row.goals_allowed or 0)
+        p["goals_against_avg"] = round(float(row.goals_against_avg or 0), 3)
+        p["save_percentage"] = round(save_pct, 3)
+        p["fantasy_points_goalie"] = round(fp, 2)
 
-    # Sort by fantasy_points descending
-    goalies.sort(key=lambda p: p["fantasy_points"], reverse=True)
+    # ── Refs ──────────────────────────────────────────────────────────────────
+    from hockey_blast_common_lib.stats_models import DivisionStatsReferee
+    ref_stmt = (
+        select(
+            DivisionStatsReferee.human_id,
+            Human.first_name, Human.last_name,
+            func.sum(DivisionStatsReferee.games_reffed).label("games_reffed"),
+            func.sum(DivisionStatsReferee.penalties_given).label("penalties_given"),
+            func.sum(DivisionStatsReferee.gm_given).label("gm_given"),
+        )
+        .join(Human, Human.id == DivisionStatsReferee.human_id)
+        .where(DivisionStatsReferee.division_id.in_(div_ids_stmt))
+        .where(DivisionStatsReferee.human_id.not_in(non_human_ids) if non_human_ids else True)
+        .group_by(DivisionStatsReferee.human_id, Human.first_name, Human.last_name)
+        .having(func.sum(DivisionStatsReferee.games_reffed) >= 3)
+    )
+    for row in hb.execute(ref_stmt).all():
+        gr = int(row.games_reffed or 0)
+        pg = int(row.penalties_given or 0)
+        gm = int(row.gm_given or 0)
+        fp = gr * 1.0 + pg * 1.5 + gm * 8.0
+        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
+        p["is_ref"] = True
+        p["games_reffed"] = gr
+        p["penalties_given"] = pg
+        p["gm_given"] = gm
+        p["fantasy_points_ref"] = round(fp, 2)
 
-    # ── Roster sizing formula ─────────────────────────────────────────────────
+    # ── Set primary fantasy_points = best role ────────────────────────────────
+    for p in players.values():
+        p["fantasy_points"] = max(
+            p["fantasy_points_skater"],
+            p["fantasy_points_goalie"],
+            p["fantasy_points_ref"],
+        )
+
+    player_list = list(players.values())
+
+    # ── Derived sublists (for backward compat + frontend tabs) ────────────────
+    skaters = sorted(
+        [p for p in player_list if p["is_skater"]],
+        key=lambda p: p["fantasy_points_skater"], reverse=True
+    )
+    goalies = sorted(
+        [p for p in player_list if p["is_goalie"]],
+        key=lambda p: p["fantasy_points_goalie"], reverse=True
+    )
+    refs = sorted(
+        [p for p in player_list if p["is_ref"]],
+        key=lambda p: p["fantasy_points_ref"], reverse=True
+    )
+
+    # ── Roster sizing ─────────────────────────────────────────────────────────
     pool_size = len(skaters)
     usable = int(pool_size * 0.7)
-    roster_skaters = 5  # minimum
+    roster_skaters = 5
     for r in range(10, 4, -1):
         if usable // r >= 4:
             roster_skaters = r
             break
-
     max_managers = min(12, usable // roster_skaters) if roster_skaters > 0 else 4
-    max_managers = max(4, max_managers)
+    max_managers = max(2, max_managers)
 
     return {
-        "skaters": skaters,
-        "goalies": goalies,
+        "players": player_list,   # unified list with all flags
+        "skaters": skaters,       # is_skater=True, sorted by skater FP
+        "goalies": goalies,       # is_goalie=True, sorted by goalie FP
+        "refs": refs,             # is_ref=True, sorted by ref FP
         "roster_skaters": roster_skaters,
         "max_managers": max_managers,
+        "resolved_season_id": season_id,
     }

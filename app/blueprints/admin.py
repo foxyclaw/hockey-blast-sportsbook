@@ -544,6 +544,11 @@ def launch_fantasy_season():
         if not val:
             return None
         from datetime import datetime as _dt, timezone as _tz
+        # Try full ISO with offset first (e.g. 2026-03-25T20:47:00.000Z from frontend)
+        try:
+            return _dt.fromisoformat(str(val).replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            pass
         for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
             try:
                 return _dt.strptime(val, fmt).replace(tzinfo=_tz.utc)
@@ -618,7 +623,7 @@ def launch_fantasy_season():
                 roster_skaters = min(roster_skaters, 10)
 
             display_level = level.short_name or level_name if level else str(level_id)
-            league_name = f"Level {display_level} — Spring 2026"
+            league_name = f"Level {display_level} — {season_label}"
             new_league = FantasyLeague(
                 name=league_name,
                 level_id=level_id,
@@ -657,11 +662,13 @@ def list_fantasy_leagues():
     from app.models.fantasy_league import FantasyLeague
     from app.db import PredSession
 
-    org_id = request.args.get("org_id", 1, type=int)
+    org_id = request.args.get("org_id", None, type=int)
     pred = PredSession()
+    stmt = select(FantasyLeague)
+    if org_id is not None:
+        stmt = stmt.where(FantasyLeague.org_id == org_id)
     leagues = pred.execute(
-        select(FantasyLeague)
-        .where(FantasyLeague.org_id == org_id)
+        stmt
         .order_by(
             sa.case(
                 {"active": 0, "drafting": 1, "draft_open": 2, "forming": 3, "completed": 4},
@@ -684,6 +691,16 @@ def list_fantasy_leagues():
         ).all()
         hb_league_names = {r.id: r.league_name for r in rows}
 
+    # Batch season names from HB
+    hb_season_ids = {l.hb_season_id for l in leagues if l.hb_season_id}
+    hb_season_names = {}
+    if hb_season_ids:
+        from hockey_blast_common_lib.models import Season as HBSeason
+        rows = hb.execute(
+            select(HBSeason.id, HBSeason.season_name).where(HBSeason.id.in_(hb_season_ids))
+        ).all()
+        hb_season_names = {r.id: r.season_name for r in rows}
+
     # Batch manager counts
     from app.models.fantasy_manager import FantasyManager
     from sqlalchemy import func as safunc
@@ -697,10 +714,23 @@ def list_fantasy_leagues():
         ).all()
         mgr_counts = {r.league_id: r.cnt for r in rows}
 
+    # Batch creator display names
+    creator_ids = {l.created_by for l in leagues if l.created_by}
+    creator_names = {}
+    if creator_ids:
+        from app.models.pred_user import PredUser
+        rows = pred.execute(
+            select(PredUser.id, PredUser.display_name, PredUser.email)
+            .where(PredUser.id.in_(creator_ids))
+        ).all()
+        creator_names = {r.id: r.display_name or r.email or str(r.id) for r in rows}
+
     def league_dict(l):
         d = l.to_dict()
         d["hb_league_name"] = hb_league_names.get(l.hb_league_id) if l.hb_league_id else None
+        d["hb_season_name"] = hb_season_names.get(l.hb_season_id) if l.hb_season_id else None
         d["manager_count"] = mgr_counts.get(l.id, 0)
+        d["creator_name"] = creator_names.get(l.created_by) if l.created_by else None
         return d
 
     return jsonify({"leagues": [league_dict(l) for l in leagues]})
@@ -719,6 +749,10 @@ def update_fantasy_league(league_id: int):
             return "UNSET"   # sentinel: caller wants to clear the field
         if val == "":
             return "UNSET"
+        try:
+            return datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            pass
         for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
             try:
                 return datetime.strptime(val, fmt).replace(tzinfo=_tz.utc)
@@ -732,7 +766,7 @@ def update_fantasy_league(league_id: int):
     if not league:
         return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
 
-    EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name", "hb_season_id")
+    EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name", "hb_season_id", "max_managers")
     DATETIME_FIELDS = {"season_starts_at", "draft_opens_at", "draft_closes_at"}
 
     for field in EDITABLE:
@@ -747,12 +781,50 @@ def update_fantasy_league(league_id: int):
         else:
             setattr(league, field, data[field] or None)
 
+    # Auto-transition to draft_open if max_managers set to <= current manager count
+    if league.status == "forming" and league.max_managers is not None:
+        from app.models.fantasy_manager import FantasyManager
+        from sqlalchemy import func, select as sa_select
+        manager_count = pred.execute(
+            sa_select(func.count()).where(FantasyManager.league_id == league_id)
+        ).scalar() or 0
+        if manager_count >= league.max_managers:
+            from datetime import datetime, timezone as _tz
+            now = datetime.now(_tz.utc)
+            league.status = "draft_open"
+            if not league.draft_opens_at:
+                league.draft_opens_at = now
+            pred.commit()
+            # Build the draft queue now that the league is open
+            try:
+                from app.services.fantasy_draft_service import build_draft_queue
+                build_draft_queue(league_id)
+            except Exception as qe:
+                import logging
+                logging.getLogger(__name__).warning("Failed to build draft queue for league %d: %s", league_id, qe)
+
+    # Cache division_id whenever hb_season_id is set/changed (regardless of status)
+    hb_season_changed = "hb_season_id" in data and data["hb_season_id"]
+
     try:
         pred.commit()
         pred.refresh(league)
     except Exception as e:
         pred.rollback()
         return jsonify({"error": "INTERNAL_ERROR", "message": str(e)}), 500
+
+    if hb_season_changed:
+        try:
+            from app.services.fantasy_scoring_service import resolve_and_cache_division, score_active_leagues
+            import threading
+            # Always cache division_id immediately
+            resolve_and_cache_division(league_id)
+            # Only kick off scoring if league is already active
+            if league.status == "active":
+                threading.Thread(target=score_active_leagues, daemon=True).start()
+        except Exception as se:
+            import logging
+            logging.getLogger(__name__).warning("Could not resolve division after hb_season_id update: %s", se)
 
     return jsonify(league.to_dict())
 
@@ -767,6 +839,7 @@ def delete_fantasy_league(league_id: int):
     from app.models.fantasy_roster import FantasyRoster
     from app.models.fantasy_draft_queue import FantasyDraftQueue
     from app.models.fantasy_standings import FantasyStandings
+    from app.models.fantasy_game_scores import FantasyGameScores
     from app.db import PredSession
 
     pred = PredSession()
@@ -777,6 +850,7 @@ def delete_fantasy_league(league_id: int):
     name = league.name
 
     # Delete all related data in order
+    pred.execute(sa_delete(FantasyGameScores).where(FantasyGameScores.league_id == league_id))
     pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id == league_id))
     pred.execute(sa_delete(FantasyDraftQueue).where(FantasyDraftQueue.league_id == league_id))
     pred.execute(sa_delete(FantasyRoster).where(FantasyRoster.league_id == league_id))
@@ -797,6 +871,7 @@ def batch_delete_fantasy_leagues():
     from app.models.fantasy_roster import FantasyRoster
     from app.models.fantasy_draft_queue import FantasyDraftQueue
     from app.models.fantasy_standings import FantasyStandings
+    from app.models.fantasy_game_scores import FantasyGameScores
     from app.db import PredSession
 
     data = request.get_json(silent=True) or {}
@@ -808,6 +883,7 @@ def batch_delete_fantasy_leagues():
     leagues = pred.execute(select(FantasyLeague).where(FantasyLeague.id.in_(league_ids))).scalars().all()
     names = [l.name for l in leagues]
 
+    pred.execute(sa_delete(FantasyGameScores).where(FantasyGameScores.league_id.in_(league_ids)))
     pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id.in_(league_ids)))
     pred.execute(sa_delete(FantasyDraftQueue).where(FantasyDraftQueue.league_id.in_(league_ids)))
     pred.execute(sa_delete(FantasyRoster).where(FantasyRoster.league_id.in_(league_ids)))

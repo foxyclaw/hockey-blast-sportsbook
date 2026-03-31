@@ -32,6 +32,15 @@
             <span class="badge" :class="statusBadgeClass(league.status)">
               {{ statusLabel(league.status) }}
             </span>
+            <!-- Share button for active/completed leagues -->
+            <button
+              v-if="['active', 'completed'].includes(league.status)"
+              class="btn btn-outline btn-xs"
+              @click="copyLeagueLink"
+              :title="linkCopied ? 'Link copied!' : 'Share league link'"
+            >
+              {{ linkCopied ? '✅ Copied!' : '🔗 Share' }}
+            </button>
             <!-- Join button -->
             <button
               v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)"
@@ -50,25 +59,21 @@
               <span v-if="openingDraft" class="loading loading-spinner loading-xs"></span>
               Open Draft
             </button>
-            <!-- Start season -->
-            <button
-              v-if="league.is_creator && ['drafting', 'draft_open'].includes(league.status)"
-              class="btn btn-success btn-sm"
-              :disabled="startingSeason"
-              @click="startSeason"
-            >
-              <span v-if="startingSeason" class="loading loading-spinner loading-xs"></span>
-              Start Season
-            </button>
+            
           </div>
         </div>
 
         <!-- Stats row -->
         <div class="flex gap-6 mt-3 text-sm text-base-content/60">
           <span>👥 {{ league.manager_count }} / {{ league.max_managers }} managers</span>
-          <span>📋 {{ league.roster_skaters }} skaters + {{ league.roster_goalies }} goalie(s) per team</span>
-          <span v-if="league.draft_closes_at && league.draft_opens_at">⏱ Draft: {{ formatDeadline(league.draft_opens_at) }} – {{ formatDeadline(league.draft_closes_at) }}</span>
-          <span v-else>⏱ {{ league.draft_pick_hours }}h per pick</span>
+          <span>📋 {{ league.roster_skaters }} skaters + {{ league.roster_goalies }} goalie(s){{ league.roster_refs ? ' + ' + league.roster_refs + ' ref(s)' : '' }} per team</span>
+          <template v-if="['active','completed'].includes(league.status)">
+            <span v-if="league.season_starts_at">📅 Season started: {{ formatDeadline(league.season_starts_at) }}</span>
+          </template>
+          <template v-else>
+            <span v-if="league.draft_closes_at && league.draft_opens_at">⏱ Draft: {{ formatDeadline(league.draft_opens_at) }} – {{ formatDeadline(league.draft_closes_at) }}</span>
+            <span v-else>⏱ {{ league.draft_pick_hours }}h per pick</span>
+          </template>
         </div>
       </div>
 
@@ -140,12 +145,16 @@
                 <!-- Skater / Goalie sub-tabs -->
                 <div class="tabs tabs-boxed tabs-xs mb-3 w-fit">
                   <button class="tab" :class="{ 'tab-active': poolTab === 'skaters' }" @click="poolTab = 'skaters'"
-                    :disabled="currentPick?.is_goalie_pick && currentPick?.user_id === myUserId">
+                    :disabled="currentPick?.is_goalie_pick || currentPick?.is_ref_pick">
                     Skaters
                   </button>
                   <button class="tab" :class="{ 'tab-active': poolTab === 'goalies' }" @click="poolTab = 'goalies'"
                     :disabled="currentPick && !currentPick?.is_goalie_pick && currentPick?.user_id === myUserId">
-                    Goalies <span v-if="currentPick?.is_goalie_pick && currentPick?.user_id === myUserId" class="badge badge-xs badge-error ml-1">Round 1!</span>
+                    Goalies <span v-if="currentPick?.is_goalie_pick && currentPick?.user_id === myUserId" class="badge badge-xs badge-error ml-1">Pick now!</span>
+                  </button>
+                  <button v-if="league.roster_refs > 0" class="tab" :class="{ 'tab-active': poolTab === 'refs' }" @click="poolTab = 'refs'"
+                    :disabled="currentPick && !currentPick?.is_ref_pick && currentPick?.user_id === myUserId">
+                    🎮 Refs <span v-if="currentPick?.is_ref_pick && currentPick?.user_id === myUserId" class="badge badge-xs badge-error ml-1">Last Pick!</span>
                   </button>
                 </div>
 
@@ -154,6 +163,7 @@
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
+                        <th class="w-16"></th>
                         <th class="cursor-pointer" @click="setSortKey('name')">Player <span v-if="sortKey === 'name'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('games_played')">GP <span v-if="sortKey === 'games_played'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('goals')">G <span v-if="sortKey === 'goals'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
@@ -162,7 +172,6 @@
                         <th class="cursor-pointer text-right" @click="setSortKey('penalties')">Pen <span v-if="sortKey === 'penalties'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('fantasy_points')">FP <span v-if="sortKey === 'fantasy_points'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
                         <th class="cursor-pointer text-right" @click="setSortKey('fantasy_ppg')">FPPG <span v-if="sortKey === 'fantasy_ppg'">{{ sortDir === 'asc' ? '▲' : '▼' }}</span></th>
-                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -171,15 +180,7 @@
                         :key="p.hb_human_id"
                         :class="p.drafted_by ? 'opacity-40' : 'hover'"
                       >
-                        <td>{{ p.first_name }} {{ p.last_name }}</td>
-                        <td class="text-right">{{ p.games_played }}</td>
-                        <td class="text-right">{{ p.goals }}</td>
-                        <td class="text-right">{{ p.assists }}</td>
-                        <td class="text-right">{{ p.points }}</td>
-                        <td class="text-right">{{ p.penalties }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points }}</td>
-                        <td class="text-right text-base-content/60">{{ p.fantasy_ppg }}</td>
-                        <td class="text-right">
+                        <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
                             <button
@@ -194,6 +195,14 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
                           </template>
                         </td>
+                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td class="text-right">{{ p.games_played }}</td>
+                        <td class="text-right">{{ p.goals }}</td>
+                        <td class="text-right">{{ p.assists }}</td>
+                        <td class="text-right">{{ p.points }}</td>
+                        <td class="text-right">{{ p.penalties }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points != null ? Number(p.fantasy_points).toFixed(1) : '—' }}</td>
+                        <td class="text-right text-base-content/60">{{ p.fantasy_ppg != null ? Number(p.fantasy_ppg).toFixed(1) : '—' }}</td>
                       </tr>
                       <tr v-if="sortedSkaters.length === 0">
                         <td colspan="9" class="text-center text-base-content/40 py-4">No skaters found</td>
@@ -207,12 +216,13 @@
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
+                        <th></th>
                         <th>Player</th>
                         <th class="text-right">GP</th>
                         <th class="text-right">GAA</th>
                         <th class="text-right">SV%</th>
-                        <th class="text-right">F.Pts</th>
-                        <th></th>
+                        <th class="text-right">FP</th>
+                        <th class="text-right">FPPG</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -221,41 +231,80 @@
                         :key="p.hb_human_id"
                         :class="p.drafted_by ? 'opacity-40' : 'hover'"
                       >
-                        <td>{{ p.first_name }} {{ p.last_name }}</td>
-                        <td class="text-right">{{ p.games_played }}</td>
-                        <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
-                        <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
-                        <td class="text-right font-bold text-primary">{{ p.fantasy_points }}</td>
-                        <td class="text-right">
+                        <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
-                            <button
-                              class="btn btn-xs btn-primary"
-                              :disabled="picking"
-                              @click="pickPlayer(p)"
-                            >
-                              Draft
-                            </button>
+                            <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
                           </template>
                           <template v-else>
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
                           </template>
                         </td>
+                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td class="text-right">{{ p.games_played }}</td>
+                        <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
+                        <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_goalie != null ? Number(p.fantasy_points_goalie ?? p.fantasy_points).toFixed(1) : '—' }}</td>
+                        <td class="text-right text-base-content/60">{{ p.goalie_games > 0 ? ((p.fantasy_points_goalie ?? p.fantasy_points) / p.goalie_games).toFixed(1) : '—' }}</td>
                       </tr>
                       <tr v-if="filteredGoalies.length === 0">
-                        <td colspan="6" class="text-center text-base-content/40 py-4">No goalies found</td>
+                        <td colspan="7" class="text-center text-base-content/40 py-4">No goalies found</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Refs table -->
+                <div v-if="poolTab === 'refs'" class="overflow-x-auto max-h-80 overflow-y-auto">
+                  <table class="table table-xs w-full">
+                    <thead class="sticky top-0 bg-base-200 z-10">
+                      <tr>
+                        <th></th>
+                        <th>Referee</th>
+                        <th class="text-right">Games</th>
+                        <th class="text-right">Penalties</th>
+                        <th class="text-right">GMs</th>
+                        <th class="text-right">FP</th>
+                        <th class="text-right">FPPG</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="p in filteredRefs"
+                        :key="p.hb_human_id"
+                        :class="p.drafted_by ? 'opacity-40' : 'hover'"
+                      >
+                        <td>
+                          <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
+                          <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member && currentPick.is_ref_pick">
+                            <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                          </template>
+                          <template v-else>
+                            <button class="btn btn-xs btn-disabled" disabled>Draft</button>
+                          </template>
+                        </td>
+                        <td>{{ p.first_name }} {{ p.last_name }}</td>
+                        <td class="text-right">{{ p.games_reffed }}</td>
+                        <td class="text-right">{{ p.penalties_given }}</td>
+                        <td class="text-right">{{ p.gm_given }}</td>
+                        <td class="text-right font-bold text-primary">{{ p.fantasy_points_ref != null ? Number(p.fantasy_points_ref ?? p.fantasy_points).toFixed(1) : '—' }}</td>
+                        <td class="text-right text-base-content/60">{{ p.games_reffed > 0 ? ((p.fantasy_points_ref ?? p.fantasy_points) / p.games_reffed).toFixed(1) : '—' }}</td>
+                      </tr>
+                      <tr v-if="filteredRefs.length === 0">
+                        <td colspan="7" class="text-center text-base-content/40 py-4">No referees found</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
                 <div v-if="pickError" class="text-error text-xs mt-2">{{ pickError }}</div>
+                <div class="text-xs text-base-content/30 mt-2">FP = Fantasy Points &nbsp;·&nbsp; FPPG = Fantasy Points Per Game</div>
               </div>
             </div>
           </div>
 
-          <!-- Draft progress summary -->
-          <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <!-- Draft progress summary (only shown during draft) -->
+          <div v-if="['draft_open', 'drafting'].includes(league.status)" class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
             <div class="bg-base-200 rounded-lg p-3">
               <div class="text-2xl font-bold text-success">{{ draftQueue.filter(p => p.picked_at).length }}</div>
               <div class="text-xs text-base-content/50 mt-0.5">Picks Made</div>
@@ -269,7 +318,7 @@
               <div class="text-xs text-base-content/50 mt-0.5">Current Round</div>
             </div>
             <div class="bg-base-200 rounded-lg p-3">
-              <div class="text-2xl font-bold text-primary">{{ league.max_managers && league.roster_skaters ? (league.roster_skaters + league.roster_goalies) - (currentPick ? currentPick.round - 1 : 0) : '—' }}</div>
+              <div class="text-2xl font-bold text-primary">{{ ['active','completed'].includes(league.status) && !currentPick ? 0 : (league.max_managers && league.roster_skaters ? (league.roster_skaters + league.roster_goalies) - (currentPick ? currentPick.round - 1 : 0) : '—') }}</div>
               <div class="text-xs text-base-content/50 mt-0.5">Rounds Left</div>
             </div>
           </div>
@@ -309,24 +358,119 @@
                 <th>#</th>
                 <th>Team</th>
                 <th>Manager</th>
-                <th class="text-right">Total Pts</th>
                 <th class="text-right">Week Pts</th>
+                <th class="text-right font-bold">Total Pts</th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="row in standings"
                 :key="row.user_id"
-                :class="{ 'bg-primary/10 font-semibold': row.user_id === myUserId }"
+                :class="[
+                  { 'bg-primary/10 font-semibold': row.user_id === myUserId },
+                  league.hb_division_id ? 'cursor-pointer hover:bg-base-300' : ''
+                ]"
+                @click="league.hb_division_id ? (activeTab = 'games', loadGames(row.user_id)) : null"
+                :title="league.hb_division_id ? `View ${row.team_name}'s games` : ''"
               >
                 <td>{{ row.rank || '—' }}</td>
-                <td>{{ row.team_name }}</td>
+                <td>{{ row.team_name }}
+                  <span v-if="league.hb_division_id" class="text-xs opacity-40 ml-1">🏒</span>
+                </td>
                 <td class="text-base-content/60 text-sm">{{ row.display_name }}</td>
-                <td class="text-right">{{ row.total_points }}</td>
-                <td class="text-right">{{ row.week_points }}</td>
+                <td class="text-right">{{ row.week_points != null ? Number(row.week_points).toFixed(1) : '—' }}</td>
+                <td class="text-right font-bold">{{ row.total_points != null ? Number(row.total_points).toFixed(1) : '—' }}</td>
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+
+      <!-- ── Games Tab ── -->
+      <div v-if="activeTab === 'games'">
+        <!-- Whose roster are we viewing? -->
+        <div v-if="viewUserId" class="flex items-center justify-between mb-3">
+          <div class="text-sm font-medium">
+            {{ standings.find(r => r.user_id === viewUserId)?.team_name || 'Unknown' }}
+            <span class="opacity-50 text-xs font-normal ml-1">
+              ({{ standings.find(r => r.user_id === viewUserId)?.display_name }})
+            </span>
+          </div>
+          <button class="btn btn-xs btn-ghost" @click="loadGames(null)">← My roster</button>
+        </div>
+        <div v-if="gamesLoading" class="flex justify-center py-10">
+          <span class="loading loading-spinner loading-md"></span>
+        </div>
+        <div v-else-if="!games.length" class="text-center text-base-content/50 py-10">
+          No games found for this season.
+        </div>
+        <div v-else class="space-y-2">
+          <div v-for="game in games" :key="game.id" class="card card-compact bg-base-200 shadow-sm">
+            <div class="card-body p-3">
+              <!-- Meta row -->
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="text-xs text-base-content/50 flex items-center gap-2">
+                  <span>{{ game.date }}</span>
+                  <span v-if="game.time">{{ game.time }}</span>
+                  <span v-if="game.location" class="hidden sm:inline">· {{ game.location }}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <span v-if="game.game_type" class="badge badge-xs badge-outline">{{ game.game_type }}</span>
+                  <span
+                    v-if="game.status === 'OPEN'"
+                    class="inline-flex items-center gap-1 badge badge-xs badge-success animate-pulse"
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full bg-white inline-block"></span>
+                    LIVE
+                  </span>
+                  <span v-else class="badge badge-xs" :class="{
+                    'badge-success': game.status && game.status.startsWith('Final'),
+                    'badge-warning': game.status === 'Scheduled',
+                    'badge-info': game.status && game.status.toLowerCase().includes('live'),
+                  }">{{ game.status }}</span>
+                </div>
+              </div>
+              <!-- Score row -->
+              <div class="flex items-center justify-between gap-2 mt-1">
+                <div class="flex-1 text-right font-bold text-base leading-tight truncate">{{ game.visitor_team_name }}</div>
+                <div class="text-center w-20 shrink-0">
+                  <span v-if="game.visitor_final_score != null" class="text-2xl font-black tracking-tight">{{ game.visitor_final_score }}–{{ game.home_final_score }}</span>
+                  <span v-else class="text-base-content/30 text-sm font-medium">vs</span>
+                </div>
+                <div class="flex-1 text-left font-bold text-base leading-tight truncate">{{ game.home_team_name }}</div>
+              </div>
+              <!-- My rostered players -->
+              <div v-if="game.my_players && game.my_players.length" class="mt-2 pt-2 border-t border-base-300">
+                <!-- Scorers: players who got points -->
+                <div class="flex flex-wrap gap-1 mb-1">
+                  <div
+                    v-for="p in game.my_players.filter(p => p.points !== 0 || p.penalties > 0)"
+                    :key="p.hb_human_id"
+                    class="flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-base-300"
+                  >
+                    <span class="font-medium">{{ p.display_name }}</span>
+                    <span class="font-bold" :class="p.points < 0 ? 'text-error' : 'text-primary'">{{ Number(p.points).toFixed(1) }}</span>
+                    <span v-if="p.goals" class="text-success">{{ p.goals }}G</span>
+                    <span v-if="p.assists" class="text-info">{{ p.assists }}A</span>
+                    <span v-if="p.is_goalie_win" class="text-warning">W</span>
+                    <span v-if="p.is_shutout" class="text-accent">SO</span>
+                    <span v-if="p.penalties" class="text-error">{{ p.penalties }}PEN</span>
+                    <span v-if="p.ref_games" class="text-secondary">REF</span>
+                    <span v-if="p.games_played && !p.goals && !p.assists && !p.is_goalie_win && !p.ref_games" class="text-base-content/50">GP</span>
+                  </div>
+                </div>
+                <!-- Zeroes: just names, dimmed -->
+                <div v-if="game.my_players.some(p => p.points === 0 && !p.penalties)" class="text-xs text-base-content/35 leading-relaxed">
+                  {{ game.my_players.filter(p => p.points === 0 && !p.penalties).map(p => p.display_name).join(', ') }}
+                </div>
+              </div>
+              <!-- Stats link -->
+              <div class="text-right mt-1">
+                <a :href="game.game_card_url" target="_blank" rel="noopener" class="link link-primary text-xs opacity-50 hover:opacity-100">📊 Stats</a>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -391,40 +535,22 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
 import { useApiClient } from '@/api/client'
 
-// ── Inline mini-component for roster list ─────────────────────────────────
+// ── Roster list component (render function — no compiler needed) ──────────
 const RosterList = {
   name: 'RosterList',
   props: {
     leagueId: { type: Number, required: true },
-    userId: { type: Number, required: true },
-    showPoints: { type: Boolean, default: false },
+    userId:   { type: Number, required: true },
   },
-  template: `
-    <div>
-      <div v-if="rLoading" class="text-xs text-base-content/40">Loading…</div>
-      <div v-else-if="!roster.length" class="text-xs text-base-content/40 italic">No players drafted yet.</div>
-      <div v-else class="flex flex-wrap gap-2">
-        <span
-          v-for="p in roster"
-          :key="p.hb_human_id"
-          class="badge badge-outline gap-1 text-xs"
-          :class="p.is_goalie ? 'badge-secondary' : 'badge-primary'"
-        >
-          {{ p.is_goalie ? '🥅' : '🏒' }} {{ p.player_name }}
-          <span v-if="p.round_picked" class="opacity-50 text-xs">R{{ p.round_picked }}</span>
-        </span>
-      </div>
-    </div>
-  `,
   setup(props) {
     const api = useApiClient()
-    const roster = ref([])
+    const roster   = ref([])
     const rLoading = ref(true)
 
     async function load() {
@@ -440,7 +566,59 @@ const RosterList = {
     }
 
     onMounted(load)
-    return { roster, rLoading }
+    return () => {
+      if (rLoading.value) {
+        return h('div', { class: 'text-xs text-base-content/40 py-2' }, 'Loading…')
+      }
+      if (!roster.value.length) {
+        return h('div', { class: 'text-xs text-base-content/40 italic py-2' }, 'No players drafted yet.')
+      }
+
+      // Table header
+      const thead = h('thead', [
+        h('tr', [
+          h('th', { class: 'text-left text-xs font-medium opacity-60 pb-1 pr-4' }, 'Player'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 px-2' }, 'GP'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 px-2' }, 'G'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 px-2' }, 'A'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 px-2 text-error' }, 'PIM'),
+          h('th', { class: 'text-right text-xs font-medium opacity-60 pb-1 pl-2' }, 'FP'),
+        ])
+      ])
+
+      const rows = roster.value.map(p => {
+        const icon = p.is_ref ? '🎮' : p.is_goalie ? '🥅' : '🏒'
+        const liveChip = p.is_live
+          ? h('span', { class: 'inline-flex items-center gap-1 ml-1' }, [
+              h('span', { class: 'w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block' }),
+              p.live_game_id
+                ? h('a', {
+                    href: `https://hockey-blast.com/game_card?game_id=${p.live_game_id}`,
+                    target: '_blank',
+                    class: 'text-green-400 text-xs font-semibold hover:underline',
+                  }, 'LIVE')
+                : h('span', { class: 'text-green-400 text-xs font-semibold' }, 'LIVE'),
+            ])
+          : null
+        const nameCell = h('td', { class: 'pr-4 py-1' }, [
+          h('span', { class: 'text-sm' }, `${icon} ${p.player_name || '—'}`),
+          liveChip,
+        ])
+        return h('tr', { key: p.hb_human_id, class: 'border-t border-base-300/30' }, [
+          nameCell,
+          h('td', { class: 'text-right text-xs px-2 py-1 opacity-70' }, p.gp ?? 0),
+          h('td', { class: 'text-right text-xs px-2 py-1 opacity-70' }, p.goals ?? 0),
+          h('td', { class: 'text-right text-xs px-2 py-1 opacity-70' }, p.assists ?? 0),
+          h('td', { class: 'text-right text-xs px-2 py-1 ' + (p.penalties ? 'text-error' : 'opacity-70') }, p.penalties ?? 0),
+          h('td', { class: 'text-right text-xs pl-2 py-1 font-semibold text-primary' },
+            p.fantasy_points != null ? p.fantasy_points.toFixed(1) : '—'),
+        ])
+      })
+
+      return h('div', { class: 'overflow-x-auto' }, [
+        h('table', { class: 'w-full' }, [thead, h('tbody', rows)])
+      ])
+    }
   },
 }
 
@@ -453,17 +631,37 @@ const userStore = useUserStore()
 const league = ref(null)
 const loading = ref(true)
 const draftQueue = ref([])
-const pool = ref({ skaters: [], goalies: [] })
+const pool = ref({ skaters: [], goalies: [], refs: [] })
 const standings = ref([])
 const standingsLoading = ref(false)
+const games = ref([])
+const gamesLoading = ref(false)
+const viewUserId = ref(null)  // whose roster to show in games tab (null = own)
 
-const activeTab = ref('draft')
-const tabs = [
-  { id: 'draft', label: '📋 Draft' },
-  { id: 'rosters', label: '👥 Rosters' },
+const allTabs = [
   { id: 'standings', label: '🏆 Standings' },
+  { id: 'games', label: '🏒 Games' },
   { id: 'myteam', label: '⭐ My Team' },
+  { id: 'rosters', label: '👥 Rosters' },
+  { id: 'draft', label: '📋 Draft' },
 ]
+const tabs = computed(() => {
+  if (!league.value) return allTabs
+  const isLive = ['active', 'completed'].includes(league.value.status)
+  const hasGames = !!league.value.hb_division_id
+  return allTabs.filter(t => {
+    if (t.id === 'draft' && isLive) return false
+    if (t.id === 'games' && !hasGames) return false
+    return true
+  })
+})
+const activeTab = ref('draft')
+// Once league loads, switch to standings if draft is done
+watch(() => league.value?.status, (status) => {
+  if (status && ['active', 'completed'].includes(status) && activeTab.value === 'draft') {
+    activeTab.value = 'standings'
+  }
+}, { immediate: true })
 
 const showJoinModal = ref(false)
 const joining = ref(false)
@@ -471,6 +669,16 @@ const joinError = ref('')
 const joinForm = ref({ team_name: '', join_code: '' })
 
 const openingDraft = ref(false)
+const linkCopied = ref(false)
+async function copyLeagueLink() {
+  try {
+    await navigator.clipboard.writeText(window.location.href)
+    linkCopied.value = true
+    setTimeout(() => { linkCopied.value = false }, 2500)
+  } catch {
+    // fallback: select URL bar
+  }
+}
 const startingSeason = ref(false)
 
 const playerFilter = ref('')
@@ -478,6 +686,15 @@ const positionFilter = ref('')
 const picking = ref(false)
 const pickError = ref('')
 const poolTab = ref('skaters')
+// Auto-switch pool tab based on current pick type
+watch(() => currentPick.value, (pick) => {
+  if (!pick) return
+  if (pick.user_id === myUserId.value) {
+    if (pick.is_goalie_pick) poolTab.value = 'goalies'
+    else if (pick.is_ref_pick) poolTab.value = 'refs'
+    else poolTab.value = 'skaters'
+  }
+}, { immediate: true })
 const sortKey = ref('fantasy_points')
 const sortDir = ref('desc')
 
@@ -500,9 +717,9 @@ const myDraftedRoster = computed(() => {
 
 const myDraftedSkaters = computed(() =>
   myDraftedRoster.value.filter(p => {
-    const player = [...(pool.value.skaters || []), ...(pool.value.goalies || [])]
+    const player = [...(pool.value.skaters || []), ...(pool.value.goalies || []), ...(pool.value.refs || [])]
       .find(pl => pl.hb_human_id === p.hb_human_id)
-    return player && !player.is_goalie
+    return player && !player.is_goalie && !player.is_ref
   }).length
 )
 
@@ -513,6 +730,27 @@ const myDraftedGoalies = computed(() =>
     return player && player.is_goalie
   }).length
 )
+
+const myDraftedRefs = computed(() =>
+  myDraftedRoster.value.filter(p => {
+    const player = (pool.value.refs || []).find(pl => pl.hb_human_id === p.hb_human_id)
+    return !!player
+  }).length
+)
+
+const filteredRefs = computed(() => {
+  const drafted = new Set(draftQueue.value.filter(p => p.picked_at).map(p => p.hb_human_id))
+  const managers = {}
+  // Build manager name map from standings
+  for (const s of standings.value) managers[s.user_id] = s
+  return (pool.value.refs || []).map(p => {
+    if (drafted.has(p.hb_human_id)) {
+      const pick = draftQueue.value.find(q => q.hb_human_id === p.hb_human_id && q.picked_at)
+      return { ...p, drafted_by: pick ? { team_name: managers[pick.user_id]?.team_name || 'Someone' } : { team_name: '?' } }
+    }
+    return { ...p, drafted_by: null }
+  })
+})
 
 // True when it's my turn AND I must pick a goalie (last pick(s) need to fill goalie slot)
 const mustPickGoalie = computed(() => {
@@ -632,6 +870,20 @@ async function loadPool() {
   }
 }
 
+async function loadGames(userId = null) {
+  gamesLoading.value = true
+  viewUserId.value = userId
+  try {
+    const params = userId ? `?user_id=${userId}` : ''
+    const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/games${params}`)
+    games.value = data.games || []
+  } catch {
+    games.value = []
+  } finally {
+    gamesLoading.value = false
+  }
+}
+
 async function loadStandings() {
   standingsLoading.value = true
   try {
@@ -726,16 +978,24 @@ watch(() => league.value?.status, (status) => {
 
 watch(activeTab, (tab) => {
   if (tab === 'standings') loadStandings()
+  if (tab === 'games') loadGames()
 })
 
 // Auto-switch pool tab based on pick type
 watch(currentPick, (pick) => {
   if (!pick || pick.user_id !== myUserId.value) return
-  poolTab.value = pick.is_goalie_pick ? 'goalies' : 'skaters'
-})
+  if (pick.is_goalie_pick) poolTab.value = 'goalies'
+  else if (pick.is_ref_pick) poolTab.value = 'refs'
+  else poolTab.value = 'skaters'
+}, { immediate: true })
 
 onMounted(async () => {
   await loadLeague()
+  // Honor ?tab=draft (or other tab) from notification link
+  const tabParam = route.query.tab
+  if (tabParam && tabs.value.some(t => t.id === tabParam)) {
+    activeTab.value = tabParam
+  }
   // Pre-fill join code if arriving from private league card
   const urlCode = route.query.join_code
   if (urlCode && league.value?.is_private && !league.value?.is_member) {

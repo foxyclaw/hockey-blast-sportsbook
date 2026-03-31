@@ -21,12 +21,14 @@ class FantasyLeague(PredBase):
     level_name: Mapped[str] = mapped_column(String(64), nullable=False)
     hb_league_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # HB League (rink/program), e.g. SharksIce SJ = 2
     hb_season_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # HB Season for scoring/pool; NULL = use latest
+    hb_division_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Cached division id for fast game fetching
     org_id: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     season_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="forming")
     max_managers: Mapped[int] = mapped_column(Integer, nullable=False)
     roster_skaters: Mapped[int] = mapped_column(Integer, nullable=False)
     roster_goalies: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    roster_refs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     draft_pick_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
     settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[int | None] = mapped_column(Integer, sa.ForeignKey("pred_users.id"), nullable=True)
@@ -64,12 +66,14 @@ class FantasyLeague(PredBase):
             "level_name": self.level_name,
             "hb_league_id": self.hb_league_id,
             "hb_season_id": self.hb_season_id,
+            "hb_division_id": self.hb_division_id,
             "org_id": self.org_id,
             "season_label": self.season_label,
             "status": self.status,
             "max_managers": self.max_managers,
             "roster_skaters": self.roster_skaters,
             "roster_goalies": self.roster_goalies,
+            "roster_refs": self.roster_refs,
             "draft_pick_hours": self.draft_pick_hours,
             "settings": self.settings,
             "created_by": self.created_by,
