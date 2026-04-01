@@ -204,17 +204,17 @@
           <div class="grid grid-cols-2 gap-3">
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
-              <input v-model="createForm.draft_opens_at" type="datetime-local" class="input input-bordered input-sm" />
+              <input v-model="createForm.draft_opens_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Closes *</span></label>
-              <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered input-sm" required />
+              <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" required />
             </div>
           </div>
           <div class="text-xs text-base-content/40 -mt-2 mb-1">All picks must be made between Draft Opens and Draft Closes. If you miss your turn, a pick is automatically made for you — the highest Fantasy Points player still available.</div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text text-xs">Season Starts</span></label>
-            <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered input-sm" required :min="nowLocal" />
+            <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" required :min="nowLocal" />
           </div>
 
           <!-- Private toggle -->
