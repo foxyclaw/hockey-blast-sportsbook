@@ -195,6 +195,13 @@ def start_scheduler(app):
                         summary.get("games", 0),
                         summary.get("errors", 0),
                     )
+                from app.services.fantasy_scoring_service import auto_assign_seasons
+                season_summary = auto_assign_seasons()
+                if season_summary["assigned"] > 0:
+                    logger.info(
+                        "[auto-season] Assigned new seasons: checked=%d assigned=%d errors=%d",
+                        season_summary["checked"], season_summary["assigned"], season_summary["errors"],
+                    )
             except Exception as exc:
                 logger.exception("[fantasy] Unhandled error in fantasy score job: %s", exc)
 

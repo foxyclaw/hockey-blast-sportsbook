@@ -894,6 +894,24 @@ def batch_delete_fantasy_leagues():
     return jsonify({"ok": True, "deleted": len(names), "names": names})
 
 
+@admin_bp.route("/fantasy/leagues/<int:league_id>/clear-scoring-season", methods=["POST"])
+@require_admin
+def clear_scoring_season(league_id: int):
+    """POST /api/admin/fantasy/leagues/<id>/clear-scoring-season
+    Clears hb_season_id and hb_division_id so auto-assign will pick up the next run.
+    """
+    from app.models.fantasy_league import FantasyLeague
+    from app.db import PredSession
+    pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    if not league:
+        return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
+    league.hb_season_id = None
+    league.hb_division_id = None
+    pred.commit()
+    return jsonify({"ok": True, "league_id": league_id})
+
+
 @admin_bp.route("/chat/questions", methods=["GET"])
 @require_admin
 def chat_questions():

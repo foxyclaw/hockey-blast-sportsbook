@@ -197,6 +197,8 @@ def _set_next_deadline(league_id: int, pred, pick_hours: int, prev_was_auto: boo
         league = pred.get(FantasyLeague, league_id)
         if league and league.status == "drafting":
             league.status = "active"
+            if not league.draft_season_id:
+                league.draft_season_id = league.hb_season_id
             pred.commit()
 
 
@@ -233,6 +235,8 @@ def advance_draft(league_id: int) -> None:
         # Draft complete
         league.status = "active"
         league.season_starts_at = now
+        if not league.draft_season_id:
+            league.draft_season_id = league.hb_season_id
         pred.commit()
         return
 
