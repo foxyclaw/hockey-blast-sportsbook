@@ -803,6 +803,11 @@ def update_fantasy_league(league_id: int):
                 import logging
                 logging.getLogger(__name__).warning("Failed to build draft queue for league %d: %s", league_id, qe)
 
+    # If hb_season_id is being cleared (set to null), also clear hb_division_id
+    # so the auto-assign job doesn't keep using the stale cached division.
+    if "hb_season_id" in data and not data["hb_season_id"]:
+        league.hb_division_id = None
+
     # Cache division_id whenever hb_season_id is set/changed (regardless of status)
     hb_season_changed = "hb_season_id" in data and data["hb_season_id"]
 
