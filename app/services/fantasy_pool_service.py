@@ -41,7 +41,39 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         )
 
     if season_id is None:
-        season_id = hb.execute(select(func.max(Division.season_id)).where(*season_filter)).scalar()
+        # Walk seasons newest-first; skip seasons with zero completed games
+        # (new season just created, no stats yet → use previous season for pool/sizing)
+        from hockey_blast_common_lib.models import Game
+        candidate_seasons = hb.execute(
+            select(Division.season_id)
+            .where(*season_filter)
+            .distinct()
+            .order_by(Division.season_id.desc())
+        ).scalars().all()
+
+        FINAL_STATUSES = ('Final', 'Final.', 'Final/OT', 'Final/OT2', 'Final/SO', 'Final(SO)')
+        for candidate_sid in candidate_seasons:
+            div_ids = hb.execute(
+                select(Division.id).where(
+                    Division.level_id == level_id,
+                    Division.org_id == org_id,
+                    Division.season_id == candidate_sid,
+                )
+            ).scalars().all()
+            if not div_ids:
+                continue
+            completed = hb.execute(
+                select(func.count(Game.id)).where(
+                    Game.division_id.in_(div_ids),
+                    Game.status.in_(FINAL_STATUSES),
+                )
+            ).scalar() or 0
+            if completed > 0:
+                season_id = candidate_sid
+                break
+        # If every season has 0 games (brand new level), fall back to latest
+        if season_id is None:
+            season_id = candidate_seasons[0] if candidate_seasons else None
 
     div_ids_stmt = select(Division.id).where(
         Division.level_id == level_id,
