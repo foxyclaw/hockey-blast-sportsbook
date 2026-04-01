@@ -766,6 +766,8 @@ def update_fantasy_league(league_id: int):
     if not league:
         return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
 
+    orig_season_id = league.hb_season_id  # capture before any edits
+
     EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name", "hb_season_id", "max_managers")
     DATETIME_FIELDS = {"season_starts_at", "draft_opens_at", "draft_closes_at"}
 
@@ -803,12 +805,15 @@ def update_fantasy_league(league_id: int):
                 import logging
                 logging.getLogger(__name__).warning("Failed to build draft queue for league %d: %s", league_id, qe)
 
+    # Detect season change (to a new value OR to null) before commit
+    season_changed = "hb_season_id" in data and data.get("hb_season_id") != orig_season_id
+
     # If hb_season_id is being cleared (set to null), also clear hb_division_id
     # so the auto-assign job doesn't keep using the stale cached division.
-    if "hb_season_id" in data and not data["hb_season_id"]:
+    if season_changed and not data["hb_season_id"]:
         league.hb_division_id = None
 
-    # Cache division_id whenever hb_season_id is set/changed (regardless of status)
+    # Cache division_id whenever hb_season_id is set to a real value
     hb_season_changed = "hb_season_id" in data and data["hb_season_id"]
 
     try:
@@ -817,6 +822,23 @@ def update_fantasy_league(league_id: int):
     except Exception as e:
         pred.rollback()
         return jsonify({"error": "INTERNAL_ERROR", "message": str(e)}), 500
+
+    # Wipe scores/standings whenever the season changes (to a different value OR to null)
+    # — old season's scores are invalid for the new season
+    if season_changed:
+        try:
+            from app.models.fantasy_game_scores import FantasyGameScores
+            from app.models.fantasy_standings import FantasyStandings
+            from sqlalchemy import delete as sa_delete
+            pred.execute(sa_delete(FantasyGameScores).where(FantasyGameScores.league_id == league_id))
+            pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id == league_id))
+            pred.commit()
+            logging.getLogger(__name__).info(
+                "Cleared scores/standings for league %d after season change (%s → %s)",
+                league_id, orig_season_id, data.get("hb_season_id"),
+            )
+        except Exception as se:
+            logging.getLogger(__name__).warning("Could not clear scores for league %d: %s", league_id, se)
 
     if hb_season_changed:
         try:
@@ -828,7 +850,6 @@ def update_fantasy_league(league_id: int):
             if league.status == "active":
                 threading.Thread(target=score_active_leagues, daemon=True).start()
         except Exception as se:
-            import logging
             logging.getLogger(__name__).warning("Could not resolve division after hb_season_id update: %s", se)
 
     return jsonify(league.to_dict())
@@ -906,13 +927,18 @@ def clear_scoring_season(league_id: int):
     Clears hb_season_id and hb_division_id so auto-assign will pick up the next run.
     """
     from app.models.fantasy_league import FantasyLeague
+    from app.models.fantasy_game_scores import FantasyGameScores
+    from app.models.fantasy_standings import FantasyStandings
     from app.db import PredSession
+    from sqlalchemy import delete as sa_delete
     pred = PredSession()
     league = pred.get(FantasyLeague, league_id)
     if not league:
         return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
     league.hb_season_id = None
     league.hb_division_id = None
+    pred.execute(sa_delete(FantasyGameScores).where(FantasyGameScores.league_id == league_id))
+    pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id == league_id))
     pred.commit()
     return jsonify({"ok": True, "league_id": league_id})
 
