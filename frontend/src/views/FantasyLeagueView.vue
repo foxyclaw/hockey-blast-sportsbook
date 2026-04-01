@@ -27,14 +27,14 @@
             <!-- Invite code callout — only visible to creator while league is forming/draft_open -->
             <div v-if="league.is_private && league.join_code && league.is_creator && ['forming','draft_open'].includes(league.status)"
                  class="mt-3 p-3 rounded-xl border border-primary/40 bg-primary/10 flex flex-col gap-1">
-              <p class="text-xs font-semibold text-primary uppercase tracking-wide">📣 Share this invite code with your friends</p>
+              <p class="text-xs font-semibold text-primary uppercase tracking-wide">📣 Share this invite link with your friends</p>
               <div class="flex items-center gap-3 mt-1">
                 <span class="font-mono font-bold text-2xl tracking-widest text-base-content">{{ league.join_code }}</span>
-                <button class="btn btn-xs btn-primary" @click="copyInviteCode(league.join_code)">
-                  {{ codeCopied ? '✅ Copied!' : '📋 Copy' }}
+                <button class="btn btn-xs btn-primary" @click="copyInviteLink(league)">
+                  {{ codeCopied ? '✅ Copied!' : '🔗 Copy Link' }}
                 </button>
               </div>
-              <p class="text-xs text-base-content/50 mt-0.5">They'll need this code to join your private league.</p>
+              <a :href="inviteLink(league)" class="text-xs text-blue-400 break-all mt-0.5">{{ inviteLink(league) }}</a>
             </div>
           </div>
           <div class="flex items-center gap-2 flex-wrap">
@@ -695,8 +695,12 @@ const positionFilter = ref('')
 const picking = ref(false)
 const codeCopied = ref(false)
 
-function copyInviteCode(code) {
-  navigator.clipboard.writeText(code).then(() => {
+function inviteLink(league) {
+  return `${window.location.origin}/fantasy/${league.id}?join_code=${league.join_code}`
+}
+
+function copyInviteLink(league) {
+  navigator.clipboard.writeText(inviteLink(league)).then(() => {
     codeCopied.value = true
     setTimeout(() => { codeCopied.value = false }, 2500)
   })
