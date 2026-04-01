@@ -846,7 +846,8 @@ const filteredGoalies = computed(() => {
   return [...filtered].sort((a, b) => {
     const aDrafted = a.drafted_by ? 1 : 0
     const bDrafted = b.drafted_by ? 1 : 0
-    return aDrafted - bDrafted
+    if (aDrafted !== bDrafted) return aDrafted - bDrafted
+    return (b.fantasy_points_goalie ?? b.fantasy_points ?? 0) - (a.fantasy_points_goalie ?? a.fantasy_points ?? 0)
   })
 })
 
