@@ -681,7 +681,15 @@ const openingDraft = ref(false)
 const linkCopied = ref(false)
 async function copyLeagueLink() {
   try {
-    await navigator.clipboard.writeText(window.location.href)
+    // For private leagues that are still joinable, include the join code so
+    // the recipient lands with it pre-filled. For active/completed leagues
+    // (draft done, no new members), share a plain link — code is irrelevant.
+    const l = league.value
+    const joinable = l?.is_private && l?.join_code && ['forming', 'draft_open'].includes(l?.status)
+    const url = joinable
+      ? `${window.location.origin}/fantasy/${l.id}?join_code=${l.join_code}`
+      : `${window.location.origin}/fantasy/${l?.id}`
+    await navigator.clipboard.writeText(url)
     linkCopied.value = true
     setTimeout(() => { linkCopied.value = false }, 2500)
   } catch {
@@ -1017,9 +1025,10 @@ onMounted(async () => {
   if (tabParam && tabs.value.some(t => t.id === tabParam)) {
     activeTab.value = tabParam
   }
-  // Pre-fill join code if arriving from private league card
+  // Pre-fill join code only if league is still open for new members
   const urlCode = route.query.join_code
-  if (urlCode && league.value?.is_private && !league.value?.is_member) {
+  const leagueStillJoinable = ['forming', 'draft_open'].includes(league.value?.status)
+  if (urlCode && leagueStillJoinable && league.value?.is_private && !league.value?.is_member) {
     joinForm.value.join_code = String(urlCode).toUpperCase()
     showJoinModal.value = true
   }
