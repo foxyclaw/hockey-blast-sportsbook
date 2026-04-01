@@ -24,9 +24,18 @@
               <span v-if="league.hb_season_name">📅 {{ league.hb_season_name }}</span>
               <span v-else-if="league.season_label">📅 {{ league.season_label }}</span>
             </p>
-            <p v-if="league.is_private && league.join_code && league.is_creator" class="text-xs text-base-content/40 mt-1">
-              Invite code: <span class="font-mono font-bold text-base-content/70">{{ league.join_code }}</span>
-            </p>
+            <!-- Invite code callout — only visible to creator while league is forming/draft_open -->
+            <div v-if="league.is_private && league.join_code && league.is_creator && ['forming','draft_open'].includes(league.status)"
+                 class="mt-3 p-3 rounded-xl border border-primary/40 bg-primary/10 flex flex-col gap-1">
+              <p class="text-xs font-semibold text-primary uppercase tracking-wide">📣 Share this invite code with your friends</p>
+              <div class="flex items-center gap-3 mt-1">
+                <span class="font-mono font-bold text-2xl tracking-widest text-base-content">{{ league.join_code }}</span>
+                <button class="btn btn-xs btn-primary" @click="copyInviteCode(league.join_code)">
+                  {{ codeCopied ? '✅ Copied!' : '📋 Copy' }}
+                </button>
+              </div>
+              <p class="text-xs text-base-content/50 mt-0.5">They'll need this code to join your private league.</p>
+            </div>
           </div>
           <div class="flex items-center gap-2 flex-wrap">
             <span class="badge" :class="statusBadgeClass(league.status)">
@@ -684,6 +693,14 @@ const startingSeason = ref(false)
 const playerFilter = ref('')
 const positionFilter = ref('')
 const picking = ref(false)
+const codeCopied = ref(false)
+
+function copyInviteCode(code) {
+  navigator.clipboard.writeText(code).then(() => {
+    codeCopied.value = true
+    setTimeout(() => { codeCopied.value = false }, 2500)
+  })
+}
 const pickError = ref('')
 const poolTab = ref('skaters')
 // Auto-switch pool tab based on current pick type
