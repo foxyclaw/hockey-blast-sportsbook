@@ -34,7 +34,7 @@
                   {{ codeCopied ? '✅ Copied!' : '🔗 Copy Link' }}
                 </button>
               </div>
-              <a :href="inviteLink(league)" class="text-xs text-blue-400 break-all mt-0.5">{{ inviteLink(league) }}</a>
+              <span class="text-xs text-base-content/50 break-all mt-0.5">{{ inviteLink(league) }}</span>
             </div>
           </div>
           <div class="flex items-center gap-2 flex-wrap">
