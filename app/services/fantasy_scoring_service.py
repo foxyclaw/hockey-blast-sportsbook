@@ -277,6 +277,84 @@ def score_game(league_id: int, game_id: int) -> None:
     _update_standings(league_id, pred)
 
 
+def auto_assign_seasons() -> dict:
+    """
+    For every active league where hb_season_id IS NULL and season_starts_at <= now,
+    look for a HB season newer than draft_season_id for the same level/org/hb_league_id.
+    If found, assign it and trigger resolve_and_cache_division.
+    If not found, skip silently (will retry next run).
+    Returns {"checked": int, "assigned": int, "errors": int}
+    """
+    from datetime import datetime, timezone as _tz
+    from sqlalchemy import select, func
+    from app.db import PredSession, HBSession
+    from app.models.fantasy_league import FantasyLeague
+
+    summary = {"checked": 0, "assigned": 0, "errors": 0}
+    now = datetime.now(_tz.utc)
+
+    pred = PredSession()
+    try:
+        leagues = pred.execute(
+            select(FantasyLeague).where(
+                FantasyLeague.status == "active",
+                FantasyLeague.hb_season_id.is_(None),
+                FantasyLeague.season_starts_at <= now,
+            )
+        ).scalars().all()
+    except Exception as e:
+        logger.exception("[auto-season] Could not load leagues: %s", e)
+        return summary
+
+    for league in leagues:
+        summary["checked"] += 1
+        try:
+            hb = HBSession()
+            # Find newest season for this level/org that is NEWER than the draft season
+            # If draft_season_id is None, we just want any season (fallback)
+            query_params = {"lvl": league.level_id, "org": league.org_id}
+            if league.hb_league_id:
+                query_params["hb_league_id"] = league.hb_league_id
+                extra_filter = "AND s.league_id = :hb_league_id"
+            else:
+                extra_filter = ""
+
+            if league.draft_season_id:
+                query_params["draft_sid"] = league.draft_season_id
+                draft_filter = "AND d.season_id > :draft_sid"
+            else:
+                draft_filter = ""
+
+            row = hb.execute(
+                text(
+                    f"SELECT MAX(d.season_id) as new_sid FROM divisions d "
+                    f"JOIN seasons s ON s.id = d.season_id "
+                    f"WHERE d.level_id = :lvl AND d.org_id = :org "
+                    f"{extra_filter} {draft_filter}"
+                ),
+                query_params,
+            ).fetchone()
+
+            new_season_id = row.new_sid if row else None
+            if not new_season_id:
+                continue  # No new season yet — retry next run
+
+            league.hb_season_id = new_season_id
+            league.hb_division_id = None  # Will be resolved below
+            pred.commit()
+            resolve_and_cache_division(league.id)
+            summary["assigned"] += 1
+            logger.info(
+                "[auto-season] League %d assigned new season_id=%d (was draft_season_id=%s)",
+                league.id, new_season_id, league.draft_season_id,
+            )
+        except Exception as e:
+            summary["errors"] += 1
+            logger.exception("[auto-season] Error processing league %d: %s", league.id, e)
+
+    return summary
+
+
 def resolve_and_cache_division(league_id: int) -> int | None:
     """
     Look up division_id for a league from HB (level_id + hb_season_id),

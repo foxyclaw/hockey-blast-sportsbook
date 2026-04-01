@@ -471,8 +471,9 @@
                       <span v-else class="badge badge-xs badge-warning">auto</span>
                     </td>
                     <td class="text-xs opacity-70">{{ l.creator_name || '—' }}</td>
-                    <td>
+                    <td class="flex gap-1">
                       <button class="btn btn-xs btn-ghost" @click="openLeagueEdit(l)">✏️</button>
+                      <button v-if="l.status === 'active'" class="btn btn-xs btn-warning" @click="clearScoringSeasonForLeague(l)">🔄 Clear Season</button>
                     </td>
                   </tr>
                   <!-- Inline edit row -->
@@ -924,6 +925,16 @@ async function loadAdminLeagues() {
     adminLeagues.value = data.leagues
   } catch { /* ignore */ } finally {
     adminLeaguesLoading.value = false
+  }
+}
+
+async function clearScoringSeasonForLeague(league) {
+  try {
+    await api.post(`/api/admin/fantasy/leagues/${league.id}/clear-scoring-season`)
+    alert('✅ Season cleared — auto-assign will pick up within 5 min')
+    await loadAdminLeagues()
+  } catch (e) {
+    alert(`❌ ${e.response?.data?.message || e.message}`)
   }
 }
 
