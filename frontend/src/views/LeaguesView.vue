@@ -238,9 +238,14 @@ async function createLeague() {
   }
 }
 
+function requireLogin() {
+  localStorage.setItem('auth_return_to', window.location.pathname + window.location.search)
+  loginWithRedirect()
+}
+
 async function joinLeague() {
   if (!isAuthenticated.value) {
-    await loginWithRedirect({ appState: { returnTo: window.location.pathname + window.location.search } })
+    requireLogin()
     return
   }
   joining.value = true
@@ -256,7 +261,7 @@ async function joinLeague() {
     joinForm.value = { join_code: '' }
   } catch (e) {
     if (e.response?.status === 401) {
-      await loginWithRedirect({ appState: { returnTo: window.location.pathname + window.location.search } })
+      requireLogin()
       return
     }
     joinError.value = e.response?.data?.message ?? e.message

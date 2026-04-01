@@ -1020,6 +1020,13 @@ watch(currentPick, (pick) => {
 }, { immediate: true })
 
 onMounted(async () => {
+  // If user is not logged in and arrived via an invite link, send them to login first
+  // then return them to this exact URL (with join_code) after auth
+  if (!isAuthenticated.value && route.query.join_code) {
+    requireLogin()
+    return
+  }
+
   await loadLeague()
   // Honor ?tab=draft (or other tab) from notification link
   const tabParam = route.query.tab
