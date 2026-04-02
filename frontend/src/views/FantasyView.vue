@@ -1,14 +1,5 @@
 <template>
   <div class="max-w-4xl mx-auto px-4 py-6">
-    <!-- Draft announcement banner -->
-    <div class="rounded-xl bg-primary/10 border-2 border-primary/40 px-5 py-4 mb-6 flex items-center gap-4">
-      <span class="text-3xl">📣</span>
-      <div>
-        <div class="font-extrabold text-base-content text-lg leading-tight">Fantasy Draft kicks off Saturday March 28 at 4:00 PM — runs all weekend!</div>
-        <div class="text-sm text-base-content/60 mt-0.5">Join or create your league now so you're ready. Season starts April 1.</div>
-      </div>
-    </div>
-
     <!-- Header -->
     <div class="mb-6 flex items-start justify-between flex-wrap gap-4">
       <div>
