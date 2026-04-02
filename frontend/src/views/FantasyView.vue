@@ -342,7 +342,7 @@ function statusBadgeClass(s) {
     forming: 'badge-info',
     draft_open: 'badge-warning',
     drafting: 'badge-warning',
-    active: 'badge-success',
+    active: 'badge-neutral',
     completed: 'badge-neutral',
   }[s] || 'badge-ghost'
 }
