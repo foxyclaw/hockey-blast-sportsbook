@@ -461,6 +461,19 @@ def list_leagues():
             d["is_member"] = False
             d["is_your_turn"] = False
 
+        # Check for live games in this league's division (active leagues only)
+        has_live = False
+        if league.status == "active" and league.hb_division_id:
+            try:
+                live_row = hb.execute(
+                    sa_text("SELECT 1 FROM games WHERE division_id = :div_id AND status = 'OPEN' LIMIT 1"),
+                    {"div_id": league.hb_division_id},
+                ).fetchone()
+                has_live = live_row is not None
+            except Exception:
+                pass
+        d["has_live_game"] = has_live
+
         result.append(d)
 
     return jsonify({"leagues": result})
