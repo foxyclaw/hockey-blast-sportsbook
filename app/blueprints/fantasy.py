@@ -941,7 +941,7 @@ def get_league_games(league_id: int):
         text(
             "SELECT id, game_number, date, time, status, location, game_type, "
             "home_team_id, visitor_team_id, home_final_score, visitor_final_score "
-            "FROM games WHERE division_id = :div_id ORDER BY date DESC, time DESC"
+            "FROM games WHERE division_id = :div_id ORDER BY date ASC, time ASC"
         ),
         {"div_id": league.hb_division_id},
     ).fetchall()
