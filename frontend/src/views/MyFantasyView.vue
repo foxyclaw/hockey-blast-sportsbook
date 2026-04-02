@@ -68,9 +68,14 @@
                       <span v-if="league.season_label">📅 {{ league.season_label }}</span>
                     </p>
                   </div>
-                  <span class="badge badge-sm shrink-0" :class="statusBadgeClass(league.status)">
-                    {{ statusLabel(league.status) }}
-                  </span>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <span class="badge badge-sm" :class="statusBadgeClass(league.status)">
+                      {{ statusLabel(league.status) }}
+                    </span>
+                    <span v-if="league.has_live_game" class="inline-flex items-center gap-1 badge badge-xs badge-success animate-pulse">
+                      <span class="w-1.5 h-1.5 rounded-full bg-white inline-block"></span>LIVE
+                    </span>
+                  </div>
                 </div>
                 <div class="flex items-center gap-3 mt-3 text-xs text-base-content/60">
                   <span>👥 {{ league.manager_count }} / {{ league.max_managers }} managers</span>
