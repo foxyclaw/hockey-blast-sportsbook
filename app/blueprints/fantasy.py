@@ -466,7 +466,7 @@ def list_leagues():
         if league.status == "active" and league.hb_division_id:
             try:
                 live_row = hb.execute(
-                    sa_text("SELECT 1 FROM games WHERE division_id = :div_id AND status = 'OPEN' LIMIT 1"),
+                    text("SELECT 1 FROM games WHERE division_id = :div_id AND status = 'OPEN' LIMIT 1"),
                     {"div_id": league.hb_division_id},
                 ).fetchone()
                 has_live = live_row is not None
