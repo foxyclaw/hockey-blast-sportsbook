@@ -1167,7 +1167,7 @@ onMounted(async () => {
     showJoinModal.value = true
   }
   if (league.value && !['forming'].includes(league.value.status)) {
-    await Promise.all([loadDraftQueue(), loadPool()])
+    await Promise.all([loadDraftQueue(), loadPool(), loadMyQueue()])
   }
 })
 </script>
