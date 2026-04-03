@@ -174,7 +174,11 @@ def build_draft_queue(league_id: int) -> None:
 
 
 def _set_next_deadline(league_id: int, pred, pick_hours: int, prev_was_auto: bool = False) -> None:
-    """Set deadline on the first unpicked, non-skipped slot."""
+    """Set deadline on the first unpicked, non-skipped slot.
+
+    If the next manager has a non-empty priority queue with an available player,
+    auto-pick immediately on their behalf instead of waiting for them.
+    """
     stmt = (
         select(FantasyDraftQueue)
         .where(
@@ -187,10 +191,36 @@ def _set_next_deadline(league_id: int, pred, pick_hours: int, prev_was_auto: boo
     )
     slot = pred.execute(stmt).scalar_one_or_none()
     if slot:
+        league = pred.get(FantasyLeague, league_id)
+
+        # Check if this manager has a queued player ready — if so, auto-pick immediately
+        best = _best_available_from_queue_only(league_id, slot.user_id, pred, league, current_slot=slot)
+        if best is not None:
+            logger.info(
+                "[draft] league=%d pick=%d user=%d — queue hit, auto-picking hb_human_id=%d",
+                league_id, slot.overall_pick, slot.user_id, best["hb_human_id"],
+            )
+            now = datetime.now(timezone.utc)
+            slot.deadline = now  # set deadline to now before picking
+            pred.commit()
+            _record_pick(league_id, slot, best["hb_human_id"],
+                is_goalie=slot.is_goalie_pick and best.get("is_goalie", False),
+                pred=pred, now=now,
+                is_ref=slot.is_ref_pick and best.get("is_ref", False))
+            # Notify them that we auto-picked from their queue
+            _notify_manager(slot.user_id, league_id, slot.overall_pick, now, pred, auto_picked_from_queue=True)
+            # Transition league to drafting if needed
+            if league and league.status == "draft_open":
+                league.status = "drafting"
+                league.draft_started_at = now
+                pred.commit()
+            # Recurse to set deadline on the NEXT pick (may also auto-pick)
+            _set_next_deadline(league_id, pred, pick_hours, prev_was_auto=prev_was_auto)
+            return
+
         slot.deadline = _deadline_respecting_quiet_hours(pick_hours)
         pred.commit()
-        # If previous pick was auto (timeout), notify the skipped manager immediately
-        # then notify the next manager normally
+        # Notify the manager it's their turn
         _notify_manager(slot.user_id, slot.league_id, slot.overall_pick, slot.deadline, pred)
     else:
         # No more unpicked slots — draft is complete, mark league active
@@ -381,6 +411,46 @@ def _record_pick(league_id, slot, hb_human_id, is_goalie, pred, now, is_ref=Fals
     pred.commit()
 
 
+def _best_available_from_queue_only(league_id: int, user_id: int, pred, league, current_slot=None) -> dict | None:
+    """Return the first available player from the manager's priority queue only.
+    Returns None if queue is empty or no queued player is available for this pick type.
+    Does NOT fall back to best-by-points — that's for timeout auto-picks only.
+    """
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
+    queue_stmt = (
+        select(FantasyManagerQueue)
+        .where(
+            FantasyManagerQueue.league_id == league_id,
+            FantasyManagerQueue.user_id == user_id,
+        )
+        .order_by(FantasyManagerQueue.position.asc())
+    )
+    queue_items = pred.execute(queue_stmt).scalars().all()
+    if not queue_items:
+        return None  # no queue — wait for manual pick
+
+    pool = _get_pool(league_id)
+    drafted_stmt = select(FantasyRoster.hb_human_id).where(FantasyRoster.league_id == league_id)
+    drafted_ids = set(pred.execute(drafted_stmt).scalars().all())
+
+    is_goalie_pick = current_slot.is_goalie_pick if current_slot else False
+    is_ref_pick = current_slot.is_ref_pick if current_slot else False
+
+    if is_goalie_pick:
+        eligible = {p["hb_human_id"]: p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids}
+    elif is_ref_pick:
+        eligible = {p["hb_human_id"]: p for p in pool.get("refs", []) if p["hb_human_id"] not in drafted_ids}
+    else:
+        all_skaters = [p for p in pool["skaters"] if p["hb_human_id"] not in drafted_ids]
+        eligible = {p["hb_human_id"]: p for p in all_skaters}
+
+    for item in queue_items:
+        if item.hb_human_id in eligible:
+            return eligible[item.hb_human_id]
+
+    return None  # queue exists but all queued players are already drafted or wrong type
+
+
 def _best_available(league_id: int, user_id: int, pred, league, current_slot=None) -> dict | None:
     """Return the best available (undrafted) player.
 
@@ -486,11 +556,12 @@ def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None
 
 
 def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: datetime, pred,
-                    auto_picked: bool = False) -> None:
+                    auto_picked: bool = False, auto_picked_from_queue: bool = False) -> None:
     """
     Notify a manager it's their turn to pick.
     - Normal turn: SMS fires after 2 min if they haven't opened the app
-    - Auto-picked on their behalf: SMS fires immediately (they're clearly not watching)
+    - Auto-picked on timeout: SMS fires immediately (they missed their turn)
+    - Auto-picked from queue: SMS fires immediately (picked from their priority queue)
     """
     try:
         _clear_stale_draft_notifications(user_id, league_id, pred)
@@ -506,7 +577,11 @@ def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: da
         except Exception:
             pass
 
-        if auto_picked:
+        if auto_picked_from_queue:
+            title = f"🏒 Picked from your queue!{league_name}"
+            body = f"Pick #{pick_number} was made automatically from your priority queue. Check your roster."
+            delay = 0  # immediate
+        elif auto_picked:
             title = f"🏒 Auto-picked for you!{league_name}"
             body = f"Pick #{pick_number} was made automatically (you missed your turn). Check your roster."
             delay = 0  # immediate — they need to know

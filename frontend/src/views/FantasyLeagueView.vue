@@ -163,9 +163,17 @@
             <div class="card bg-base-200 shadow">
               <div class="card-body p-4">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-                  <h3 class="font-semibold">
+                  <h3 class="font-semibold flex items-center flex-wrap gap-2">
                     Draft Pool
-                    <span v-if="currentPick && currentPick.user_id === myUserId && league.is_member" class="badge badge-success badge-sm ml-2 animate-pulse">Your Pick!</span>
+                    <span v-if="currentPick && currentPick.user_id === myUserId && league.is_member" class="badge badge-success badge-sm animate-pulse">Your Pick!</span>
+                    <template v-if="league.is_member">
+                      <span class="text-xs font-normal text-base-content/50 flex items-center gap-1">
+                        <span title="Skaters still needed">🏒 {{ Math.max(0, league.roster_skaters - myDraftedSkaters) }}</span>
+                        <span title="Goalies still needed">🥅 {{ Math.max(0, league.roster_goalies - myDraftedGoalies) }}</span>
+                        <span v-if="league.roster_refs > 0" title="Refs still needed">🎮 {{ Math.max(0, league.roster_refs - myDraftedRefs) }}</span>
+                        <span class="text-base-content/30">needed</span>
+                      </span>
+                    </template>
                   </h3>
                   <input
                     v-model="playerFilter"
