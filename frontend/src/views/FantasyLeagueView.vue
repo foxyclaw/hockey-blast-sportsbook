@@ -1112,7 +1112,10 @@ async function pickPlayer(player) {
 // Load standings when tab changes
 // Reload league when auth state resolves — token wasn't available on first load
 watch(authLoading, (loading) => {
-  if (!loading) loadLeague()
+  if (!loading) {
+    loadLeague()
+    loadMyQueue()
+  }
 })
 
 // Auto-refresh draft state every 30s when draft is active
