@@ -75,6 +75,17 @@ axios.interceptors.response.use(
 )
 const appReady = ref(false)  // blocks rendering until we know user state
 
+// Safety net: if Auth0 takes too long (network issues, domain blocked),
+// show the site anyway after 5s — user just won't be logged in
+onMounted(() => {
+  setTimeout(() => {
+    if (!appReady.value) {
+      console.warn('[App] Auth0 load timeout — showing site without auth')
+      appReady.value = true
+    }
+  }, 5000)
+})
+
 watch(
   () => [isAuthenticated.value, isLoading.value],
   async ([authed, loading]) => {
