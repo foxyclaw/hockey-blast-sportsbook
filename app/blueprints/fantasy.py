@@ -771,6 +771,66 @@ def get_draft_queue(league_id: int):
     })
 
 
+@fantasy_bp.route("/leagues/<int:league_id>/draft/my-queue", methods=["GET"])
+@require_auth
+def get_my_draft_queue(league_id: int):
+    """GET /api/fantasy/leagues/<id>/draft/my-queue — current user's priority wishlist."""
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
+    user_id = g.pred_user.id
+    pred = PredSession()
+    stmt = (
+        select(FantasyManagerQueue)
+        .where(
+            FantasyManagerQueue.league_id == league_id,
+            FantasyManagerQueue.user_id == user_id,
+        )
+        .order_by(FantasyManagerQueue.position.asc())
+    )
+    items = pred.execute(stmt).scalars().all()
+    return jsonify({"queue": [i.to_dict() for i in items]})
+
+
+@fantasy_bp.route("/leagues/<int:league_id>/draft/my-queue", methods=["PUT"])
+@require_auth
+def save_my_draft_queue(league_id: int):
+    """PUT /api/fantasy/leagues/<id>/draft/my-queue — replace user's priority wishlist.
+
+    Body: {"queue": [hb_human_id, hb_human_id, ...]}  (ordered, position 1 = first)
+    """
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
+    user_id = g.pred_user.id
+    pred = PredSession()
+
+    data = request.get_json(silent=True) or {}
+    human_ids = data.get("queue", [])
+    if not isinstance(human_ids, list):
+        return error_response("INVALID", "queue must be a list", 400)
+    # Deduplicate preserving order
+    seen = set()
+    deduped = []
+    for hid in human_ids:
+        if isinstance(hid, int) and hid not in seen:
+            seen.add(hid)
+            deduped.append(hid)
+
+    # Replace entire queue atomically
+    pred.query(FantasyManagerQueue).filter(
+        FantasyManagerQueue.league_id == league_id,
+        FantasyManagerQueue.user_id == user_id,
+    ).delete()
+
+    for pos, hid in enumerate(deduped, 1):
+        pred.add(FantasyManagerQueue(
+            league_id=league_id,
+            user_id=user_id,
+            hb_human_id=hid,
+            position=pos,
+        ))
+
+    pred.commit()
+    return jsonify({"ok": True, "count": len(deduped)})
+
+
 @fantasy_bp.route("/leagues/<int:league_id>/roster/<int:user_id>", methods=["GET"])
 @optional_auth
 def get_roster(league_id: int, user_id: int):

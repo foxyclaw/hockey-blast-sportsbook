@@ -243,8 +243,8 @@ def advance_draft(league_id: int) -> None:
     if current.deadline is None or current.deadline > now:
         return  # Not yet expired
 
-    # Timeout — auto-pick best available
-    best = _best_available(league_id, current.user_id, pred, league)
+    # Timeout — auto-pick best available (respects manager's priority queue)
+    best = _best_available(league_id, current.user_id, pred, league, current_slot=current)
     if best is not None:
         _record_pick(league_id, current, best["hb_human_id"],
             is_goalie=current.is_goalie_pick and best.get("is_goalie", False),
@@ -381,41 +381,84 @@ def _record_pick(league_id, slot, hb_human_id, is_goalie, pred, now, is_ref=Fals
     pred.commit()
 
 
-def _best_available(league_id: int, user_id: int, pred, league) -> dict | None:
-    """Return the best available (undrafted) player by ppg."""
+def _best_available(league_id: int, user_id: int, pred, league, current_slot=None) -> dict | None:
+    """Return the best available (undrafted) player.
+
+    Priority order:
+    1. First available player from the manager's priority queue (respecting goalie enforcement)
+    2. Fallback: best by fantasy_points from eligible pool
+    """
     pool = _get_pool(league_id)
     drafted_stmt = select(FantasyRoster.hb_human_id).where(
         FantasyRoster.league_id == league_id
     )
     drafted_ids = set(pred.execute(drafted_stmt).scalars().all())
 
-    # Check what the manager still needs (skaters vs goalies)
+    # Check what the manager still needs
     manager_roster_stmt = select(FantasyRoster).where(
         FantasyRoster.league_id == league_id,
         FantasyRoster.user_id == user_id,
     )
     manager_roster = pred.execute(manager_roster_stmt).scalars().all()
     goalie_count = sum(1 for r in manager_roster if r.is_goalie)
-    skater_count = sum(1 for r in manager_roster if not r.is_goalie)
-
-    needs_goalie = goalie_count < league.roster_goalies
-    needs_skater = skater_count < league.roster_skaters
+    skater_count = sum(1 for r in manager_roster if not r.is_goalie and not r.is_ref)
     ref_count = sum(1 for r in manager_roster if r.is_ref)
-    needs_ref = ref_count < league.roster_refs
 
-    candidates = []
-    if needs_goalie:
-        candidates += [p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids]
-    if needs_ref:
-        candidates += [p for p in pool.get("refs", []) if p["hb_human_id"] not in drafted_ids]
-    if needs_skater:
-        candidates += [p for p in pool["skaters"] if p["hb_human_id"] not in drafted_ids]
+    picks_remaining = _picks_remaining_for_manager(league_id, user_id, pred)
+    goalies_still_needed = max(0, league.roster_goalies - goalie_count)
+    refs_still_needed = max(0, league.roster_refs - ref_count)
 
-    if not candidates:
+    is_goalie_pick = current_slot.is_goalie_pick if current_slot else False
+    is_ref_pick = current_slot.is_ref_pick if current_slot else False
+
+    # Build the full available pool for this pick type
+    all_pool = pool["goalies"] + pool.get("refs", []) + pool["skaters"]
+    if is_goalie_pick:
+        eligible = [p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids]
+    elif is_ref_pick:
+        eligible = [p for p in pool.get("refs", []) if p["hb_human_id"] not in drafted_ids]
+    else:
+        eligible = [p for p in all_pool if p["hb_human_id"] not in drafted_ids
+                    and not p.get("is_ref")]
+        # If this manager must pick a goalie now (last picks remaining = goalies needed),
+        # force goalie regardless of queue
+        force_goalie = (picks_remaining > 0 and picks_remaining <= goalies_still_needed)
+        if force_goalie:
+            eligible = [p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids]
+
+    if not eligible:
         return None
 
-    # Use fantasy_points (total, same sort as UI pool list)
-    return max(candidates, key=lambda p: p.get("fantasy_points", 0))
+    # Try manager's priority queue first
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
+    queue_stmt = (
+        select(FantasyManagerQueue)
+        .where(
+            FantasyManagerQueue.league_id == league_id,
+            FantasyManagerQueue.user_id == user_id,
+        )
+        .order_by(FantasyManagerQueue.position.asc())
+    )
+    queue_items = pred.execute(queue_stmt).scalars().all()
+    eligible_ids = {p["hb_human_id"] for p in eligible}
+
+    for item in queue_items:
+        if item.hb_human_id in eligible_ids:
+            return next(p for p in eligible if p["hb_human_id"] == item.hb_human_id)
+
+    # Fallback: best by fantasy_points
+    return max(eligible, key=lambda p: p.get("fantasy_points", 0))
+
+
+def _picks_remaining_for_manager(league_id: int, user_id: int, pred) -> int:
+    """Count unpicked, non-skipped slots remaining for this manager."""
+    stmt = select(FantasyDraftQueue).where(
+        FantasyDraftQueue.league_id == league_id,
+        FantasyDraftQueue.user_id == user_id,
+        FantasyDraftQueue.hb_human_id.is_(None),
+        FantasyDraftQueue.is_skipped == False,  # noqa: E712
+    )
+    return len(pred.execute(stmt).scalars().all())
 
 
 def _get_pool(league_id: int) -> dict:

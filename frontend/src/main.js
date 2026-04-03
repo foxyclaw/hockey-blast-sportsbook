@@ -19,7 +19,7 @@ app.use(
     },
     cacheLocation: 'localstorage',
     useRefreshTokens: true,
-    cookieDomain: '.hockey-blast.com',
+    cookieDomain: window.location.hostname === '192.168.86.77' ? undefined : '.hockey-blast.com',
   })
 )
 

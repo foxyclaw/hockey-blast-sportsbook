@@ -134,6 +134,30 @@
             <span>✅ Draft complete! Season is {{ league.status === 'active' ? 'active' : 'completed' }}.</span>
           </div>
 
+          <!-- My Priority Queue strip -->
+          <div v-if="['draft_open', 'drafting'].includes(league.status) && league.is_member && isAuthenticated && myPriorityQueue.length > 0" class="mb-4">
+            <div class="card bg-warning/10 border border-warning/30 shadow">
+              <div class="card-body p-3">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-bold text-warning uppercase tracking-wide">⭐ My Queue</span>
+                  <div class="flex flex-wrap gap-1">
+                    <template v-for="(hid, idx) in myPriorityQueue" :key="hid">
+                      <span class="badge badge-sm gap-1"
+                        :class="idx === 0 ? 'badge-warning' : 'badge-ghost'"
+                      >
+                        <span class="font-bold">{{ idx + 1 }}.</span>
+                        {{ [...pool.skaters, ...pool.goalies, ...(pool.refs||[])].find(p => p.hb_human_id === hid)?.first_name }}
+                        {{ [...pool.skaters, ...pool.goalies, ...(pool.refs||[])].find(p => p.hb_human_id === hid)?.last_name }}
+                        <button class="ml-0.5 opacity-50 hover:opacity-100" @click="toggleQueuePlayer(hid)" title="Remove">✕</button>
+                      </span>
+                    </template>
+                  </div>
+                  <span class="text-xs text-base-content/40 ml-auto">Click ☆ on players to queue · click again to move up · one more to remove</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Player pool panel (shown during draft, full pool with drafted indicators) -->
           <div v-if="['draft_open', 'drafting'].includes(league.status)" class="mb-6">
             <div class="card bg-base-200 shadow">
@@ -192,16 +216,26 @@
                         <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
+                            <div class="flex items-center gap-1">
+                              <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                              <button
+                                class="btn btn-xs"
+                                :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
+                                :title="queuePositionOf(p.hb_human_id) ? `Queue #${queuePositionOf(p.hb_human_id)} — click to move up` : 'Add to queue'"
+                                @click="toggleQueuePlayer(p.hb_human_id)"
+                              >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
+                            </div>
+                          </template>
+                          <template v-else-if="league.is_member && isAuthenticated">
                             <button
-                              class="btn btn-xs btn-primary"
-                              :disabled="picking"
-                              @click="pickPlayer(p)"
-                            >
-                              Draft
-                            </button>
+                              class="btn btn-xs"
+                              :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
+                              :title="queuePositionOf(p.hb_human_id) ? `Queue #${queuePositionOf(p.hb_human_id)} — click to move up` : 'Add to queue'"
+                              @click="toggleQueuePlayer(p.hb_human_id)"
+                            >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
                           </template>
                           <template v-else>
-                            <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
+                            <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>—</button>
                           </template>
                         </td>
                         <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
@@ -243,10 +277,26 @@
                         <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
-                            <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                            <div class="flex items-center gap-1">
+                              <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                              <button
+                                class="btn btn-xs"
+                                :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
+                                :title="queuePositionOf(p.hb_human_id) ? `Queue #${queuePositionOf(p.hb_human_id)} — click to move up` : 'Add to queue'"
+                                @click="toggleQueuePlayer(p.hb_human_id)"
+                              >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
+                            </div>
+                          </template>
+                          <template v-else-if="league.is_member && isAuthenticated">
+                            <button
+                              class="btn btn-xs"
+                              :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
+                              :title="queuePositionOf(p.hb_human_id) ? `Queue #${queuePositionOf(p.hb_human_id)} — click to move up` : 'Add to queue'"
+                              @click="toggleQueuePlayer(p.hb_human_id)"
+                            >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
                           </template>
                           <template v-else>
-                            <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>Draft</button>
+                            <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>—</button>
                           </template>
                         </td>
                         <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
@@ -286,10 +336,26 @@
                         <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member && currentPick.is_ref_pick">
-                            <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                            <div class="flex items-center gap-1">
+                              <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                              <button
+                                class="btn btn-xs"
+                                :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
+                                :title="queuePositionOf(p.hb_human_id) ? `Queue #${queuePositionOf(p.hb_human_id)} — click to move up` : 'Add to queue'"
+                                @click="toggleQueuePlayer(p.hb_human_id)"
+                              >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
+                            </div>
+                          </template>
+                          <template v-else-if="league.is_member && isAuthenticated">
+                            <button
+                              class="btn btn-xs"
+                              :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
+                              :title="queuePositionOf(p.hb_human_id) ? `Queue #${queuePositionOf(p.hb_human_id)} — click to move up` : 'Add to queue'"
+                              @click="toggleQueuePlayer(p.hb_human_id)"
+                            >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
                           </template>
                           <template v-else>
-                            <button class="btn btn-xs btn-disabled" disabled>Draft</button>
+                            <button class="btn btn-xs btn-disabled" disabled>—</button>
                           </template>
                         </td>
                         <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
@@ -701,6 +767,8 @@ const startingSeason = ref(false)
 const playerFilter = ref('')
 const positionFilter = ref('')
 const picking = ref(false)
+const myPriorityQueue = ref([])   // array of hb_human_id in priority order
+let _queueSaveTimer = null
 const codeCopied = ref(false)
 
 function inviteLink(league) {
@@ -737,6 +805,55 @@ function setSortKey(key) {
 }
 
 const myUserId = computed(() => userStore.predUser?.id)
+
+// Priority queue helpers
+const queuePositionOf = (hb_human_id) => {
+  const idx = myPriorityQueue.value.indexOf(hb_human_id)
+  return idx === -1 ? null : idx + 1
+}
+
+function toggleQueuePlayer(hb_human_id) {
+  const idx = myPriorityQueue.value.indexOf(hb_human_id)
+  if (idx === -1) {
+    // Not in queue → add to end (lowest priority)
+    myPriorityQueue.value = [...myPriorityQueue.value, hb_human_id]
+  } else if (idx === 0) {
+    // Already at top → remove
+    myPriorityQueue.value = myPriorityQueue.value.filter(id => id !== hb_human_id)
+  } else {
+    // Move up one position
+    const q = [...myPriorityQueue.value]
+    q.splice(idx, 1)
+    q.splice(idx - 1, 0, hb_human_id)
+    myPriorityQueue.value = q
+  }
+  scheduleSaveQueue()
+}
+
+function scheduleSaveQueue() {
+  if (_queueSaveTimer) clearTimeout(_queueSaveTimer)
+  _queueSaveTimer = setTimeout(saveQueue, 600)
+}
+
+async function loadMyQueue() {
+  if (!isAuthenticated.value) return
+  try {
+    const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/draft/my-queue`)
+    myPriorityQueue.value = (data.queue || []).map(i => i.hb_human_id)
+  } catch {
+    myPriorityQueue.value = []
+  }
+}
+
+async function saveQueue() {
+  try {
+    await api.put(`/api/fantasy/leagues/${route.params.id}/draft/my-queue`, {
+      queue: myPriorityQueue.value
+    })
+  } catch (e) {
+    console.warn('Failed to save queue', e)
+  }
+}
 
 // My drafted players from the draft queue (already picked)
 const myDraftedRoster = computed(() => {
@@ -1009,6 +1126,7 @@ watch(() => league.value?.status, (status) => {
 watch(activeTab, (tab) => {
   if (tab === 'standings') loadStandings()
   if (tab === 'games') loadGames()
+  if (tab === 'draft') loadMyQueue()
 })
 
 // Auto-switch pool tab based on pick type
