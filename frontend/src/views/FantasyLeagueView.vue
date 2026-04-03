@@ -178,7 +178,7 @@
                 <!-- Skater / Goalie sub-tabs -->
                 <div class="tabs tabs-boxed tabs-xs mb-3 w-fit">
                   <button class="tab" :class="{ 'tab-active': poolTab === 'skaters' }" @click="poolTab = 'skaters'"
-                    :disabled="currentPick?.user_id === myUserId && (currentPick?.is_goalie_pick || currentPick?.is_ref_pick)">
+                    :disabled="currentPick?.is_goalie_pick || currentPick?.is_ref_pick">
                     Skaters
                   </button>
                   <button class="tab" :class="{ 'tab-active': poolTab === 'goalies' }" @click="poolTab = 'goalies'"
@@ -217,7 +217,7 @@
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
                           <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
                             <div class="flex items-center gap-1">
-                              <button v-if="!currentPick.is_goalie_pick && !currentPick.is_ref_pick" class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
+                              <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
                               <button
                                 class="btn btn-xs"
                                 :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
