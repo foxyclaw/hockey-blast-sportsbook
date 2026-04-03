@@ -101,19 +101,19 @@
 
       <!-- ── Draft Tab ── -->
       <div v-if="activeTab === 'draft'">
-        <div v-if="league.status === 'forming'" class="text-center py-10 text-base-content/40">
+        <!-- Forming status banner -->
+        <div v-if="league.status === 'forming'" class="text-center py-6 text-base-content/40 mb-4">
           <div class="text-4xl mb-2">⏳</div>
           <p class="font-medium">Draft opens {{ formatDeadline(league.draft_opens_at) }}</p>
           <p class="text-sm mt-1 max-w-xs mx-auto">
-            The draft will start automatically once the league fills up, or at the scheduled time — whichever comes first.
+            {{ league.is_member ? 'Use this time to star players and build your queue below!' : 'The draft starts at the scheduled time once enough managers join.' }}
           </p>
-          <p v-if="league.is_member" class="mt-3 text-success text-sm">✅ You're in! You'll be notified when it's your turn to pick.</p>
-          <p v-else class="mt-3">
+          <p v-if="!league.is_member" class="mt-3">
             <button class="btn btn-primary btn-sm" @click="isAuthenticated ? showJoinModal = true : requireLogin()">Join League</button>
           </p>
         </div>
 
-        <div v-else>
+        <div>
           <!-- Current pick info -->
           <div v-if="currentPick" class="alert mb-4" :class="currentPick.user_id === myUserId ? 'alert-success' : 'alert-info'">
             <div>
