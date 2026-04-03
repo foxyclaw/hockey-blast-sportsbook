@@ -1117,7 +1117,7 @@ watch(authLoading, (loading) => {
 
 watch(isAuthenticated, (authed) => {
   if (authed) loadMyQueue()
-})
+}, { immediate: true })
 
 // Auto-refresh draft state every 30s when draft is active
 let _draftPollInterval = null
