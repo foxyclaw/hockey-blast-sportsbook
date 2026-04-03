@@ -844,11 +844,11 @@ function scheduleSaveQueue() {
 }
 
 async function loadMyQueue() {
-  if (!isAuthenticated.value) return
   try {
     const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/draft/my-queue`)
     myPriorityQueue.value = (data.queue || []).map(i => i.hb_human_id)
   } catch {
+    // 401 if not authenticated — silently leave queue empty
     myPriorityQueue.value = []
   }
 }
@@ -1112,10 +1112,11 @@ async function pickPlayer(player) {
 // Load standings when tab changes
 // Reload league when auth state resolves — token wasn't available on first load
 watch(authLoading, (loading) => {
-  if (!loading) {
-    loadLeague()
-    loadMyQueue()
-  }
+  if (!loading) loadLeague()
+})
+
+watch(isAuthenticated, (authed) => {
+  if (authed) loadMyQueue()
 })
 
 // Auto-refresh draft state every 30s when draft is active
