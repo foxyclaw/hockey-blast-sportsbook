@@ -861,6 +861,7 @@ def delete_fantasy_league(league_id: int):
     from sqlalchemy import select, delete as sa_delete
     from app.models.fantasy_league import FantasyLeague
     from app.models.fantasy_manager import FantasyManager
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
     from app.models.fantasy_roster import FantasyRoster
     from app.models.fantasy_draft_queue import FantasyDraftQueue
     from app.models.fantasy_standings import FantasyStandings
@@ -879,6 +880,7 @@ def delete_fantasy_league(league_id: int):
     pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id == league_id))
     pred.execute(sa_delete(FantasyDraftQueue).where(FantasyDraftQueue.league_id == league_id))
     pred.execute(sa_delete(FantasyRoster).where(FantasyRoster.league_id == league_id))
+    pred.execute(sa_delete(FantasyManagerQueue).where(FantasyManagerQueue.league_id == league_id))
     pred.execute(sa_delete(FantasyManager).where(FantasyManager.league_id == league_id))
     pred.delete(league)
     pred.commit()
@@ -893,6 +895,7 @@ def batch_delete_fantasy_leagues():
     from sqlalchemy import delete as sa_delete
     from app.models.fantasy_league import FantasyLeague
     from app.models.fantasy_manager import FantasyManager
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
     from app.models.fantasy_roster import FantasyRoster
     from app.models.fantasy_draft_queue import FantasyDraftQueue
     from app.models.fantasy_standings import FantasyStandings
@@ -912,6 +915,7 @@ def batch_delete_fantasy_leagues():
     pred.execute(sa_delete(FantasyStandings).where(FantasyStandings.league_id.in_(league_ids)))
     pred.execute(sa_delete(FantasyDraftQueue).where(FantasyDraftQueue.league_id.in_(league_ids)))
     pred.execute(sa_delete(FantasyRoster).where(FantasyRoster.league_id.in_(league_ids)))
+    pred.execute(sa_delete(FantasyManagerQueue).where(FantasyManagerQueue.league_id.in_(league_ids)))
     pred.execute(sa_delete(FantasyManager).where(FantasyManager.league_id.in_(league_ids)))
     pred.execute(sa_delete(FantasyLeague).where(FantasyLeague.id.in_(league_ids)))
     pred.commit()
