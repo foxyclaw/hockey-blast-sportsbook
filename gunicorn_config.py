@@ -7,13 +7,6 @@ timeout = 120
 accesslog = "-"
 errorlog = "-"
 loglevel = "info"
-preload_app = True  # load app in master before forking — required for APScheduler
-
-def post_fork(server, worker):
-    """Shut down the scheduler in worker processes — it only runs in the master."""
-    try:
-        from app.jobs.grade_results import _scheduler
-        if _scheduler is not None and _scheduler.running:
-            _scheduler.shutdown(wait=False)
-    except Exception:
-        pass
+# Scheduler runs in each worker independently (simpler than preload_app + post_fork).
+# APScheduler with IntervalTrigger is idempotent — multiple workers checking is fine.
+workers = 1  # single worker to avoid duplicate scheduler jobs

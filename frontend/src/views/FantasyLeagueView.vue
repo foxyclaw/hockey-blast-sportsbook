@@ -158,11 +158,11 @@
                     {{ league.status === 'forming' ? 'Build Your Queue' : 'Draft Pool' }}
                     <span v-if="currentPick && currentPick.user_id === myUserId && league.is_member" class="badge badge-success badge-sm animate-pulse">Your Pick!</span>
                     <template v-if="league.is_member">
-                      <span class="text-xs font-normal text-base-content/50 flex items-center gap-1">
+                      <span class="text-xs font-semibold text-base-content/80 flex items-center gap-1.5 bg-base-300 px-2 py-0.5 rounded-full">
                         <span title="Skaters still needed">🏒 {{ Math.max(0, league.roster_skaters - myDraftedSkaters) }}</span>
                         <span title="Goalies still needed">🥅 {{ Math.max(0, league.roster_goalies - myDraftedGoalies) }}</span>
                         <span v-if="league.roster_refs > 0" title="Refs still needed">🎮 {{ Math.max(0, league.roster_refs - myDraftedRefs) }}</span>
-                        <span class="text-base-content/30">needed</span>
+                        <span class="text-base-content/60">needed</span>
                       </span>
                     </template>
                   </h3>
