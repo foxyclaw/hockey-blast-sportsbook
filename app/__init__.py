@@ -61,9 +61,17 @@ def create_app(config_name: str | None = None) -> Flask:
     _register_blueprints(app)
 
     # ── Background scheduler ───────────────────────────────────────────────────
-    if not app.config.get("TESTING") and os.environ.get("WERKZEUG_RUN_MAIN") != "false":
-        # Only start scheduler in the main process (not the reloader child)
-        if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    if not app.config.get("TESTING"):
+        # Start scheduler once per process.
+        # - Gunicorn: preload_app=True loads this in master; post_fork shuts it down in workers.
+        # - Flask dev server: werkzeug reloader fires twice; only start in the child (WERKZEUG_RUN_MAIN=true).
+        # - Any other runner (pytest excluded via TESTING): always start.
+        _werkzeug_main = os.environ.get("WERKZEUG_RUN_MAIN")
+        _should_start = (
+            _werkzeug_main is None   # gunicorn or direct python run
+            or _werkzeug_main == "true"  # werkzeug reloader child
+        )
+        if _should_start:
             from app.jobs.grade_results import start_scheduler
             start_scheduler(app)
             from app.services.event_tracker import start_tracker

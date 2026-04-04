@@ -58,16 +58,7 @@
             >
               Join League
             </button>
-            <!-- Open draft -->
-            <button
-              v-if="league.is_creator && league.status === 'forming' && (league.manager_count || 0) >= 2"
-              class="btn btn-warning btn-sm"
-              :disabled="openingDraft"
-              @click="openDraft"
-            >
-              <span v-if="openingDraft" class="loading loading-spinner loading-xs"></span>
-              Open Draft
-            </button>
+            <!-- Open draft button removed: draft opens automatically at scheduled time -->
             
           </div>
         </div>
