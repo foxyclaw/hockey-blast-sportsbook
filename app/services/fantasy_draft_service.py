@@ -220,7 +220,9 @@ def _set_next_deadline(league_id: int, pred, pick_hours: int, prev_was_auto: boo
                 is_goalie=slot.is_goalie_pick and best.get("is_goalie", False),
                 pred=pred, now=now,
                 is_ref=slot.is_ref_pick and best.get("is_ref", False))
-            _notify_manager(slot.user_id, league_id, slot.overall_pick, now, pred, auto_picked_from_queue=True)
+            _player_name = f"{best.get('first_name', '')} {best.get('last_name', '')}".strip() or None
+            _notify_manager(slot.user_id, league_id, slot.overall_pick, now, pred,
+                            auto_picked_from_queue=True, player_name=_player_name)
             if league and league.status == "draft_open":
                 league.status = "drafting"
                 league.draft_started_at = now
@@ -285,9 +287,10 @@ def advance_draft(league_id: int) -> None:
             is_ref=current.is_ref_pick and best.get("is_ref", False))
 
         # Notify the manager that we picked for them (immediate SMS)
+        _timeout_player_name = f"{best.get('first_name', '')} {best.get('last_name', '')}".strip() or None
         _notify_manager(
             current.user_id, league_id, current.overall_pick,
-            current.deadline, pred, auto_picked=True
+            current.deadline, pred, auto_picked=True, player_name=_timeout_player_name
         )
 
         # Award compensatory pick
@@ -559,7 +562,8 @@ def _clear_stale_draft_notifications(user_id: int, league_id: int, pred) -> None
 
 
 def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: datetime, pred,
-                    auto_picked: bool = False, auto_picked_from_queue: bool = False) -> None:
+                    auto_picked: bool = False, auto_picked_from_queue: bool = False,
+                    player_name: str = None) -> None:
     """
     Notify a manager it's their turn to pick.
     - Normal turn: SMS fires after 2 min if they haven't opened the app
@@ -580,13 +584,15 @@ def _notify_manager(user_id: int, league_id: int, pick_number: int, deadline: da
         except Exception:
             pass
 
+        player_str = f" — {player_name}" if player_name else ""
+
         if auto_picked_from_queue:
             title = f"🏒 Picked from your queue!{league_name}"
-            body = f"Pick #{pick_number} was made automatically from your priority queue. Check your roster."
+            body = f"Pick #{pick_number} from your queue{player_str}."
             delay = 0  # immediate
         elif auto_picked:
             title = f"🏒 Auto-picked for you!{league_name}"
-            body = f"Pick #{pick_number} was made automatically (you missed your turn). Check your roster."
+            body = f"Pick #{pick_number} — top available player{player_str}."
             delay = 0  # immediate — they need to know
         else:
             title = f"🏒 Your Pick!{league_name}"
