@@ -822,6 +822,24 @@ function nextWeekday(dayOfWeek, hour, minute) {
 const launchStartDate = ref(nextWeekday(1, 0, 1))    // next Monday 00:01
 const launchDraftOpens = ref(nextWeekday(6, 16, 0))  // next Saturday 16:00
 const launchDraftCloses = ref(nextWeekday(1, 23, 0)) // next Monday 23:00
+
+function addMinutes(dtLocalStr, mins) {
+  if (!dtLocalStr) return ''
+  const d = new Date(dtLocalStr)
+  d.setMinutes(d.getMinutes() + mins)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// Launch form: auto-set closes = opens+30min, season_start = closes+30min
+watch(launchDraftOpens, (val) => {
+  if (val) launchDraftCloses.value = addMinutes(val, 30)
+})
+watch(launchDraftCloses, (val) => {
+  if (val) launchStartDate.value = addMinutes(val, 30)
+})
+
+
 const nowLocal = computed(() => {
   const d = new Date(); const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
@@ -848,6 +866,14 @@ const leagueEditForm = ref({ season_label: '', season_starts_at: '', draft_opens
 const hbSeasons = ref([])
 const leagueEditSaving = ref(false)
 const leagueEditError = ref(null)
+
+// Edit form: auto-cascade opens→closes+30min→season_starts+30min
+watch(() => leagueEditForm.value.draft_opens_at, (val) => {
+  if (val) leagueEditForm.value.draft_closes_at = addMinutes(val, 30)
+})
+watch(() => leagueEditForm.value.draft_closes_at, (val) => {
+  if (val) leagueEditForm.value.season_starts_at = addMinutes(val, 30)
+})
 
 function toLocalDtInput(isoStr) {
   if (!isoStr) return ''
