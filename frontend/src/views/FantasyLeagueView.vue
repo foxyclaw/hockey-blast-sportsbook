@@ -155,14 +155,16 @@
               <div class="card-body p-4">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <h3 class="font-semibold flex items-center flex-wrap gap-2">
-                    {{ league.status === 'forming' ? 'Build Your Queue' : 'Draft Pool' }}
+                    <span v-if="league.status === 'forming'">Queue up now — skip the live draft</span>
+                    <span v-else>Draft Pool</span>
                     <span v-if="currentPick && currentPick.user_id === myUserId && league.is_member" class="badge badge-success badge-sm animate-pulse">Your Pick!</span>
                     <template v-if="league.is_member">
-                      <span class="text-xs font-semibold text-base-content/80 flex items-center gap-1.5 bg-base-300 px-2 py-0.5 rounded-full">
-                        <span title="Skaters still needed">🏒 {{ Math.max(0, league.roster_skaters - myDraftedSkaters) }}</span>
-                        <span title="Goalies still needed">🥅 {{ Math.max(0, league.roster_goalies - myDraftedGoalies) }}</span>
-                        <span v-if="league.roster_refs > 0" title="Refs still needed">🎮 {{ Math.max(0, league.roster_refs - myDraftedRefs) }}</span>
-                        <span class="text-base-content/60">needed</span>
+                      <span class="flex items-center gap-2 text-sm font-bold">
+                        <span class="text-base-content/40 font-normal text-xs">Roster:</span>
+                        <span title="Skaters" class="flex items-center gap-0.5">🏒 <span class="text-base text-primary">{{ Math.max(0, league.roster_skaters - myDraftedSkaters) }}</span></span>
+                        <span title="Goalies" class="flex items-center gap-0.5">🥅 <span class="text-base text-primary">{{ Math.max(0, league.roster_goalies - myDraftedGoalies) }}</span></span>
+                        <span v-if="league.roster_refs > 0" title="Refs" class="flex items-center gap-0.5">🎮 <span class="text-base text-primary">{{ Math.max(0, league.roster_refs - myDraftedRefs) }}</span></span>
+                        <span class="text-base-content/40 font-normal text-xs">needed</span>
                       </span>
                     </template>
                   </h3>
