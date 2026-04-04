@@ -41,8 +41,13 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         )
 
     if season_id is None:
-        # Walk seasons newest-first; skip seasons with zero completed games
-        # (new season just created, no stats yet → use previous season for pool/sizing)
+        # Smart season resolution:
+        # 1. Get the two most recent seasons with any divisions at this level
+        # 2. Count completed (Final) games for each
+        # 3. If the previous season has >= 2x more completed games than the latest,
+        #    use the previous one (latest season just started, sparse stats)
+        # 4. Otherwise use the latest season with any completed games
+        # 5. Fall back to newest season if none have games
         from hockey_blast_common_lib.models import Game
         candidate_seasons = hb.execute(
             select(Division.season_id)
@@ -52,28 +57,42 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         ).scalars().all()
 
         FINAL_STATUSES = ('Final', 'Final.', 'Final/OT', 'Final/OT2', 'Final/SO', 'Final(SO)')
-        for candidate_sid in candidate_seasons:
+
+        def _completed_games(sid):
             div_ids = hb.execute(
                 select(Division.id).where(
                     Division.level_id == level_id,
                     Division.org_id == org_id,
-                    Division.season_id == candidate_sid,
+                    Division.season_id == sid,
                 )
             ).scalars().all()
             if not div_ids:
-                continue
-            completed = hb.execute(
+                return 0
+            return hb.execute(
                 select(func.count(Game.id)).where(
                     Game.division_id.in_(div_ids),
                     Game.status.in_(FINAL_STATUSES),
                 )
             ).scalar() or 0
-            if completed > 0:
-                season_id = candidate_sid
-                break
-        # If every season has 0 games (brand new level), fall back to latest
-        if season_id is None:
-            season_id = candidate_seasons[0] if candidate_seasons else None
+
+        if len(candidate_seasons) >= 2:
+            latest_sid = candidate_seasons[0]
+            prev_sid = candidate_seasons[1]
+            latest_games = _completed_games(latest_sid)
+            prev_games = _completed_games(prev_sid)
+            # If previous season is 2x richer in completed games, use it
+            if prev_games >= 2 * max(latest_games, 1):
+                season_id = prev_sid
+            elif latest_games > 0:
+                season_id = latest_sid
+            elif prev_games > 0:
+                season_id = prev_sid
+            else:
+                season_id = latest_sid  # neither has games, use latest
+        elif candidate_seasons:
+            # Only one season — use it regardless
+            season_id = candidate_seasons[0]
+        # season_id stays None if no candidates at all
 
     # Resolve season name for display
     _resolved_season_name = None
