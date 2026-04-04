@@ -170,6 +170,17 @@
             </select>
           </div>
 
+          <!-- Season used for player pool (shown after level selected) -->
+          <div v-if="createForm.level_id && poolSeasonName" class="form-control">
+            <label class="label py-1">
+              <span class="label-text text-sm text-base-content/50">Player pool from</span>
+            </label>
+            <div class="flex items-center gap-2 px-1">
+              <span class="text-sm font-semibold">📅 {{ poolSeasonName }}</span>
+              <span class="text-xs text-base-content/40">(most recent season with games)</span>
+            </div>
+          </div>
+
           <!-- Max managers (shown after level selected, capped by pool) -->
           <div v-if="createForm.level_id" class="form-control">
             <label class="label py-1">
@@ -318,6 +329,7 @@ const levelsLoading = ref(false)
 
 // Pool info (max managers cap)
 const poolMaxManagers = ref(null)
+const poolSeasonName = ref(null)
 const poolLoading = ref(false)
 
 const managerOptions = computed(() => {
@@ -411,7 +423,7 @@ async function loadLevels(leagueId) {
 }
 
 async function loadPoolInfo(levelId, hbLeagueId) {
-  poolMaxManagers.value = null
+  poolMaxManagers.value = null; poolSeasonName.value = null
   createForm.value.max_managers = null
   if (!levelId) return
   poolLoading.value = true
@@ -420,6 +432,7 @@ async function loadPoolInfo(levelId, hbLeagueId) {
       params: { level_id: levelId, hb_league_id: hbLeagueId, org_id: 1 }
     })
     poolMaxManagers.value = data.max_managers || 12
+    poolSeasonName.value = data.resolved_season_name || null
     // Default to max
     createForm.value.max_managers = poolMaxManagers.value
   } catch {
@@ -434,7 +447,7 @@ async function openCreateModal() {
   createModalKey.value++
   showCreateModal.value = true
   createError.value = ''
-  poolMaxManagers.value = null
+  poolMaxManagers.value = null; poolSeasonName.value = null
   createForm.value = {
     hb_league_id: null,
     level_id: null,
@@ -455,7 +468,7 @@ async function openCreateModal() {
 function onLeagueChange() {
   createForm.value.level_id = null
   createForm.value.max_managers = null
-  poolMaxManagers.value = null
+  poolMaxManagers.value = null; poolSeasonName.value = null
   loadLevels(createForm.value.hb_league_id)
 }
 

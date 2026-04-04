@@ -75,6 +75,14 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         if season_id is None:
             season_id = candidate_seasons[0] if candidate_seasons else None
 
+    # Resolve season name for display
+    _resolved_season_name = None
+    if season_id is not None:
+        from hockey_blast_common_lib.models import Season as _Season
+        _season_obj = hb.execute(select(_Season).where(_Season.id == season_id)).scalar_one_or_none()
+        if _season_obj:
+            _resolved_season_name = getattr(_season_obj, 'season_name', None) or f"Season {season_id}"
+
     div_ids_stmt = select(Division.id).where(
         Division.level_id == level_id,
         Division.org_id == org_id,
@@ -248,4 +256,5 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         "roster_skaters": roster_skaters,
         "max_managers": max_managers,
         "resolved_season_id": season_id,
+        "resolved_season_name": _resolved_season_name,
     }

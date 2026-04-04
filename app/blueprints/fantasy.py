@@ -232,6 +232,8 @@ def get_level_pool():
         return jsonify({
             "max_managers": pool["max_managers"],
             "roster_skaters": pool["roster_skaters"],
+            "resolved_season_id": pool.get("resolved_season_id"),
+            "resolved_season_name": pool.get("resolved_season_name"),
         })
     except Exception as e:
         return jsonify({"max_managers": 12, "roster_skaters": 8})  # fallback
