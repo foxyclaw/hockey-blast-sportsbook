@@ -193,7 +193,7 @@
                 </div>
 
                 <!-- Skaters table -->
-                <div v-if="poolTab === 'skaters'" class="overflow-x-auto max-h-80 overflow-y-auto">
+                <div v-if="poolTab === 'skaters'" class="overflow-x-auto max-h-80 overflow-y-auto pool-scroll-container">
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
@@ -256,7 +256,7 @@
                 </div>
 
                 <!-- Goalies table -->
-                <div v-if="poolTab === 'goalies'" class="overflow-x-auto max-h-80 overflow-y-auto">
+                <div v-if="poolTab === 'goalies'" class="overflow-x-auto max-h-80 overflow-y-auto pool-scroll-container">
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
@@ -315,7 +315,7 @@
                 </div>
 
                 <!-- Refs table -->
-                <div v-if="poolTab === 'refs'" class="overflow-x-auto max-h-80 overflow-y-auto">
+                <div v-if="poolTab === 'refs'" class="overflow-x-auto max-h-80 overflow-y-auto pool-scroll-container">
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
@@ -611,7 +611,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, h, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth0 } from '@auth0/auth0-vue'
 import { useUserStore } from '@/stores/user'
@@ -998,15 +998,15 @@ function requireLogin() {
   loginWithRedirect()
 }
 
-async function loadLeague() {
-  loading.value = true
+async function loadLeague({ silent = false } = {}) {
+  if (!silent) loading.value = true
   try {
     const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}`)
     league.value = data
   } catch {
-    league.value = null
+    if (!silent) league.value = null
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -1025,6 +1025,20 @@ async function loadPool() {
     pool.value = data
   } catch {
     pool.value = { skaters: [], goalies: [] }
+  }
+}
+
+async function loadPoolSilent() {
+  // Reload pool without disrupting scroll position
+  try {
+    const el = document.querySelector('.pool-scroll-container')
+    const scrollTop = el ? el.scrollTop : 0
+    const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/pool`)
+    pool.value = data
+    await nextTick()
+    if (el) el.scrollTop = scrollTop
+  } catch {
+    // silently ignore on background poll
   }
 }
 
@@ -1130,8 +1144,9 @@ watch(() => league.value?.status, (status) => {
   if (_draftPollInterval) { clearInterval(_draftPollInterval); _draftPollInterval = null }
   if (['forming', 'draft_open', 'drafting'].includes(status)) {
     _draftPollInterval = setInterval(async () => {
-      await loadLeague()
-      await Promise.all([loadDraftQueue(), loadPool(), loadMyQueue()])
+      // Poll silently — don't show spinner or reset scroll position
+      await loadLeague({ silent: true })
+      await Promise.all([loadDraftQueue(), loadPoolSilent(), loadMyQueue()])
     }, 10000)  // 10s — fast enough to catch auto-picks cascading
   }
 }, { immediate: true })
