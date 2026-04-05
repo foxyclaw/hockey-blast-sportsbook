@@ -1147,7 +1147,7 @@ watch(() => league.value?.status, (status) => {
       // Poll silently — don't show spinner or reset scroll position
       await loadLeague({ silent: true })
       await Promise.all([loadDraftQueue(), loadPoolSilent(), loadMyQueue()])
-    }, 10000)  // 10s — fast enough to catch auto-picks cascading
+    }, 30000)  // 30s — background silent poll, no spinner/scroll jump
   }
 }, { immediate: true })
 
