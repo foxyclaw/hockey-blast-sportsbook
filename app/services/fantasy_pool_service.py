@@ -96,11 +96,29 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
 
     # Resolve season name for display
     _resolved_season_name = None
+    _last_game_date = None
     if season_id is not None:
         from hockey_blast_common_lib.models import Season as _Season
         _season_obj = hb.execute(select(_Season).where(_Season.id == season_id)).scalar_one_or_none()
         if _season_obj:
             _resolved_season_name = getattr(_season_obj, 'season_name', None) or f"Season {season_id}"
+        # Find the latest scheduled game date in this season/level
+        _div_ids_for_date = hb.execute(
+            select(Division.id).where(
+                Division.level_id == level_id,
+                Division.org_id == org_id,
+                Division.season_id == season_id,
+            )
+        ).scalars().all()
+        if _div_ids_for_date:
+            from hockey_blast_common_lib.models import Game as _Game
+            _max_date = hb.execute(
+                select(func.max(_Game.date)).where(
+                    _Game.division_id.in_(_div_ids_for_date)
+                )
+            ).scalar()
+            if _max_date:
+                _last_game_date = _max_date.isoformat() if hasattr(_max_date, 'isoformat') else str(_max_date)
 
     div_ids_stmt = select(Division.id).where(
         Division.level_id == level_id,
@@ -276,4 +294,5 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         "max_managers": max_managers,
         "resolved_season_id": season_id,
         "resolved_season_name": _resolved_season_name,
+        "last_game_date": _last_game_date,
     }
