@@ -267,7 +267,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApiClient } from '@/api/client'
 import { useAuth0 } from '@auth0/auth0-vue'
@@ -304,6 +304,26 @@ const showJoinCodeModal = ref(false)
 const showJoinCodeEntry = ref(false)
 const joinCodeEntry = ref('')
 
+// Given a date (string or Date), find the first Friday at 7PM PT after that date
+function firstFridayAfter(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')  // treat as local date
+  // Advance past the date itself
+  d.setDate(d.getDate() + 1)
+  // Walk forward until Friday (day 5)
+  while (d.getDay() !== 5) d.setDate(d.getDate() + 1)
+  d.setHours(19, 0, 0, 0)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T19:00`
+}
+
+function addHours(dtStr, hours) {
+  if (!dtStr) return ''
+  const d = new Date(dtStr)
+  d.setHours(d.getHours() + hours)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function addMins(dtStr, mins) {
   if (!dtStr) return ''
   const d = new Date(dtStr)
@@ -312,13 +332,16 @@ function addMins(dtStr, mins) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-// Auto-cascade: draft opens → closes +30min → season start +30min
-watch(() => createForm.value.draft_opens_at, (val) => {
-  if (val) createForm.value.draft_closes_at = addMins(val, 30)
+// Dates are auto-filled by loadPoolInfo based on last game date.
+// Still cascade if user manually changes draft_opens_at so closes/season_start follow.
+watch(() => createForm.value.draft_opens_at, (val, oldVal) => {
+  // Only cascade if this is a manual change (not an auto-fill from level pick)
+  if (val && val !== oldVal && !_autoFillingDates.value) {
+    createForm.value.draft_closes_at = addHours(val, 48)
+    createForm.value.season_starts_at = addHours(createForm.value.draft_closes_at, 6)
+  }
 })
-watch(() => createForm.value.draft_closes_at, (val) => {
-  if (val) createForm.value.season_starts_at = addMins(val, 30)
-})
+const _autoFillingDates = ref(false)
 const joinCodeError = ref('')
 
 // League + level selectors
@@ -433,8 +456,19 @@ async function loadPoolInfo(levelId, hbLeagueId) {
     })
     poolMaxManagers.value = data.max_managers || 12
     poolSeasonName.value = data.resolved_season_name || null
-    // Default to max
     createForm.value.max_managers = poolMaxManagers.value
+    // Auto-fill draft dates based on last game in the season
+    if (data.last_game_date) {
+      const opens = firstFridayAfter(data.last_game_date)  // first Friday 7PM after last game
+      const closes = addHours(opens, 48)                   // +48h
+      const seasonStart = addHours(closes, 6)              // +6h after close
+      _autoFillingDates.value = true
+      createForm.value.draft_opens_at = opens
+      createForm.value.draft_closes_at = closes
+      createForm.value.season_starts_at = seasonStart
+      await nextTick()
+      _autoFillingDates.value = false
+    }
   } catch {
     poolMaxManagers.value = 12
     createForm.value.max_managers = 12
