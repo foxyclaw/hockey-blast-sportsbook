@@ -29,3 +29,6 @@ requests==2.32.3
 gunicorn==23.0.0
 twilio
 sendgrid
+
+# AWS Bedrock (required by hockey_blast_mcp)
+boto3
