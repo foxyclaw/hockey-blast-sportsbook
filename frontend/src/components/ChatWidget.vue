@@ -204,6 +204,8 @@ function renderMarkdown(text) {
     .replace(/^---+$/gm, '<hr class="border-base-content/20 my-2">')
     // Inline code
     .replace(/`([^`]+)`/g, '<code class="bg-base-300 px-1 rounded text-xs">$1</code>')
+    // Links
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" class="link link-primary">$1</a>')
     // Tables — wrap in overflow div
     .replace(/((\|.+\|\n?)+)/g, (match) => {
       const rows = match.trim().split('\n')
