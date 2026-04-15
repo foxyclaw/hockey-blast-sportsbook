@@ -979,6 +979,44 @@ def chat_questions():
     return jsonify({"questions": result, "count": len(result)})
 
 
+@admin_bp.route("/chat/feedback", methods=["GET"])
+@require_admin
+def chat_feedback():
+    """GET /api/admin/chat/feedback — all chat feedback entries."""
+    from app.models.chat_feedback import ChatFeedback
+    from app.models.chat_message import ChatMessage
+
+    pred_session = PredSession()
+
+    feedbacks = pred_session.execute(
+        select(ChatFeedback)
+        .order_by(ChatFeedback.created_at.desc())
+    ).scalars().all()
+
+    result = []
+    user_cache = {}
+    message_cache = {}
+    for f in feedbacks:
+        if f.user_id not in user_cache:
+            u = pred_session.get(PredUser, f.user_id)
+            user_cache[f.user_id] = u.display_name if u else f"user#{f.user_id}"
+        if f.message_id not in message_cache:
+            m = pred_session.get(ChatMessage, f.message_id)
+            message_cache[f.message_id] = m.query if m else None
+        result.append({
+            "id": f.id,
+            "message_id": f.message_id,
+            "user_id": f.user_id,
+            "user_display_name": user_cache[f.user_id],
+            "rating": f.rating,
+            "comment": f.comment,
+            "query": message_cache[f.message_id],
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+        })
+
+    return jsonify({"feedback": result, "count": len(result)})
+
+
 def _build_orgs_list(org_ids) -> list:
     """Build orgs dropdown list from a list of org_ids, fetching names from HB."""
     orgs_out = [{"id": None, "name": "All Orgs"}]

@@ -38,6 +38,11 @@
       >💬 Chat Questions</button>
       <button
         class="tab"
+        :class="{ 'tab-active': activeTab === 'chat-feedback' }"
+        @click="activeTab = 'chat-feedback'; loadChatFeedback()"
+      >💬 Chat Feedback</button>
+      <button
+        class="tab"
         :class="{ 'tab-active': activeTab === 'launch' }"
         @click="activeTab = 'launch'"
       >
@@ -298,6 +303,34 @@
             <div class="text-xs text-base-content/40 mt-1">
               {{ q.user }} · {{ formatDate(q.created_at) }}
               <span v-if="q.is_off_topic" class="badge badge-xs badge-warning ml-1">off-topic</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Chat Feedback ──────────────────────────────────────────────── -->
+    <div v-if="activeTab === 'chat-feedback'">
+      <div v-if="chatFeedbackLoading" class="flex justify-center py-12">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+      <div v-else-if="chatFeedback.length === 0" class="text-center py-12 text-base-content/50">
+        No feedback yet.
+      </div>
+      <div v-else class="space-y-2">
+        <div class="text-xs text-base-content/40 mb-3">{{ chatFeedback.length }} feedback entries</div>
+        <div
+          v-for="fb in chatFeedback"
+          :key="fb.id"
+          class="flex items-start gap-3 rounded-xl bg-base-200 px-4 py-3"
+        >
+          <div class="text-2xl flex-shrink-0">{{ fb.rating === 'like' ? '👍' : '👎' }}</div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm">{{ fb.query || '—' }}</div>
+            <div v-if="fb.comment" class="text-sm text-base-content/70 mt-1 italic">"{{ fb.comment }}"</div>
+            <div class="text-xs text-base-content/40 mt-1">
+              {{ fb.user_display_name }} · {{ formatDate(fb.created_at) }}
+              <span class="badge badge-xs ml-1" :class="fb.rating === 'like' ? 'badge-success' : 'badge-error'">{{ fb.rating }}</span>
             </div>
           </div>
         </div>
@@ -632,6 +665,21 @@ async function loadChatQuestions() {
     console.error('Failed to load chat questions', e)
   } finally {
     chatLoading.value = false
+  }
+}
+
+const chatFeedback = ref([])
+const chatFeedbackLoading = ref(false)
+async function loadChatFeedback() {
+  if (chatFeedback.value.length) return
+  chatFeedbackLoading.value = true
+  try {
+    const { data } = await api.get('/api/admin/chat/feedback')
+    chatFeedback.value = data.feedback || []
+  } catch (e) {
+    console.error('Failed to load chat feedback', e)
+  } finally {
+    chatFeedbackLoading.value = false
   }
 }
 
