@@ -984,34 +984,43 @@ def chat_questions():
 def chat_feedback():
     """GET /api/admin/chat/feedback — all chat feedback entries from blast_chat_feedback.
     
-    This is feedback from the frontend stats site AI search feature.
-    Separate from the sportsbook app's chat_feedback table.
+    This is feedback from the frontend stats site (AI search, video reports, etc).
+    Table structure: message_id is a string (not FK), user_id is email string.
     """
     pred_session = PredSession()
 
     # Read from blast_chat_feedback table (created by frontend ai_search.py)
+    # Note: no 'query' column - message context is in message_id or comment
     rows = pred_session.execute(
         sa.text("""
-            SELECT id, message_id, user_id, rating, comment, query, source, created_at
+            SELECT id, message_id, user_id, rating, comment, source, created_at
             FROM blast_chat_feedback
             ORDER BY created_at DESC
         """)
     ).all()
 
     result = []
-    user_cache = {}
     for row in rows:
-        if row.user_id not in user_cache:
-            u = pred_session.get(PredUser, row.user_id)
-            user_cache[row.user_id] = u.display_name if u else f"user#{row.user_id}"
+        # user_id is stored as email string in this table
+        # Try to find matching pred_user by email for display name
+        display_name = row.user_id  # default to the email
+        try:
+            u = pred_session.execute(
+                select(PredUser).where(PredUser.email == row.user_id)
+            ).scalar_one_or_none()
+            if u:
+                display_name = u.display_name or u.email
+        except Exception:
+            pass  # keep email as display name
+            
         result.append({
             "id": row.id,
             "message_id": row.message_id,
             "user_id": row.user_id,
-            "user_display_name": user_cache[row.user_id],
+            "user_display_name": display_name,
             "rating": row.rating,
             "comment": row.comment,
-            "query": row.query,
+            "query": None,  # no query column in this table
             "source": row.source,
             "created_at": row.created_at.isoformat() if row.created_at else None,
         })
