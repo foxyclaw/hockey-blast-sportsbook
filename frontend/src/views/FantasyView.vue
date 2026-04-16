@@ -223,7 +223,7 @@
                   <span class="label-text text-xs text-base-content/50">Goalies</span>
                 </label>
                 <select v-model.number="createForm.roster_goalies" class="select select-bordered select-sm">
-                  <option v-for="n in [1,2,3,4,5]" :key="n" :value="n">{{ n }}</option>
+                  <option v-for="n in [0,1,2,3,4,5]" :key="n" :value="n">{{ n }}</option>
                 </select>
               </div>
               <div class="form-control">
@@ -231,7 +231,7 @@
                   <span class="label-text text-xs text-base-content/50">Refs</span>
                 </label>
                 <select v-model.number="createForm.roster_refs" class="select select-bordered select-sm">
-                  <option v-for="n in [1,2,3,4,5]" :key="n" :value="n">{{ n }}</option>
+                  <option v-for="n in [0,1,2,3,4,5]" :key="n" :value="n">{{ n }}</option>
                 </select>
               </div>
             </div>
@@ -441,8 +441,8 @@ const poolPlayerCounts = ref({ skaters: 0, goalies: 0, refs: 0 })
 // Max managers based on roster selections - can't exceed available players
 const managerOptions = computed(() => {
   const skatersPerManager = createForm.value.roster_skaters || 2
-  const goaliesPerManager = createForm.value.roster_goalies || 1
-  const refsPerManager = createForm.value.roster_refs || 1
+  const goaliesPerManager = createForm.value.roster_goalies ?? 1
+  const refsPerManager = createForm.value.roster_refs ?? 1
   
   const availableSkaters = poolPlayerCounts.value.skaters || 0
   const availableGoalies = poolPlayerCounts.value.goalies || 0
@@ -463,8 +463,8 @@ const managerOptions = computed(() => {
 const rosterFeasibility = computed(() => {
   const n = createForm.value.max_managers || 1
   const skatersNeeded = n * (createForm.value.roster_skaters || 2)
-  const goaliesNeeded = n * (createForm.value.roster_goalies || 1)
-  const refsNeeded = n * (createForm.value.roster_refs || 1)
+  const goaliesNeeded = n * (createForm.value.roster_goalies ?? 1)
+  const refsNeeded = n * (createForm.value.roster_refs ?? 1)
   
   const availableSkaters = poolPlayerCounts.value.skaters || 0
   const availableGoalies = poolPlayerCounts.value.goalies || 0
@@ -472,8 +472,8 @@ const rosterFeasibility = computed(() => {
   
   return {
     skaters: { needed: skatersNeeded, available: availableSkaters, ok: availableSkaters >= skatersNeeded },
-    goalies: { needed: goaliesNeeded, available: availableGoalies, ok: availableGoalies >= goaliesNeeded },
-    refs: { needed: refsNeeded, available: availableRefs, ok: availableRefs >= refsNeeded },
+    goalies: { needed: goaliesNeeded, available: availableGoalies, ok: availableGoalies >= goaliesNeeded || (createForm.value.roster_goalies ?? 1) === 0 },
+    refs: { needed: refsNeeded, available: availableRefs, ok: availableRefs >= refsNeeded || (createForm.value.roster_refs ?? 1) === 0 },
   }
 })
 
@@ -585,9 +585,10 @@ async function loadPoolInfo(levelId, hbLeagueId, { recomputeSkaters = true } = {
     // Smart skaters default: limiting resource determines max managers.
     // With goalies=1/refs=1 defaults, max managers = min(goalies_available, refs_available).
     // Then skaters per team = floor(skaters_available / max_managers).
+    // Note: 0 is valid for goalies/refs (no limit from that position).
     if (recomputeSkaters) {
-      const gPer = createForm.value.roster_goalies || 1
-      const rPer = createForm.value.roster_refs || 1
+      const gPer = createForm.value.roster_goalies ?? 1
+      const rPer = createForm.value.roster_refs ?? 1
       const maxByG = gPer > 0 ? Math.floor(poolPlayerCounts.value.goalies / gPer) : 999
       const maxByR = rPer > 0 ? Math.floor(poolPlayerCounts.value.refs / rPer) : 999
       // limiting = max possible managers based on goalies/refs constraint

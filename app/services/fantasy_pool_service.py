@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from app.db import HBSession
 
 
-def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, season_id: int = None) -> dict:
+def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, season_id: int = None, min_games: int = 1) -> dict:
     """
     Returns the eligible player pool for a fantasy league at the given HB level.
 
@@ -29,6 +29,10 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
 
     hb = HBSession()
     non_human_ids = get_non_human_ids(hb)
+    try:
+        min_games = max(1, int(min_games))
+    except (TypeError, ValueError):
+        min_games = 1
 
     # ── Resolve season ────────────────────────────────────────────────────────
     from hockey_blast_common_lib.models import Season as HBSeason
@@ -176,7 +180,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .where(DivisionStatsSkater.division_id.in_(div_ids_stmt))
         .where(DivisionStatsSkater.human_id.not_in(non_human_ids) if non_human_ids else True)
         .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.last_name)
-        .having(func.sum(DivisionStatsSkater.games_played) >= 1)
+        .having(func.sum(DivisionStatsSkater.games_played) >= min_games)
     )
     for row in hb.execute(skater_stmt).all():
         gp = row.games_played or 1
@@ -208,7 +212,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .where(DivisionStatsGoalie.division_id.in_(div_ids_stmt))
         .where(DivisionStatsGoalie.human_id.not_in(non_human_ids) if non_human_ids else True)
         .group_by(DivisionStatsGoalie.human_id, Human.first_name, Human.last_name)
-        .having(func.sum(DivisionStatsGoalie.games_played) >= 1)
+        .having(func.sum(DivisionStatsGoalie.games_played) >= min_games)
     )
     for row in hb.execute(goalie_stmt).all():
         gp = row.games_played or 1
@@ -236,7 +240,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .where(DivisionStatsReferee.division_id.in_(div_ids_stmt))
         .where(DivisionStatsReferee.human_id.not_in(non_human_ids) if non_human_ids else True)
         .group_by(DivisionStatsReferee.human_id, Human.first_name, Human.last_name)
-        .having(func.sum(DivisionStatsReferee.games_reffed) >= 3)
+        .having(func.sum(DivisionStatsReferee.games_reffed) >= min_games)
     )
     for row in hb.execute(ref_stmt).all():
         gr = int(row.games_reffed or 0)

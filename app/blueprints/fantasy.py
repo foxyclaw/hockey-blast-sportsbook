@@ -218,6 +218,7 @@ def get_level_pool():
     level_id = request.args.get("level_id", type=int)
     hb_league_id = request.args.get("hb_league_id", type=int)
     org_id = request.args.get("org_id", 1, type=int)
+    min_games = request.args.get("min_games", 1, type=int)
 
     if not level_id:
         return jsonify({"error": "level_id required"}), 400
@@ -228,7 +229,7 @@ def get_level_pool():
         return jsonify({"error": "Level not found"}), 404
 
     try:
-        pool = get_player_pool(level_id, org_id=org_id, league_id=hb_league_id)
+        pool = get_player_pool(level_id, org_id=org_id, league_id=hb_league_id, min_games=min_games)
         return jsonify({
             "max_managers": pool["max_managers"],
             "roster_skaters": pool["roster_skaters"],
@@ -291,10 +292,16 @@ def create_league():
     # Critical: determines which HB league's stats are used for the player pool.
     hb_league_id = data.get("hb_league_id") or None
 
+    # Minimum games played filter (becomes a league property for drafting)
+    try:
+        min_games_played = max(1, min(5, int(data.get("min_games_played", 1))))
+    except (ValueError, TypeError):
+        min_games_played = 1
+
     # Compute roster sizing using the correct hb_league_id and org_id
     from app.services.fantasy_pool_service import get_player_pool
     try:
-        pool_info = get_player_pool(level_id, org_id=level.org_id, league_id=hb_league_id)
+        pool_info = get_player_pool(level_id, org_id=level.org_id, league_id=hb_league_id, min_games=min_games_played)
     except Exception as e:
         return error_response("INTERNAL_ERROR", f"Could not load player pool: {e}", 500)
 
@@ -307,19 +314,19 @@ def create_league():
     total_skaters = len(pool_info.get("skaters", []))
     total_goalies = len(pool_info.get("goalies", []))
     total_refs = len(pool_info.get("refs", []))
-    
-    # Get roster sizes from user (1-5 each, default 2)
+
+    # Get roster sizes from user (skaters 1-10, goalies/refs 1-5; defaults 2/1/1)
     roster_skaters = data.get("roster_skaters", 2)
-    roster_goalies = data.get("roster_goalies", 2)
-    roster_refs = data.get("roster_refs", 2)
-    
-    # Validate roster sizes
+    roster_goalies = data.get("roster_goalies", 1)
+    roster_refs = data.get("roster_refs", 1)
+
+    # Validate roster sizes (skaters 1-10, goalies/refs 0-5)
     try:
-        roster_skaters = max(1, min(5, int(roster_skaters)))
-        roster_goalies = max(1, min(5, int(roster_goalies)))
-        roster_refs = max(1, min(5, int(roster_refs)))
+        roster_skaters = max(1, min(10, int(roster_skaters)))
+        roster_goalies = max(0, min(5, int(roster_goalies)))
+        roster_refs = max(0, min(5, int(roster_refs)))
     except (ValueError, TypeError):
-        roster_skaters, roster_goalies, roster_refs = 2, 2, 2
+        roster_skaters, roster_goalies, roster_refs = 2, 1, 1
     
     # Default max_managers is min(12, available players per position)
     max_by_skaters = total_skaters // roster_skaters if roster_skaters > 0 else 0
@@ -386,6 +393,7 @@ def create_league():
             roster_skaters=roster_skaters,
             roster_goalies=roster_goalies,
             roster_refs=roster_refs,
+            min_games_played=min_games_played,
             draft_pick_hours=data.get("draft_pick_hours", 24),
             created_by=user.id,
             is_private=is_private,
@@ -686,7 +694,13 @@ def get_pool(league_id: int):
 
     from app.services.fantasy_pool_service import get_player_pool
     try:
-        pool = get_player_pool(league.level_id, org_id=league.org_id, league_id=league.hb_league_id, season_id=league.draft_season_id or league.hb_season_id)
+        pool = get_player_pool(
+            league.level_id,
+            org_id=league.org_id,
+            league_id=league.hb_league_id,
+            season_id=league.draft_season_id or league.hb_season_id,
+            min_games=league.min_games_played or 1,
+        )
     except Exception as e:
         return error_response("INTERNAL_ERROR", str(e), 500)
 
