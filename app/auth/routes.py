@@ -143,3 +143,36 @@ def me():
             ),
         }
     )
+
+
+@auth_bp.route("/sync", methods=["POST"])
+@require_auth
+def sync():
+    """
+    POST /auth/sync — upsert the caller into the shared user pool.
+
+    Called from sibling apps (e.g. the stats frontend) after a successful
+    client-side Auth0 login to make sure every signed-in user lands in
+    pred_users. require_auth performs the upsert; this endpoint exists so
+    the resulting transaction is committed (GET /auth/me does not commit).
+    """
+    from app.db import PredSession
+
+    user = g.pred_user
+    if not user:
+        return jsonify({"error": "NOT_FOUND", "message": "User not found"}), 404
+
+    PredSession().commit()
+
+    return jsonify(
+        {
+            "id": user.id,
+            "display_name": user.display_name,
+            "email": user.email,
+            "auth0_sub": user.auth0_sub,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_login_at": (
+                user.last_login_at.isoformat() if user.last_login_at else None
+            ),
+        }
+    )
