@@ -17,8 +17,8 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
 
     Scoring:
       Skater:  fantasy_points = (goals*3) + (assists*2) + (gp*1) - (penalties*0.5)
-      Goalie:  fantasy_points = gp*1 + save_pct*5*gp
-      Ref:     fantasy_points = games_reffed*1 + penalties_given*1.5 + gm_given*8
+      Goalie:  fantasy_points = gp*3 + save_pct*5*gp
+      Ref:     fantasy_points = games_reffed*4 + penalties_given*2 + gm_given*8
 
     Returns unified player list — each entry has is_skater/is_goalie/is_ref flags
     and role-specific stats. Sublists (skaters/goalies/refs) are derived from it.
@@ -217,7 +217,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
     for row in hb.execute(goalie_stmt).all():
         gp = row.games_played or 1
         save_pct = float(row.save_percentage or 0)
-        fp = float(gp) * 1.0 + (save_pct * 5.0 * gp)
+        fp = float(gp) * 3.0 + (save_pct * 5.0 * gp)
         p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
         p["is_goalie"] = True
         p["goalie_games"] = row.games_played
@@ -246,7 +246,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         gr = int(row.games_reffed or 0)
         pg = int(row.penalties_given or 0)
         gm = int(row.gm_given or 0)
-        fp = gr * 1.0 + pg * 1.5 + gm * 8.0
+        fp = gr * 4.0 + pg * 2.0 + gm * 8.0
         p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
         p["is_ref"] = True
         p["games_reffed"] = gr
