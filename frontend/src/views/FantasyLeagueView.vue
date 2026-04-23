@@ -260,18 +260,18 @@
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
-                        <th></th>
-                        <th>Player</th>
-                        <th class="text-right">GP</th>
-                        <th class="text-right">GAA</th>
-                        <th class="text-right">SV%</th>
-                        <th class="text-right">FP</th>
-                        <th class="text-right">FPPG</th>
+                        <th class="w-16"></th>
+                        <th class="cursor-pointer" @click="setGoalieSortKey('name')">Player <span v-if="goalieSortKey === 'name'">{{ goalieSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setGoalieSortKey('goalie_games')">GP <span v-if="goalieSortKey === 'goalie_games'">{{ goalieSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setGoalieSortKey('goals_against_avg')">GAA <span v-if="goalieSortKey === 'goals_against_avg'">{{ goalieSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setGoalieSortKey('save_percentage')">SV% <span v-if="goalieSortKey === 'save_percentage'">{{ goalieSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setGoalieSortKey('fantasy_points_goalie')">FP <span v-if="goalieSortKey === 'fantasy_points_goalie'">{{ goalieSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setGoalieSortKey('fantasy_ppg')">FPPG <span v-if="goalieSortKey === 'fantasy_ppg'">{{ goalieSortDir === 'asc' ? '▲' : '▼' }}</span></th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr
-                        v-for="p in filteredGoalies"
+                        v-for="p in sortedGoalies"
                         :key="p.hb_human_id"
                         :class="p.drafted_by ? 'opacity-40' : 'hover'"
                       >
@@ -307,7 +307,7 @@
                         <td class="text-right font-bold text-primary">{{ p.fantasy_points_goalie != null ? Number(p.fantasy_points_goalie ?? p.fantasy_points).toFixed(1) : '—' }}</td>
                         <td class="text-right text-base-content/60">{{ p.goalie_games > 0 ? ((p.fantasy_points_goalie ?? p.fantasy_points) / p.goalie_games).toFixed(1) : '—' }}</td>
                       </tr>
-                      <tr v-if="filteredGoalies.length === 0">
+                      <tr v-if="sortedGoalies.length === 0">
                         <td colspan="7" class="text-center text-base-content/40 py-4">No goalies found</td>
                       </tr>
                     </tbody>
@@ -319,18 +319,18 @@
                   <table class="table table-xs w-full">
                     <thead class="sticky top-0 bg-base-200 z-10">
                       <tr>
-                        <th></th>
-                        <th>Referee</th>
-                        <th class="text-right">Games</th>
-                        <th class="text-right">Penalties</th>
-                        <th class="text-right">GMs</th>
-                        <th class="text-right">FP</th>
-                        <th class="text-right">FPPG</th>
+                        <th class="w-16"></th>
+                        <th class="cursor-pointer" @click="setRefSortKey('name')">Referee <span v-if="refSortKey === 'name'">{{ refSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setRefSortKey('games_reffed')">Games <span v-if="refSortKey === 'games_reffed'">{{ refSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setRefSortKey('penalties_given')">Penalties <span v-if="refSortKey === 'penalties_given'">{{ refSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setRefSortKey('gm_given')">GMs <span v-if="refSortKey === 'gm_given'">{{ refSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setRefSortKey('fantasy_points_ref')">FP <span v-if="refSortKey === 'fantasy_points_ref'">{{ refSortDir === 'asc' ? '▲' : '▼' }}</span></th>
+                        <th class="cursor-pointer text-right" @click="setRefSortKey('fantasy_ppg')">FPPG <span v-if="refSortKey === 'fantasy_ppg'">{{ refSortDir === 'asc' ? '▲' : '▼' }}</span></th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr
-                        v-for="p in filteredRefs"
+                        v-for="p in sortedRefs"
                         :key="p.hb_human_id"
                         :class="p.drafted_by ? 'opacity-40' : 'hover'"
                       >
@@ -366,7 +366,7 @@
                         <td class="text-right font-bold text-primary">{{ p.fantasy_points_ref != null ? Number(p.fantasy_points_ref ?? p.fantasy_points).toFixed(1) : '—' }}</td>
                         <td class="text-right text-base-content/60">{{ p.games_reffed > 0 ? ((p.fantasy_points_ref ?? p.fantasy_points) / p.games_reffed).toFixed(1) : '—' }}</td>
                       </tr>
-                      <tr v-if="filteredRefs.length === 0">
+                      <tr v-if="sortedRefs.length === 0">
                         <td colspan="7" class="text-center text-base-content/40 py-4">No referees found</td>
                       </tr>
                     </tbody>
@@ -795,6 +795,10 @@ watch(() => currentPick.value, (pick) => {
 }, { immediate: true })
 const sortKey = ref('fantasy_points')
 const sortDir = ref('desc')
+const goalieSortKey = ref('fantasy_points_goalie')
+const goalieSortDir = ref('desc')
+const refSortKey = ref('fantasy_points_ref')
+const refSortDir = ref('desc')
 
 function setSortKey(key) {
   if (sortKey.value === key) {
@@ -802,6 +806,24 @@ function setSortKey(key) {
   } else {
     sortKey.value = key
     sortDir.value = 'desc'
+  }
+}
+
+function setGoalieSortKey(key) {
+  if (goalieSortKey.value === key) {
+    goalieSortDir.value = goalieSortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    goalieSortKey.value = key
+    goalieSortDir.value = 'desc'
+  }
+}
+
+function setRefSortKey(key) {
+  if (refSortKey.value === key) {
+    refSortDir.value = refSortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    refSortKey.value = key
+    refSortDir.value = 'desc'
   }
 }
 
@@ -895,17 +917,52 @@ const myDraftedRefs = computed(() =>
   }).length
 )
 
-const filteredRefs = computed(() => {
+const sortedRefs = computed(() => {
   const drafted = new Set(draftQueue.value.filter(p => p.picked_at).map(p => p.hb_human_id))
   const managers = {}
-  // Build manager name map from standings
   for (const s of standings.value) managers[s.user_id] = s
-  return (pool.value.refs || []).map(p => {
+
+  const refs = pool.value.refs || []
+  const q = playerFilter.value.toLowerCase()
+  const filtered = q
+    ? refs.filter(p => `${p.first_name} ${p.last_name}`.toLowerCase().includes(q))
+    : refs
+
+  const withDraft = filtered.map(p => {
     if (drafted.has(p.hb_human_id)) {
       const pick = draftQueue.value.find(q => q.hb_human_id === p.hb_human_id && q.picked_at)
       return { ...p, drafted_by: pick ? { team_name: managers[pick.user_id]?.team_name || 'Someone' } : { team_name: '?' } }
     }
     return { ...p, drafted_by: null }
+  })
+
+  const refPoints = (p) => p.fantasy_points_ref ?? p.fantasy_points ?? 0
+  const refFppg = (p) => (p.games_reffed > 0 ? refPoints(p) / p.games_reffed : 0)
+
+  return withDraft.sort((a, b) => {
+    const aDrafted = a.drafted_by ? 1 : 0
+    const bDrafted = b.drafted_by ? 1 : 0
+    if (aDrafted !== bDrafted) return aDrafted - bDrafted
+
+    const key = refSortKey.value
+    const dir = refSortDir.value
+
+    if (key === 'name') {
+      const aVal = `${a.first_name} ${a.last_name}`
+      const bVal = `${b.first_name} ${b.last_name}`
+      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+    }
+
+    let aVal, bVal
+    if (key === 'fantasy_points_ref') {
+      aVal = refPoints(a); bVal = refPoints(b)
+    } else if (key === 'fantasy_ppg') {
+      aVal = refFppg(a); bVal = refFppg(b)
+    } else {
+      aVal = a[key] ?? 0
+      bVal = b[key] ?? 0
+    }
+    return dir === 'asc' ? aVal - bVal : bVal - aVal
   })
 })
 
@@ -965,17 +1022,40 @@ const sortedSkaters = computed(() => {
   })
 })
 
-const filteredGoalies = computed(() => {
+const sortedGoalies = computed(() => {
   const goalies = pool.value.goalies || []
   const q = playerFilter.value.toLowerCase()
   const filtered = q
     ? goalies.filter(p => `${p.first_name} ${p.last_name}`.toLowerCase().includes(q))
     : goalies
+
+  const goaliePoints = (p) => p.fantasy_points_goalie ?? p.fantasy_points ?? 0
+  const goalieFppg = (p) => (p.goalie_games > 0 ? goaliePoints(p) / p.goalie_games : 0)
+
   return [...filtered].sort((a, b) => {
     const aDrafted = a.drafted_by ? 1 : 0
     const bDrafted = b.drafted_by ? 1 : 0
     if (aDrafted !== bDrafted) return aDrafted - bDrafted
-    return (b.fantasy_points_goalie ?? b.fantasy_points ?? 0) - (a.fantasy_points_goalie ?? a.fantasy_points ?? 0)
+
+    const key = goalieSortKey.value
+    const dir = goalieSortDir.value
+
+    if (key === 'name') {
+      const aVal = `${a.first_name} ${a.last_name}`
+      const bVal = `${b.first_name} ${b.last_name}`
+      return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+    }
+
+    let aVal, bVal
+    if (key === 'fantasy_points_goalie') {
+      aVal = goaliePoints(a); bVal = goaliePoints(b)
+    } else if (key === 'fantasy_ppg') {
+      aVal = goalieFppg(a); bVal = goalieFppg(b)
+    } else {
+      aVal = a[key] ?? 0
+      bVal = b[key] ?? 0
+    }
+    return dir === 'asc' ? aVal - bVal : bVal - aVal
   })
 })
 
