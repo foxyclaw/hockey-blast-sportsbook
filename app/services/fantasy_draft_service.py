@@ -131,8 +131,8 @@ def build_draft_queue(league_id: int) -> None:
             total_goalies = len(pool_info.get("goalies", []))
             total_refs = len(pool_info.get("refs", []))
             league.roster_skaters = max(1, min(10, total_skaters // n))
-            league.roster_goalies = max(0, min(5, total_goalies // n))
-            league.roster_refs = max(0, min(5, total_refs // n))
+            league.roster_goalies = max(0, min(1, total_goalies // n))
+            league.roster_refs = max(0, min(1, total_refs // n))
             pred.commit()
         except Exception as e:
             logger.warning("[draft] auto-roster sizing failed for league=%d: %s", league_id, e)
