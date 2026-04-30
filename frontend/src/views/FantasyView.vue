@@ -463,7 +463,7 @@ const managerOptions = computed(() => {
 
   // Auto-adjust mode: cap is floor(total_skaters / 2) so each manager gets at least 2 skaters.
   if (createForm.value.auto_adjust_rosters) {
-    const max = Math.min(12, Math.max(2, Math.floor(availableSkaters / 2)))
+    const max = Math.max(2, Math.floor(availableSkaters / 2))
     const opts = []
     for (let i = 2; i <= max; i++) opts.push(i)
     return opts

@@ -320,7 +320,7 @@ def create_league():
     if auto_adjust_rosters:
         # Roster sizes are recomputed when the draft opens based on actual managers joined.
         # Cap max_managers so each manager is guaranteed at least 2 skaters.
-        max_managers = min(12, total_skaters // 2)
+        max_managers = total_skaters // 2
         max_managers = max(2, max_managers) if max_managers >= 2 else 2
 
         override = data.get("max_managers_override")
