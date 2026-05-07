@@ -32,6 +32,7 @@ class FantasyGameScores(PredBase):
     ref_penalties: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ref_gm: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points: Mapped[float] = mapped_column(Numeric(6, 1), nullable=False, default=0)
+    is_provisional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     scored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -55,6 +56,7 @@ class FantasyGameScores(PredBase):
             "ref_penalties": self.ref_penalties,
             "ref_gm": self.ref_gm,
             "points": float(self.points),
+            "is_provisional": self.is_provisional,
             "scored_at": self.scored_at.isoformat() if self.scored_at else None,
         }
 

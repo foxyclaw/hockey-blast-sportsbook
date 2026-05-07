@@ -432,7 +432,7 @@
             <thead>
               <tr>
                 <th>#</th>
-                <th>Team</th>
+                <th>Team <span v-if="league.has_live_game" class="badge badge-xs badge-warning ml-1 animate-pulse">⚡ LIVE</span></th>
                 <th>Manager</th>
                 <th class="text-right">Week Pts</th>
                 <th class="text-right font-bold">Total Pts</th>
@@ -523,14 +523,14 @@
                   <div
                     v-for="p in game.my_players.filter(p => p.points !== 0 || p.penalties > 0)"
                     :key="p.hb_human_id"
-                    class="flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-base-300"
+                    :class="['flex items-center gap-1 rounded px-2 py-0.5 text-xs', p.is_provisional ? 'bg-warning/20 border border-warning/30' : 'bg-base-300']"
                   >
                     <span v-if="p.home_away" class="badge badge-xs font-mono mr-0.5"
                       :class="p.home_away === 'H' ? 'badge-primary' : 'badge-secondary'">
                       {{ p.home_away }}<span v-if="p.jersey_number">#{{ p.jersey_number }}</span>
                     </span>
                     <span class="font-medium">{{ p.display_name }}</span>
-                    <span class="font-bold" :class="p.points < 0 ? 'text-error' : 'text-primary'">{{ Number(p.points).toFixed(1) }}</span>
+                    <span class="font-bold" :class="p.points < 0 ? 'text-error' : p.is_provisional ? 'text-warning' : 'text-primary'">{{ p.is_provisional ? '⚡' : '' }}{{ Number(p.points).toFixed(1) }}</span>
                     <span v-if="p.goals" class="text-success">{{ p.goals }}G</span>
                     <span v-if="p.assists" class="text-info">{{ p.assists }}A</span>
                     <span v-if="p.is_goalie_win" class="text-warning">W</span>
@@ -697,7 +697,11 @@ const RosterList = {
           h('td', { class: 'text-right text-xs px-3 py-1 opacity-70 whitespace-nowrap' }, p.assists ?? 0),
           h('td', { class: 'text-right text-xs px-3 py-1 whitespace-nowrap ' + (p.penalties ? 'text-error' : 'opacity-70') }, p.penalties ?? 0),
           h('td', { class: 'text-right text-xs pl-3 py-1 font-semibold text-primary whitespace-nowrap' },
-            p.fantasy_points != null ? p.fantasy_points.toFixed(1) : '—'),
+            p.fantasy_points != null
+            ? (p.is_live_scoring
+              ? [h('span', { title: 'Live — goalie win pending' }, '⚡'), p.fantasy_points.toFixed(1)]
+              : p.fantasy_points.toFixed(1))
+            : '—'),
         ])
       })
 
@@ -1229,7 +1233,23 @@ watch(isAuthenticated, (authed) => {
 
 // Auto-refresh draft state every 30s when draft is active
 let _draftPollInterval = null
-onUnmounted(() => { if (_draftPollInterval) clearInterval(_draftPollInterval) })
+onUnmounted(() => {
+  if (_draftPollInterval) clearInterval(_draftPollInterval)
+  if (_livePollInterval) clearInterval(_livePollInterval)
+})
+
+// Auto-refresh every 60s when there are live games
+let _livePollInterval = null
+watch(() => league.value?.has_live_game, (hasLive) => {
+  if (_livePollInterval) { clearInterval(_livePollInterval); _livePollInterval = null }
+  if (hasLive) {
+    _livePollInterval = setInterval(async () => {
+      await loadLeague({ silent: true })
+      if (activeTab.value === 'games') loadGames(viewUserId.value)
+      if (activeTab.value === 'standings') loadStandings()
+    }, 60000)
+  }
+}, { immediate: true })
 
 watch(() => league.value?.status, (status) => {
   if (_draftPollInterval) { clearInterval(_draftPollInterval); _draftPollInterval = null }

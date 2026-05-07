@@ -1003,6 +1003,7 @@ def get_roster(league_id: int, user_id: int):
             func.sum(FantasyGameScores.penalties).label("penalties"),
             func.sum(FantasyGameScores.games_played).label("gp"),
             func.sum(FantasyGameScores.points).label("total_pts"),
+            func.bool_or(FantasyGameScores.is_provisional).label("has_provisional"),
         )
         .where(
             FantasyGameScores.league_id == league_id,
@@ -1017,6 +1018,7 @@ def get_roster(league_id: int, user_id: int):
             "penalties": int(r.penalties or 0),
             "gp": int(r.gp or 0),
             "total_pts": float(r.total_pts or 0),
+            "has_provisional": bool(r.has_provisional or False),
         }
         for r in stats_rows
     }
@@ -1118,6 +1120,7 @@ def get_roster(league_id: int, user_id: int):
         d["is_live"] = r.hb_human_id in live_human_ids
         d["live_game_id"] = live_game_id_map.get(r.hb_human_id) if r.hb_human_id in live_human_ids else None
         d["jersey_number"] = jersey_map.get(r.hb_human_id)
+        d["is_live_scoring"] = bool(s.get("has_provisional", False))
         result.append(d)
 
     # Sort: goalies last, then by fantasy_points desc
@@ -1266,6 +1269,21 @@ def get_league_games(league_id: int):
                 "jersey_number": r.jersey_number if r.jersey_number else None,
             }
 
+    # Batch-load provisional scores for OPEN games
+    live_score_map = {}  # game_id -> {hb_human_id -> FantasyGameScores}
+    if my_roster and open_games:
+        from app.models.fantasy_game_scores import FantasyGameScores
+        live_score_rows = pred.execute(
+            select(FantasyGameScores).where(
+                FantasyGameScores.league_id == league_id,
+                FantasyGameScores.user_id == view_user_id,
+                FantasyGameScores.game_id.in_(open_games),
+                FantasyGameScores.is_provisional.is_(True),
+            )
+        ).scalars().all()
+        for s in live_score_rows:
+            live_score_map.setdefault(s.game_id, {})[s.hb_human_id] = s
+
     games = []
     for g_row in game_rows:
         my_players = []
@@ -1289,24 +1307,27 @@ def get_league_games(league_id: int):
             my_players.sort(key=lambda p: (-p["points"], p["display_name"]))
         elif my_roster and g_row.status == "OPEN":
             game_live_map = live_roster_map.get(g_row.id, {})
+            game_live_scores = live_score_map.get(g_row.id, {})
             for hb_human_id in my_roster:
                 lr = game_live_map.get(hb_human_id)
                 if not lr:
                     continue
                 home_away = "H" if lr["team_id"] == g_row.home_team_id else "A"
+                sc = game_live_scores.get(hb_human_id)
                 my_players.append({
                     "hb_human_id": hb_human_id,
                     "display_name": human_names.get(hb_human_id, str(hb_human_id)),
                     "jersey_number": lr["jersey_number"],
                     "home_away": home_away,
-                    "points": 0.0,
-                    "goals": 0,
-                    "assists": 0,
-                    "penalties": 0,
-                    "games_played": 0,
-                    "is_goalie_win": False,
-                    "is_shutout": False,
-                    "ref_games": 0,
+                    "points": float(sc.points) if sc else 0.0,
+                    "goals": sc.goals if sc else 0,
+                    "assists": sc.assists if sc else 0,
+                    "penalties": sc.penalties if sc else 0,
+                    "games_played": sc.games_played if sc else 0,
+                    "is_goalie_win": sc.is_goalie_win if sc else False,
+                    "is_shutout": sc.is_shutout if sc else False,
+                    "ref_games": sc.ref_games if sc else 0,
+                    "is_provisional": True,
                 })
             my_players.sort(key=lambda p: (p["home_away"], p["display_name"]))
 
