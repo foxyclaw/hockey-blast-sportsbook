@@ -1249,6 +1249,23 @@ def get_league_games(league_id: int):
         for s in score_rows:
             my_scores.setdefault(s.game_id, {})[s.hb_human_id] = s
 
+    # Batch-load live roster info (team + jersey) for OPEN games
+    open_games = {r.id for r in game_rows if r.status == "OPEN"}
+    live_roster_map = {}  # game_id -> {hb_human_id -> {team_id, jersey_number}}
+    if my_roster and open_games:
+        gids_sql = ",".join(str(i) for i in open_games)
+        hids_sql = ",".join(str(h) for h in my_roster)
+        live_rows = hb.execute(text(
+            f"SELECT human_id, game_id, team_id, jersey_number "
+            f"FROM game_rosters "
+            f"WHERE game_id IN ({gids_sql}) AND human_id IN ({hids_sql})"
+        )).fetchall()
+        for r in live_rows:
+            live_roster_map.setdefault(r.game_id, {})[r.human_id] = {
+                "team_id": r.team_id,
+                "jersey_number": r.jersey_number if r.jersey_number else None,
+            }
+
     games = []
     for g_row in game_rows:
         my_players = []
@@ -1270,6 +1287,28 @@ def get_league_games(league_id: int):
                 })
             # Sort: points desc, then name
             my_players.sort(key=lambda p: (-p["points"], p["display_name"]))
+        elif my_roster and g_row.status == "OPEN":
+            game_live_map = live_roster_map.get(g_row.id, {})
+            for hb_human_id in my_roster:
+                lr = game_live_map.get(hb_human_id)
+                if not lr:
+                    continue
+                home_away = "H" if lr["team_id"] == g_row.home_team_id else "A"
+                my_players.append({
+                    "hb_human_id": hb_human_id,
+                    "display_name": human_names.get(hb_human_id, str(hb_human_id)),
+                    "jersey_number": lr["jersey_number"],
+                    "home_away": home_away,
+                    "points": 0.0,
+                    "goals": 0,
+                    "assists": 0,
+                    "penalties": 0,
+                    "games_played": 0,
+                    "is_goalie_win": False,
+                    "is_shutout": False,
+                    "ref_games": 0,
+                })
+            my_players.sort(key=lambda p: (p["home_away"], p["display_name"]))
 
         games.append({
             "id": g_row.id,
