@@ -334,8 +334,8 @@ def create_league():
 
         # Placeholder roster sizes assuming the league fills up — recomputed at draft open.
         roster_skaters = max(1, min(10, total_skaters // max_managers))
-        roster_goalies = max(0, min(5, total_goalies // max_managers))
-        roster_refs = max(0, min(5, total_refs // max_managers))
+        roster_goalies = max(0, min(1, total_goalies // max_managers))
+        roster_refs = max(0, min(1, total_refs // max_managers))
     else:
         # Get roster sizes from user (skaters 1-10, goalies/refs 1-5; defaults 2/1/1)
         roster_skaters = data.get("roster_skaters", 2)
@@ -1060,6 +1060,47 @@ def get_roster(league_id: int, user_id: int):
     except Exception as e:
         pass  # live status is best-effort
 
+    # Most popular jersey number per player within this league's division/season.
+    jersey_map: dict[int, str] = {}
+    try:
+        league_row = pred.execute(
+            sa_text("SELECT level_id, hb_season_id FROM fantasy_leagues WHERE id = :lid"),
+            {"lid": league_id},
+        ).fetchone()
+        div_ids_sql = None
+        if league_row:
+            div_rows = hb.execute(
+                sa_text("SELECT id FROM divisions WHERE level_id = :lvl AND season_id = :sid"),
+                {"lvl": league_row.level_id, "sid": league_row.hb_season_id},
+            ).fetchall()
+            if div_rows:
+                div_ids_sql = ",".join(str(r.id) for r in div_rows)
+        hid_sql = ",".join(str(int(h)) for h in human_ids)
+        if div_ids_sql:
+            jersey_rows = hb.execute(sa_text(
+                f"SELECT gr.human_id, gr.jersey_number, COUNT(*) AS cnt "
+                f"FROM game_rosters gr JOIN games g ON g.id = gr.game_id "
+                f"WHERE gr.human_id IN ({hid_sql}) "
+                f"AND g.division_id IN ({div_ids_sql}) "
+                f"AND gr.jersey_number IS NOT NULL AND gr.jersey_number != '' "
+                f"GROUP BY gr.human_id, gr.jersey_number "
+                f"ORDER BY gr.human_id, cnt DESC"
+            )).fetchall()
+        else:
+            jersey_rows = hb.execute(sa_text(
+                f"SELECT human_id, jersey_number, COUNT(*) AS cnt "
+                f"FROM game_rosters "
+                f"WHERE human_id IN ({hid_sql}) "
+                f"AND jersey_number IS NOT NULL AND jersey_number != '' "
+                f"GROUP BY human_id, jersey_number "
+                f"ORDER BY human_id, cnt DESC"
+            )).fetchall()
+        for row in jersey_rows:
+            if row.human_id not in jersey_map:
+                jersey_map[row.human_id] = str(row.jersey_number)
+    except Exception:
+        pass  # jersey numbers are best-effort
+
     result = []
     for r in roster:
         d = r.to_dict()
@@ -1076,6 +1117,7 @@ def get_roster(league_id: int, user_id: int):
         d["fantasy_points"] = s.get("total_pts", 0.0)
         d["is_live"] = r.hb_human_id in live_human_ids
         d["live_game_id"] = live_game_id_map.get(r.hb_human_id) if r.hb_human_id in live_human_ids else None
+        d["jersey_number"] = jersey_map.get(r.hb_human_id)
         result.append(d)
 
     # Sort: goalies last, then by fantasy_points desc
