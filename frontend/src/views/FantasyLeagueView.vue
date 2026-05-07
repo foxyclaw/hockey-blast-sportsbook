@@ -525,6 +525,10 @@
                     :key="p.hb_human_id"
                     class="flex items-center gap-1 rounded px-2 py-0.5 text-xs bg-base-300"
                   >
+                    <span v-if="p.home_away" class="badge badge-xs font-mono mr-0.5"
+                      :class="p.home_away === 'H' ? 'badge-primary' : 'badge-secondary'">
+                      {{ p.home_away }}<span v-if="p.jersey_number">#{{ p.jersey_number }}</span>
+                    </span>
                     <span class="font-medium">{{ p.display_name }}</span>
                     <span class="font-bold" :class="p.points < 0 ? 'text-error' : 'text-primary'">{{ Number(p.points).toFixed(1) }}</span>
                     <span v-if="p.goals" class="text-success">{{ p.goals }}G</span>
@@ -538,7 +542,7 @@
                 </div>
                 <!-- Zeroes: just names, dimmed -->
                 <div v-if="game.my_players.some(p => p.points === 0 && !p.penalties)" class="text-xs text-base-content/35 leading-relaxed">
-                  {{ game.my_players.filter(p => p.points === 0 && !p.penalties).map(p => p.display_name).join(', ') }}
+                  {{ game.my_players.filter(p => p.points === 0 && !p.penalties).map(p => p.home_away ? `${p.home_away}${p.jersey_number ? '#' + p.jersey_number : ''} ${p.display_name}` : p.display_name).join(', ') }}
                 </div>
               </div>
               <!-- Stats link -->
