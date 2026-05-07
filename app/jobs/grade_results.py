@@ -274,6 +274,30 @@ def start_scheduler(app):
         replace_existing=True,
     )
 
+    def _fantasy_live_score_job():
+        """Provisionally score in-progress (OPEN) games for active fantasy leagues."""
+        with _app.app_context():
+            try:
+                from app.services.fantasy_scoring_service import score_live_games
+                summary = score_live_games()
+                if summary["games"] > 0 or summary["errors"] > 0:
+                    logger.info(
+                        "[fantasy-live] Live-scored leagues=%d games=%d errors=%d",
+                        summary.get("leagues", 0),
+                        summary.get("games", 0),
+                        summary.get("errors", 0),
+                    )
+            except Exception as exc:
+                logger.exception("[fantasy-live] Unhandled error in live score job: %s", exc)
+
+    _scheduler.add_job(
+        func=_fantasy_live_score_job,
+        trigger=IntervalTrigger(minutes=2),
+        id="fantasy_live_scoring",
+        name="Score live in-progress fantasy games",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     logger.info("[grader] Scheduler started. Interval: %d minutes", interval_minutes)
 

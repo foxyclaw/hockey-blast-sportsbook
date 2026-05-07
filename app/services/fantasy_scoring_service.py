@@ -215,11 +215,12 @@ def score_game(league_id: int, game_id: int) -> None:
                 goals=0, assists=0, penalties=0, games_played=0,
                 is_goalie_win=False, is_shutout=False,
                 ref_games=rs["games"], ref_penalties=rs["penalties"], ref_gm=rs["gm"],
-                points=pts, scored_at=now,
+                points=pts, scored_at=now, is_provisional=False,
             ).on_conflict_do_update(
                 constraint="uq_fantasy_game_scores_league_human_game",
                 set_={"ref_games": rs["games"], "ref_penalties": rs["penalties"],
-                      "ref_gm": rs["gm"], "points": pts, "scored_at": now}
+                      "ref_gm": rs["gm"], "points": pts, "scored_at": now,
+                      "is_provisional": False}
             )
             pred.execute(stmt)
             scored += 1
@@ -258,16 +259,18 @@ def score_game(league_id: int, game_id: int) -> None:
             is_shutout=is_shutout,
             points=pts,
             scored_at=now,
+            is_provisional=False,
         ).on_conflict_do_update(
             constraint="uq_fantasy_game_scores_league_human_game",
             set_={
-                "goals":         goals,
-                "assists":       assists,
-                "penalties":     penalties,
-                "is_goalie_win": is_goalie_win,
-                "is_shutout":    is_shutout,
-                "points":        pts,
-                "scored_at":     now,
+                "goals":          goals,
+                "assists":        assists,
+                "penalties":      penalties,
+                "is_goalie_win":  is_goalie_win,
+                "is_shutout":     is_shutout,
+                "points":         pts,
+                "scored_at":      now,
+                "is_provisional": False,
             }
         )
         pred.execute(stmt)
@@ -278,6 +281,263 @@ def score_game(league_id: int, game_id: int) -> None:
 
     # ── Update standings ──────────────────────────────────────────────────────
     _update_standings(league_id, pred)
+
+
+def score_live_game(league_id: int, game_id: int) -> None:
+    """
+    Provisionally score an in-progress (OPEN) HB game for all rostered players.
+    Skips goalie win/shutout (not yet decided). Marks rows is_provisional=True.
+    Upserts into fantasy_game_scores and updates fantasy_standings.
+    """
+    hb = HBSession()
+    pred = PredSession()
+
+    roster_stmt = select(FantasyRoster).where(FantasyRoster.league_id == league_id)
+    roster = pred.execute(roster_stmt).scalars().all()
+    if not roster:
+        return
+
+    rostered_ids = {r.hb_human_id: r for r in roster}
+
+    try:
+        participants = {
+            r.human_id
+            for r in hb.execute(
+                text("SELECT human_id FROM game_rosters WHERE game_id = :gid"),
+                {"gid": game_id},
+            ).fetchall()
+        }
+    except Exception as e:
+        logger.warning("score_live_game: could not query game_rosters for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
+        return
+
+    goals_by_player: dict[int, int] = {}
+    assists_by_player: dict[int, int] = {}
+    try:
+        goal_rows = hb.execute(
+            text("SELECT goal_scorer_id, assist_1_id, assist_2_id "
+                 "FROM goals WHERE game_id = :gid"),
+            {"gid": game_id},
+        ).fetchall()
+        for g in goal_rows:
+            if g.goal_scorer_id:
+                goals_by_player[g.goal_scorer_id] = goals_by_player.get(g.goal_scorer_id, 0) + 1
+            if g.assist_1_id:
+                assists_by_player[g.assist_1_id] = assists_by_player.get(g.assist_1_id, 0) + 1
+            if g.assist_2_id:
+                assists_by_player[g.assist_2_id] = assists_by_player.get(g.assist_2_id, 0) + 1
+    except Exception as e:
+        logger.warning("score_live_game: could not query goals for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
+
+    penalties_by_player: dict[int, int] = {}
+    try:
+        pen_rows = hb.execute(
+            text("SELECT penalized_player_id FROM penalties WHERE game_id = :gid"),
+            {"gid": game_id},
+        ).fetchall()
+        for p in pen_rows:
+            if p.penalized_player_id:
+                penalties_by_player[p.penalized_player_id] = (
+                    penalties_by_player.get(p.penalized_player_id, 0) + 1
+                )
+    except Exception as e:
+        logger.warning("score_live_game: could not query penalties for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
+
+    # Ref stats — count what's been called so far
+    ref_stats: dict[int, dict] = {}
+    try:
+        ref_rows = hb.execute(
+            text("SELECT human_id FROM ref_divisions WHERE game_id = :gid"),
+            {"gid": game_id},
+        ).fetchall()
+        for r in ref_rows:
+            if r.human_id not in ref_stats:
+                ref_stats[r.human_id] = {"games": 1, "penalties": 0, "gm": 0}
+        ref_pen_rows = hb.execute(
+            text("""SELECT referee_id,
+                    COUNT(*) AS cnt,
+                    SUM(CASE WHEN LOWER(penalty_type) LIKE '%game misconduct%' THEN 1 ELSE 0 END) AS gm_cnt
+                    FROM penalties WHERE game_id = :gid AND referee_id IS NOT NULL
+                    GROUP BY referee_id"""),
+            {"gid": game_id},
+        ).fetchall()
+        for r in ref_pen_rows:
+            if r.referee_id in ref_stats:
+                ref_stats[r.referee_id]["penalties"] = int(r.cnt or 0)
+                ref_stats[r.referee_id]["gm"] = int(r.gm_cnt or 0)
+    except Exception as e:
+        logger.debug("score_live_game: ref stats unavailable for game %d: %s", game_id, e)
+        try:
+            hb.rollback()
+        except Exception:
+            pass
+
+    now = datetime.now(timezone.utc)
+    scored = 0
+
+    for hb_human_id, roster_entry in rostered_ids.items():
+        if roster_entry.is_ref:
+            if hb_human_id not in ref_stats:
+                continue
+            rs = ref_stats[hb_human_id]
+            pts = _compute_points(
+                goals=0, assists=0, penalties=0, games_played=0,
+                is_goalie_win=False, is_shutout=False,
+                ref_games=rs["games"], ref_penalties=rs["penalties"], ref_gm=rs["gm"],
+            )
+            stmt = pg_insert(FantasyGameScores).values(
+                league_id=league_id,
+                user_id=roster_entry.user_id,
+                hb_human_id=hb_human_id,
+                game_id=game_id,
+                goals=0, assists=0, penalties=0, games_played=0,
+                is_goalie_win=False, is_shutout=False,
+                ref_games=rs["games"], ref_penalties=rs["penalties"], ref_gm=rs["gm"],
+                points=pts, scored_at=now, is_provisional=True,
+            ).on_conflict_do_update(
+                constraint="uq_fantasy_game_scores_league_human_game",
+                set_={"ref_games": rs["games"], "ref_penalties": rs["penalties"],
+                      "ref_gm": rs["gm"], "points": pts, "scored_at": now,
+                      "is_provisional": True}
+            )
+            pred.execute(stmt)
+            scored += 1
+            continue
+
+        if hb_human_id not in participants:
+            continue
+
+        goals     = goals_by_player.get(hb_human_id, 0)
+        assists   = assists_by_player.get(hb_human_id, 0)
+        penalties = penalties_by_player.get(hb_human_id, 0)
+
+        # Goalie win/shutout NOT available in-progress — skip
+        pts = _compute_points(
+            goals=goals,
+            assists=assists,
+            penalties=penalties,
+            games_played=1,
+            is_goalie_win=False,
+            is_shutout=False,
+            is_goalie=roster_entry.is_goalie,
+        )
+
+        stmt = pg_insert(FantasyGameScores).values(
+            league_id=league_id,
+            user_id=roster_entry.user_id,
+            hb_human_id=hb_human_id,
+            game_id=game_id,
+            goals=goals,
+            assists=assists,
+            penalties=penalties,
+            games_played=1,
+            is_goalie_win=False,
+            is_shutout=False,
+            points=pts,
+            scored_at=now,
+            is_provisional=True,
+        ).on_conflict_do_update(
+            constraint="uq_fantasy_game_scores_league_human_game",
+            set_={
+                "goals":          goals,
+                "assists":        assists,
+                "penalties":      penalties,
+                "is_goalie_win":  False,
+                "is_shutout":     False,
+                "points":         pts,
+                "scored_at":      now,
+                "is_provisional": True,
+            }
+        )
+        pred.execute(stmt)
+        scored += 1
+
+    pred.commit()
+    logger.debug("score_live_game: league=%d game=%d scored=%d players (provisional)",
+                 league_id, game_id, scored)
+
+    _update_standings(league_id, pred)
+
+
+def score_live_games() -> dict:
+    """
+    Find OPEN games in active leagues' divisions and score them provisionally.
+    Re-scores previously-provisional games (so live points stay current),
+    but skips games already finalized (is_provisional=False rows exist).
+    Returns summary: {"leagues": int, "games": int, "errors": int}
+    """
+    pred = PredSession()
+    summary = {"leagues": 0, "games": 0, "errors": 0}
+
+    try:
+        from app.models.fantasy_league import FantasyLeague
+        leagues = pred.execute(
+            select(FantasyLeague).where(FantasyLeague.status == "active")
+        ).scalars().all()
+    except Exception as e:
+        logger.exception("[fantasy-live] Could not load active leagues: %s", e)
+        return summary
+
+    for league in leagues:
+        summary["leagues"] += 1
+        hb = HBSession()
+        try:
+            if league.hb_division_id:
+                div_ids_sql = str(league.hb_division_id)
+            else:
+                continue  # need cached division for fast lookup; final scorer fills this in
+
+            open_games = hb.execute(
+                text(
+                    f"SELECT id FROM games WHERE division_id IN ({div_ids_sql}) "
+                    "AND status = 'OPEN'"
+                )
+            ).fetchall()
+
+            if not open_games:
+                continue
+
+            already_finalized = {
+                r.game_id
+                for r in pred.execute(
+                    text("SELECT DISTINCT game_id FROM fantasy_game_scores "
+                         "WHERE league_id = :lid AND is_provisional = FALSE"),
+                    {"lid": league.id},
+                ).fetchall()
+            }
+
+            for game_row in open_games:
+                if game_row.id in already_finalized:
+                    continue
+                try:
+                    score_live_game(league.id, game_row.id)
+                    summary["games"] += 1
+                except Exception as ge:
+                    logger.warning("[fantasy-live] score_live_game(%d, %d) failed: %s",
+                                   league.id, game_row.id, ge)
+                    summary["errors"] += 1
+
+        except Exception as le:
+            logger.exception("[fantasy-live] Error processing league %d: %s", league.id, le)
+            summary["errors"] += 1
+            try:
+                hb.rollback()
+            except Exception:
+                pass
+
+    return summary
 
 
 def auto_assign_seasons() -> dict:
@@ -435,10 +695,13 @@ def score_active_leagues() -> dict:
             if not final_games:
                 continue
 
+            # Only treat games as already-scored when their rows are non-provisional.
+            # Provisional rows from live scoring should be re-scored to finalize them.
             already_scored = {
                 r.game_id
                 for r in pred.execute(
-                    text("SELECT DISTINCT game_id FROM fantasy_game_scores WHERE league_id = :lid"),
+                    text("SELECT DISTINCT game_id FROM fantasy_game_scores "
+                         "WHERE league_id = :lid AND is_provisional = FALSE"),
                     {"lid": league.id},
                 ).fetchall()
             }
