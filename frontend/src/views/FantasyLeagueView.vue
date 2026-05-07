@@ -677,7 +677,13 @@ const RosterList = {
             ])
           : null
         const nameCell = h('td', { class: 'pr-4 py-1' }, [
-          h('span', { class: 'text-sm' }, `${icon} ${p.player_name || '—'}`),
+          h('span', { class: 'text-sm' }, [
+            `${icon} `,
+            p.jersey_number
+              ? h('span', { class: 'badge badge-xs badge-neutral mr-1 font-mono' }, `#${p.jersey_number}`)
+              : null,
+            p.player_name || '—',
+          ]),
           liveChip,
         ])
         return h('tr', { key: p.hb_human_id, class: 'border-t border-base-300/30' }, [
@@ -720,6 +726,7 @@ const allTabs = [
   { id: 'myteam', label: '⭐ My Team' },
   { id: 'rosters', label: '👥 Rosters' },
   { id: 'draft', label: '📋 Draft' },
+  { id: 'refs', label: '🎮 Refs' },
 ]
 const tabs = computed(() => {
   if (!league.value) return allTabs
