@@ -753,12 +753,15 @@ def get_pool(league_id: int):
             player["drafted_by"] = None
         return player
 
+    # Filter out blocked players
+    blocked_ids = set((league.settings or {}).get("draft_blocked", []))
+
     # Apply type filter
     type_filter = request.args.get("type", "").lower()
 
-    all_skaters = [enrich_drafted(p) for p in pool["skaters"]]
-    all_goalies = [enrich_drafted(p) for p in pool["goalies"]]
-    all_refs = [enrich_drafted(p) for p in pool.get("refs", [])]
+    all_skaters = [enrich_drafted(p) for p in pool["skaters"] if p["hb_human_id"] not in blocked_ids]
+    all_goalies = [enrich_drafted(p) for p in pool["goalies"] if p["hb_human_id"] not in blocked_ids]
+    all_refs = [enrich_drafted(p) for p in pool.get("refs", []) if p["hb_human_id"] not in blocked_ids]
 
     # Sort: skaters by fantasy_ppg DESC, goalies by fantasy_points DESC
     all_skaters.sort(key=lambda p: p.get("fantasy_ppg", 0), reverse=True)
