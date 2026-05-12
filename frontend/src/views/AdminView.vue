@@ -583,6 +583,69 @@
                         </div>
                         <div v-if="leagueEditError" class="text-error text-xs self-center">{{ leagueEditError }}</div>
                       </div>
+
+                      <!-- ── Draft Block List ─────────────────────────────── -->
+                      <div class="mt-4 pt-3 border-t border-base-100">
+                        <div class="flex items-center justify-between mb-2">
+                          <div class="text-sm font-bold">🚫 Draft Block List
+                            <span v-if="blockedList.length" class="badge badge-error badge-xs ml-1">{{ blockedList.length }} blocked</span>
+                          </div>
+                          <input
+                            v-model="blockedSearch"
+                            type="text"
+                            placeholder="Search players…"
+                            class="input input-bordered input-xs w-48"
+                          />
+                        </div>
+                        <div v-if="blockedLoading" class="flex justify-center py-3">
+                          <span class="loading loading-spinner loading-sm"></span>
+                        </div>
+                        <div v-else-if="blockedError" class="alert alert-error text-xs py-1">{{ blockedError }}</div>
+                        <div v-else-if="!blockedPool.length" class="text-xs text-base-content/40 py-2">No players in pool.</div>
+                        <div v-else class="max-h-72 overflow-y-auto rounded border border-base-100">
+                          <table class="table table-xs">
+                            <thead class="bg-base-200 sticky top-0 z-10">
+                              <tr>
+                                <th>Player</th>
+                                <th class="w-16 text-center">Role</th>
+                                <th class="w-20 text-right">Pts</th>
+                                <th class="w-24 text-right"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr
+                                v-for="p in filteredBlockedPool"
+                                :key="p.hb_human_id"
+                                :class="isBlocked(p.hb_human_id) ? 'bg-error/10 text-error' : ''"
+                              >
+                                <td class="font-medium">{{ p.name || '—' }}</td>
+                                <td class="text-center">
+                                  <span class="badge badge-xs"
+                                    :class="{
+                                      'badge-info': p.role === 'S',
+                                      'badge-warning': p.role === 'G',
+                                      'badge-accent': p.role === 'R',
+                                      'badge-ghost': p.role.includes('/') || p.role === '—',
+                                    }"
+                                  >{{ p.role }}</span>
+                                </td>
+                                <td class="text-right font-mono">{{ p.fantasy_points?.toFixed?.(1) ?? p.fantasy_points }}</td>
+                                <td class="text-right">
+                                  <button
+                                    class="btn btn-xs"
+                                    :class="isBlocked(p.hb_human_id) ? 'btn-ghost' : 'btn-error btn-outline'"
+                                    :disabled="blockedToggling[p.hb_human_id]"
+                                    @click="toggleBlocked(l.id, p.hb_human_id)"
+                                  >
+                                    <span v-if="blockedToggling[p.hb_human_id]" class="loading loading-spinner loading-xs"></span>
+                                    {{ isBlocked(p.hb_human_id) ? 'Unblock' : 'Block' }}
+                                  </button>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 </template>
@@ -1004,6 +1067,58 @@ function openLeagueEdit(league) {
   editingLeagueId.value = league.id
   // Auto-load seasons if one is already selected so the dropdown shows it
   if (league.hb_league_id) loadHbSeasons(league.hb_league_id)
+  loadBlockedPlayers(league.id)
+}
+
+// ── Draft Block List ────────────────────────────────────────────────────────
+const blockedPool = ref([])
+const blockedList = ref([])
+const blockedLoading = ref(false)
+const blockedError = ref(null)
+const blockedSearch = ref('')
+const blockedToggling = ref({})
+
+const filteredBlockedPool = computed(() => {
+  const q = blockedSearch.value.trim().toLowerCase()
+  if (!q) return blockedPool.value
+  return blockedPool.value.filter(p => (p.name || '').toLowerCase().includes(q))
+})
+
+function isBlocked(hbHumanId) {
+  return blockedList.value.includes(hbHumanId)
+}
+
+async function loadBlockedPlayers(leagueId) {
+  blockedLoading.value = true
+  blockedError.value = null
+  blockedPool.value = []
+  blockedList.value = []
+  blockedSearch.value = ''
+  try {
+    const { data } = await api.get(`/api/admin/fantasy/leagues/${leagueId}/blocked-players`)
+    blockedPool.value = data.pool || []
+    blockedList.value = data.blocked || []
+  } catch (e) {
+    blockedError.value = e.response?.data?.message || e.message
+  } finally {
+    blockedLoading.value = false
+  }
+}
+
+async function toggleBlocked(leagueId, hbHumanId) {
+  const newBlocked = !isBlocked(hbHumanId)
+  blockedToggling.value[hbHumanId] = true
+  try {
+    const { data } = await api.post(`/api/admin/fantasy/leagues/${leagueId}/blocked-players`, {
+      hb_human_id: hbHumanId,
+      blocked: newBlocked,
+    })
+    blockedList.value = data.blocked || []
+  } catch (e) {
+    alert('Failed to toggle block: ' + (e.response?.data?.message || e.message))
+  } finally {
+    blockedToggling.value[hbHumanId] = false
+  }
 }
 
 async function loadHbSeasons(leagueId) {
