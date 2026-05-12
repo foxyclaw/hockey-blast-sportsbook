@@ -127,9 +127,10 @@ def build_draft_queue(league_id: int) -> None:
                 season_id=league.draft_season_id or league.hb_season_id,
                 min_games=league.min_games_played or 1,
             )
-            total_skaters = len(pool_info.get("skaters", []))
-            total_goalies = len(pool_info.get("goalies", []))
-            total_refs = len(pool_info.get("refs", []))
+            blocked_ids = set((league.settings or {}).get("draft_blocked", []))
+            total_skaters = len([p for p in pool_info.get("skaters", []) if p["hb_human_id"] not in blocked_ids])
+            total_goalies = len([p for p in pool_info.get("goalies", []) if p["hb_human_id"] not in blocked_ids])
+            total_refs = len([p for p in pool_info.get("refs", []) if p["hb_human_id"] not in blocked_ids])
             league.roster_skaters = max(1, min(10, total_skaters // n))
             league.roster_goalies = max(0, min(1, total_goalies // n))
             league.roster_refs = max(0, min(1, total_refs // n))
