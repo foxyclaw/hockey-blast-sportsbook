@@ -372,6 +372,11 @@ def make_pick(league_id: int, user_id: int, hb_human_id: int) -> dict:
     if pred.execute(existing_stmt).scalar_one_or_none() is not None:
         raise ValueError("Player already drafted in this league")
 
+    # Check player not blocked by admin
+    blocked_ids = set((league.settings or {}).get("draft_blocked", []))
+    if hb_human_id in blocked_ids:
+        raise ValueError("Player is blocked from this draft")
+
     # Determine if goalie
     pool = _get_pool(league_id)
     # Search the correct pool based on pick type to avoid cross-contamination
@@ -461,16 +466,20 @@ def _best_available_from_queue_only(league_id: int, user_id: int, pred, league, 
     pool = _get_pool(league_id)
     drafted_stmt = select(FantasyRoster.hb_human_id).where(FantasyRoster.league_id == league_id)
     drafted_ids = set(pred.execute(drafted_stmt).scalars().all())
+    blocked_ids = set((league.settings or {}).get("draft_blocked", []) if league else [])
 
     is_goalie_pick = current_slot.is_goalie_pick if current_slot else False
     is_ref_pick = current_slot.is_ref_pick if current_slot else False
 
     if is_goalie_pick:
-        eligible = {p["hb_human_id"]: p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids}
+        eligible = {p["hb_human_id"]: p for p in pool["goalies"]
+                    if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids}
     elif is_ref_pick:
-        eligible = {p["hb_human_id"]: p for p in pool.get("refs", []) if p["hb_human_id"] not in drafted_ids}
+        eligible = {p["hb_human_id"]: p for p in pool.get("refs", [])
+                    if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids}
     else:
-        all_skaters = [p for p in pool["skaters"] if p["hb_human_id"] not in drafted_ids]
+        all_skaters = [p for p in pool["skaters"]
+                       if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids]
         eligible = {p["hb_human_id"]: p for p in all_skaters}
 
     for item in queue_items:
@@ -492,6 +501,7 @@ def _best_available(league_id: int, user_id: int, pred, league, current_slot=Non
         FantasyRoster.league_id == league_id
     )
     drafted_ids = set(pred.execute(drafted_stmt).scalars().all())
+    blocked_ids = set((league.settings or {}).get("draft_blocked", []) if league else [])
 
     # Check what the manager still needs
     manager_roster_stmt = select(FantasyRoster).where(
@@ -513,17 +523,22 @@ def _best_available(league_id: int, user_id: int, pred, league, current_slot=Non
     # Build the full available pool for this pick type
     all_pool = pool["goalies"] + pool.get("refs", []) + pool["skaters"]
     if is_goalie_pick:
-        eligible = [p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids]
+        eligible = [p for p in pool["goalies"]
+                    if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids]
     elif is_ref_pick:
-        eligible = [p for p in pool.get("refs", []) if p["hb_human_id"] not in drafted_ids]
+        eligible = [p for p in pool.get("refs", [])
+                    if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids]
     else:
-        eligible = [p for p in all_pool if p["hb_human_id"] not in drafted_ids
+        eligible = [p for p in all_pool
+                    if p["hb_human_id"] not in drafted_ids
+                    and p["hb_human_id"] not in blocked_ids
                     and not p.get("is_ref")]
         # If this manager must pick a goalie now (last picks remaining = goalies needed),
         # force goalie regardless of queue
         force_goalie = (picks_remaining > 0 and picks_remaining <= goalies_still_needed)
         if force_goalie:
-            eligible = [p for p in pool["goalies"] if p["hb_human_id"] not in drafted_ids]
+            eligible = [p for p in pool["goalies"]
+                        if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids]
 
     if not eligible:
         return None

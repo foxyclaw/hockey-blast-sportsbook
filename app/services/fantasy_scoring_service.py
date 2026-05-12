@@ -499,11 +499,18 @@ def score_live_games() -> dict:
             else:
                 continue  # need cached division for fast lookup; final scorer fills this in
 
+            date_filter = ""
+            date_params = {}
+            if league.season_starts_at:
+                date_filter = " AND date >= :season_start"
+                date_params = {"season_start": league.season_starts_at.date()}
+
             open_games = hb.execute(
                 text(
                     f"SELECT id FROM games WHERE division_id IN ({div_ids_sql}) "
-                    "AND status = 'OPEN'"
-                )
+                    f"AND status = 'OPEN'{date_filter}"
+                ),
+                date_params or None,
             ).fetchall()
 
             if not open_games:
@@ -685,11 +692,18 @@ def score_active_leagues() -> dict:
                     pred.commit()
                 except Exception:
                     pred.rollback()
+            date_filter = ""
+            date_params = {}
+            if league.season_starts_at:
+                date_filter = " AND date >= :season_start"
+                date_params = {"season_start": league.season_starts_at.date()}
+
             final_games = hb.execute(
                 text(
                     f"SELECT id FROM games WHERE division_id IN ({div_ids_sql}) "
-                    "AND status IN ('Final','Final.','Final/OT','Final/OT2','Final/SO','Final(SO)')"
-                )
+                    f"AND status IN ('Final','Final.','Final/OT','Final/OT2','Final/SO','Final(SO)'){date_filter}"
+                ),
+                date_params or None,
             ).fetchall()
 
             if not final_games:
