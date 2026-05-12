@@ -946,6 +946,103 @@ def clear_scoring_season(league_id: int):
     return jsonify({"ok": True, "league_id": league_id})
 
 
+@admin_bp.route("/fantasy/leagues/<int:league_id>/blocked-players", methods=["GET"])
+@require_admin
+def get_blocked_players(league_id: int):
+    """
+    GET /api/admin/fantasy/leagues/<id>/blocked-players
+    Returns the merged player pool for this league plus the current block list.
+    Each pool entry: {hb_human_id, name, fantasy_points, role}.
+    """
+    from app.models.fantasy_league import FantasyLeague
+    from app.services.fantasy_pool_service import get_player_pool
+
+    pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    if not league:
+        return error_response("NOT_FOUND", f"No league with id={league_id}", 404)
+
+    blocked = list((league.settings or {}).get("draft_blocked", []))
+
+    try:
+        pool = get_player_pool(
+            league.level_id,
+            org_id=league.org_id,
+            league_id=league.hb_league_id,
+            season_id=league.draft_season_id or league.hb_season_id,
+            min_games=league.min_games_played or 1,
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Could not load pool for league %d: %s", league_id, e
+        )
+        return jsonify({"blocked": blocked, "pool": []})
+
+    def _role(p):
+        roles = []
+        if p.get("is_skater"):
+            roles.append("S")
+        if p.get("is_goalie"):
+            roles.append("G")
+        if p.get("is_ref"):
+            roles.append("R")
+        return "/".join(roles) or "—"
+
+    pool_out = [
+        {
+            "hb_human_id": p["hb_human_id"],
+            "name": f"{p.get('first_name', '')} {p.get('last_name', '')}".strip(),
+            "fantasy_points": p.get("fantasy_points", 0.0),
+            "role": _role(p),
+            "is_skater": bool(p.get("is_skater")),
+            "is_goalie": bool(p.get("is_goalie")),
+            "is_ref": bool(p.get("is_ref")),
+        }
+        for p in pool.get("players", [])
+    ]
+    pool_out.sort(key=lambda x: x["fantasy_points"], reverse=True)
+
+    return jsonify({"blocked": blocked, "pool": pool_out})
+
+
+@admin_bp.route("/fantasy/leagues/<int:league_id>/blocked-players", methods=["POST"])
+@require_admin
+def toggle_blocked_player(league_id: int):
+    """
+    POST /api/admin/fantasy/leagues/<id>/blocked-players
+    Body: {"hb_human_id": 123, "blocked": true/false}
+    Toggles a player in/out of settings.draft_blocked list.
+    """
+    from app.models.fantasy_league import FantasyLeague
+
+    data = request.get_json(silent=True) or {}
+    hb_human_id = data.get("hb_human_id")
+    blocked = data.get("blocked")
+
+    if not isinstance(hb_human_id, int):
+        return error_response("VALIDATION_ERROR", "hb_human_id must be an integer", 400)
+    if not isinstance(blocked, bool):
+        return error_response("VALIDATION_ERROR", "blocked must be a boolean", 400)
+
+    pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    if not league:
+        return error_response("NOT_FOUND", f"No league with id={league_id}", 404)
+
+    settings = dict(league.settings or {})
+    current = list(settings.get("draft_blocked", []))
+    current_set = set(current)
+    if blocked:
+        current_set.add(hb_human_id)
+    else:
+        current_set.discard(hb_human_id)
+    settings["draft_blocked"] = sorted(current_set)
+    league.settings = settings  # reassign so SQLAlchemy detects the JSONB change
+    pred.commit()
+
+    return jsonify({"ok": True, "blocked": settings["draft_blocked"]})
+
+
 @admin_bp.route("/chat/questions", methods=["GET"])
 @require_admin
 def chat_questions():
