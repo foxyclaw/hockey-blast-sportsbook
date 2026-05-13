@@ -680,7 +680,7 @@ const RosterList = {
                 : h('span', { class: 'text-green-400 text-xs font-semibold' }, 'LIVE'),
             ])
           : null
-        const nameCell = h('td', { class: 'pr-4 py-1' }, [
+        const nameCell = h('td', { class: 'pr-4 py-1 whitespace-nowrap' }, [
           h('span', { class: 'text-sm' }, [
             `${icon} `,
             p.jersey_number
