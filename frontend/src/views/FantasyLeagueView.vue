@@ -743,6 +743,7 @@ const tabs = computed(() => {
   return allTabs.filter(t => {
     if (t.id === 'draft' && isLive) return false
     if (t.id === 'games' && !hasGames) return false
+    if (t.id === 'refs' && !league.value.roster_refs) return false
     return true
   })
 })
