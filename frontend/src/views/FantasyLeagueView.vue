@@ -734,7 +734,6 @@ const allTabs = [
   { id: 'myteam', label: '⭐ My Team' },
   { id: 'rosters', label: '👥 Rosters' },
   { id: 'draft', label: '📋 Draft' },
-  { id: 'refs', label: '🎮 Refs' },
 ]
 const tabs = computed(() => {
   if (!league.value) return allTabs
@@ -743,7 +742,6 @@ const tabs = computed(() => {
   return allTabs.filter(t => {
     if (t.id === 'draft' && isLive) return false
     if (t.id === 'games' && !hasGames) return false
-    if (t.id === 'refs' && !league.value.roster_refs) return false
     return true
   })
 })
