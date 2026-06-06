@@ -1,5 +1,5 @@
 # Hockey Blast shared models
-hockey-blast-common-lib==0.1.73
+hockey-blast-common-lib==0.1.74
 
 # Web framework
 flask==3.1.0
