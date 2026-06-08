@@ -52,14 +52,15 @@ def _get_game(game_id: int):
 
 
 def is_game_pickable(game_id: int) -> tuple[bool, str]:
+    from hockey_blast_common_lib.game_status import is_scheduled, status_name
+
     game = _get_game(game_id)
 
     if game is None:
         return False, "Game not found"
 
-    status = getattr(game, "status", None)
-    if status != "Scheduled":
-        return False, f"Game is not scheduled (status: {status!r})"
+    if not is_scheduled(game):
+        return False, f"Game is not scheduled (status: {status_name(game)!r})"
 
     if getattr(game, "live_time", None) is not None:
         return False, "Game is currently live"

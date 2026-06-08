@@ -31,6 +31,7 @@ from app.models.fantasy_draft_queue import FantasyDraftQueue
 from app.models.fantasy_standings import FantasyStandings
 from app.models.pred_user import PredUser
 from app.utils.response import error_response
+from hockey_blast_common_lib.game_status import StatusId
 
 fantasy_bp = Blueprint("fantasy", __name__)
 
@@ -1256,7 +1257,7 @@ def get_league_games(league_id: int):
             my_scores.setdefault(s.game_id, {})[s.hb_human_id] = s
 
     # Batch-load live roster info (team + jersey) for OPEN games
-    open_games = {r.id for r in game_rows if r.status == "OPEN"}
+    open_games = {r.id for r in game_rows if r.status_id == StatusId.OPEN}
     live_roster_map = {}  # game_id -> {hb_human_id -> {team_id, jersey_number}}
     if my_roster and open_games:
         gids_sql = ",".join(str(i) for i in open_games)
@@ -1308,7 +1309,7 @@ def get_league_games(league_id: int):
                 })
             # Sort: points desc, then name
             my_players.sort(key=lambda p: (-p["points"], p["display_name"]))
-        elif my_roster and g_row.status == "OPEN":
+        elif my_roster and g_row.status_id == StatusId.OPEN:
             game_live_map = live_roster_map.get(g_row.id, {})
             game_live_scores = live_score_map.get(g_row.id, {})
             for hb_human_id in my_roster:

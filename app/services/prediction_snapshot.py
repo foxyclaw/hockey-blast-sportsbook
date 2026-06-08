@@ -32,6 +32,7 @@ def snapshot_upcoming_games() -> dict:
     """
     try:
         from hockey_blast_common_lib.models import Game, Team
+        from hockey_blast_common_lib.game_status import StatusId
     except ImportError:
         logger.error("[snapshot] hockey_blast_common_lib not available")
         return {"snapshotted": 0, "skipped": 0, "errors": 1}
@@ -49,7 +50,7 @@ def snapshot_upcoming_games() -> dict:
 
     # Fetch candidate games: Scheduled, home_team_id not null
     stmt = select(Game).where(
-        Game.status == "Scheduled",
+        Game.status_id == StatusId.SCHEDULED,
         Game.home_team_id.isnot(None),
     )
     candidate_games = hb_session.execute(stmt).scalars().all()

@@ -9,6 +9,7 @@ This handles multi-role players (e.g. someone who skates AND goalies AND refs).
 from sqlalchemy import select, func
 
 from app.db import HBSession
+from hockey_blast_common_lib.game_status import FINAL_STATUS_IDS
 
 
 def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, season_id: int = None, min_games: int = 1) -> dict:
@@ -60,8 +61,6 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
             .order_by(Division.season_id.desc())
         ).scalars().all()
 
-        FINAL_STATUSES = ('Final', 'Final.', 'Final/OT', 'Final/OT2', 'Final/SO', 'Final(SO)')
-
         def _completed_games(sid):
             div_ids = hb.execute(
                 select(Division.id).where(
@@ -75,7 +74,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
             return hb.execute(
                 select(func.count(Game.id)).where(
                     Game.division_id.in_(div_ids),
-                    Game.status.in_(FINAL_STATUSES),
+                    Game.status_id.in_(FINAL_STATUS_IDS),
                 )
             ).scalar() or 0
 

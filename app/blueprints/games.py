@@ -140,6 +140,7 @@ def list_games():
     track("visit", user_id=g.pred_user.id if g.pred_user else None, ip_address=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())
     try:
         from hockey_blast_common_lib.models import Game
+        from hockey_blast_common_lib.game_status import StatusId
     except ImportError:
         return error_response("SERVICE_UNAVAILABLE", "Hockey Blast DB not available", 503)
 
@@ -162,7 +163,7 @@ def list_games():
         return error_response("VALIDATION_ERROR", f"Invalid date format: {exc}", 400)
 
     stmt = select(Game).where(
-        Game.status == "Scheduled",
+        Game.status_id == StatusId.SCHEDULED,
         Game.date >= from_dt,
         Game.date <= to_dt,
     )
