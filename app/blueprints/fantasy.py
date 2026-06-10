@@ -17,10 +17,11 @@ POST /api/fantasy/leagues/<id>/start   — start season (creator only, require_a
 
 import random
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select, func, or_, text
+from sqlalchemy import text as sa_text
 
 from app.auth.jwt_validator import require_auth, optional_auth
 from app.db import HBSession, PredSession
@@ -31,6 +32,11 @@ from app.models.fantasy_draft_queue import FantasyDraftQueue
 from app.models.fantasy_standings import FantasyStandings
 from app.models.pred_user import PredUser
 from app.utils.response import error_response
+from hockey_blast_common_lib.game_status_constants import (
+    FINAL_STATUSES, STATUS_OPEN, COMPLETED_STATUSES,
+    STATUS_FINAL, STATUS_FINAL_OT, STATUS_FINAL_SO,
+    STATUS_NOT_STARTED,
+)
 
 fantasy_bp = Blueprint("fantasy", __name__)
 
@@ -528,8 +534,8 @@ def list_leagues():
         if league.status == "active" and league.hb_division_id:
             try:
                 live_row = hb.execute(
-                    text("SELECT 1 FROM games WHERE division_id = :div_id AND status = 'OPEN' LIMIT 1"),
-                    {"div_id": league.hb_division_id},
+                    text("SELECT 1 FROM games WHERE division_id = :div_id AND status_id = :open_id LIMIT 1"),
+                    {"div_id": league.hb_division_id, "open_id": STATUS_OPEN},
                 ).fetchone()
                 has_live = live_row is not None
             except Exception:
@@ -1050,8 +1056,7 @@ def get_roster(league_id: int, user_id: int):
                 live_games = hb.execute(sa_text(
                     "SELECT id FROM games "
                     f"WHERE division_id IN ({div_ids_sql}) "
-                    "AND status NOT IN ('Final','Final.','Final/OT','Final/OT2','Final/SO',"
-                    "'Final(SO)','CANCELED','FORFEIT','Forfeit','NOEVENTS','FAILED','UnKnown') "
+                    "AND status_id IN (8, 9) "
                     "AND last_update_ts >= :ws"
                 ), {"ws": window_start}).fetchall()
                 if live_games:
@@ -1192,12 +1197,12 @@ def get_league_games(league_id: int):
         return jsonify({"games": []})
 
     hb = HBSession()
-    FINAL = {"Final", "Final.", "Final/OT", "Final/OT2", "Final/SO", "Final(SO)"}
+    FINAL = FINAL_STATUSES  # Use integer status_id set
 
     # All games for this division — one fast indexed query
     game_rows = hb.execute(
         text(
-            "SELECT id, game_number, date, time, status, location, game_type, "
+            "SELECT id, game_number, date, time, status, status_id, location, game_type, "
             "home_team_id, visitor_team_id, home_final_score, visitor_final_score "
             "FROM games WHERE division_id = :div_id ORDER BY date ASC, time ASC"
         ),
@@ -1241,7 +1246,7 @@ def get_league_games(league_id: int):
             human_names = {r.id: f"{r.first_name or ''} {r.last_name or ''}".strip() for r in human_rows}
 
     # Batch-load scores for completed games
-    scored_games = {r.id for r in game_rows if r.status in FINAL}
+    scored_games = {r.id for r in game_rows if r.status_id in FINAL}
     my_scores = {}  # game_id -> {hb_human_id -> row}
     if my_roster and scored_games:
         from app.models.fantasy_game_scores import FantasyGameScores
@@ -1256,7 +1261,7 @@ def get_league_games(league_id: int):
             my_scores.setdefault(s.game_id, {})[s.hb_human_id] = s
 
     # Batch-load live roster info (team + jersey) for OPEN games
-    open_games = {r.id for r in game_rows if r.status == "OPEN"}
+    open_games = {r.id for r in game_rows if r.status_id == STATUS_OPEN}
     live_roster_map = {}  # game_id -> {hb_human_id -> {team_id, jersey_number}}
     if my_roster and open_games:
         gids_sql = ",".join(str(i) for i in open_games)
@@ -1290,7 +1295,7 @@ def get_league_games(league_id: int):
     games = []
     for g_row in game_rows:
         my_players = []
-        if my_roster and g_row.status in FINAL:
+        if my_roster and g_row.status_id in FINAL:
             game_score_map = my_scores.get(g_row.id, {})
             for hb_human_id, roster_entry in my_roster.items():
                 sc = game_score_map.get(hb_human_id)
@@ -1308,7 +1313,7 @@ def get_league_games(league_id: int):
                 })
             # Sort: points desc, then name
             my_players.sort(key=lambda p: (-p["points"], p["display_name"]))
-        elif my_roster and g_row.status == "OPEN":
+        elif my_roster and g_row.status_id == STATUS_OPEN:
             game_live_map = live_roster_map.get(g_row.id, {})
             game_live_scores = live_score_map.get(g_row.id, {})
             for hb_human_id in my_roster:
