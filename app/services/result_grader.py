@@ -18,10 +18,10 @@ from app.db import HBSession, PredSession
 from app.models.pred_pick import PredPick
 from app.models.pred_result import PredResult
 from app.models.pred_league import PredLeague
+from hockey_blast_common_lib.game_status import StatusId, FINAL_STATUS_IDS
 
 
-FINAL_STATUSES = frozenset({"Final", "Final.", "Final/OT", "Final/OT2", "Final/SO", "Final(SO)"})
-VOID_STATUSES = frozenset({"Forfeit", "FORFEIT", "CANCELED", "NOEVENTS"})
+VOID_STATUS_IDS = frozenset({StatusId.FORFEIT, StatusId.CANCELED, StatusId.NOEVENTS})
 UPSET_SCALE = 0.5
 
 
@@ -65,8 +65,8 @@ def grade_completed_games() -> dict:
             summary["skipped"] += 1
             continue
 
-        game_status = getattr(game, "status", None)
-        if game_status not in FINAL_STATUSES | VOID_STATUSES:
+        game_status_id = getattr(game, "status_id", None)
+        if game_status_id not in FINAL_STATUS_IDS | VOID_STATUS_IDS:
             summary["skipped"] += 1
             continue
 
@@ -201,7 +201,7 @@ def _grade_pick(pick: PredPick, game, league: PredLeague | None) -> PredResult:
     )
 
     # Voided game — zero points, pick excluded from accuracy stats
-    if game_status in VOID_STATUSES:
+    if game.status_id in VOID_STATUS_IDS:
         result.is_correct = False
         result.actual_winner_team_id = None
         result.base_points = 0

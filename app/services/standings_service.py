@@ -16,7 +16,7 @@ from app.models.pred_pick import PredPick
 from app.models.pred_result import PredResult
 
 
-VOID_STATUSES = frozenset({"Forfeit", "CANCELED"})
+VOID_STATUSES = frozenset({"Forfeit", "FORFEIT", "CANCELED", "NOEVENTS"})
 
 
 def update_standings_for_result(
