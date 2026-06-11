@@ -19,6 +19,7 @@ import sqlalchemy as sa
 from sqlalchemy import select, func
 
 from hockey_blast_common_lib.merge_humans import merge_humans
+from hockey_blast_common_lib.game_status import StatusId, FINAL_STATUS_IDS
 
 from app.auth.admin_required import require_admin
 from app.db import HBSession, PredSession
@@ -1212,7 +1213,7 @@ def prediction_analysis():
 
     from app.models.game_prediction_log import GamePredictionLog
 
-    FINAL_STATUSES = {"Final", "Final.", "Final/OT", "Final/OT2", "Final/SO", "Final(SO)"}
+
 
     min_skill_diff = request.args.get("min_skill_diff", 0.0, type=float)
     org_id_filter = request.args.get("org_id", None, type=int)
@@ -1262,6 +1263,7 @@ def prediction_analysis():
                 Game.home_final_score,
                 Game.visitor_final_score,
                 Game.status,
+                Game.status_id,
             ).where(Game.id.in_(game_ids))
         ).all()
         for g in hb_games:
@@ -1269,6 +1271,7 @@ def prediction_analysis():
                 "home_final_score": g.home_final_score,
                 "visitor_final_score": g.visitor_final_score,
                 "status": g.status,
+                "status_id": g.status_id,
             }
     except Exception as e:
         logging.getLogger(__name__).warning("Could not fetch HB game results: %s", e)
@@ -1306,7 +1309,7 @@ def prediction_analysis():
         game_res = game_results.get(log.game_id)
         if game_res is None:
             continue
-        if game_res["status"] not in FINAL_STATUSES:
+        if game_res["status_id"] not in FINAL_STATUS_IDS:
             continue
         if game_res["home_final_score"] is None or game_res["visitor_final_score"] is None:
             continue
