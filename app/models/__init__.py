@@ -28,6 +28,8 @@ from app.models.fantasy_draft_queue import FantasyDraftQueue
 from app.models.fantasy_manager_queue import FantasyManagerQueue
 from app.models.fantasy_game_scores import FantasyGameScores
 from app.models.fantasy_standings import FantasyStandings
+from app.models.fantasy_trade_round import FantasyTradeRound
+from app.models.fantasy_trade_turn import FantasyTradeTurn
 from app.models.game_prediction_log import GamePredictionLog
 
 __all__ = [
@@ -55,5 +57,7 @@ __all__ = [
     "FantasyManagerQueue",
     "FantasyGameScores",
     "FantasyStandings",
+    "FantasyTradeRound",
+    "FantasyTradeTurn",
     "GamePredictionLog",
 ]

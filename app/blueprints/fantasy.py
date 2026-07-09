@@ -1429,3 +1429,109 @@ def start_season(league_id: int):
             logging.getLogger(__name__).warning("Could not kick off scoring on season start: %s", se)
 
     return jsonify(league.to_dict())
+
+
+# ── Mid-season trades ───────────────────────────────────────────────────────
+
+@fantasy_bp.route("/leagues/<int:league_id>/trade", methods=["GET"])
+@optional_auth
+def get_trade_state(league_id: int):
+    """GET /api/fantasy/leagues/<id>/trade — current trade-round state for this league."""
+    from app.services.fantasy_trade_service import get_round_state
+    viewer_id = g.pred_user.id if g.pred_user else None
+    return jsonify(get_round_state(league_id, viewer_user_id=viewer_id))
+
+
+@fantasy_bp.route("/leagues/<int:league_id>/trade/available", methods=["GET"])
+@optional_auth
+def get_trade_available(league_id: int):
+    """
+    GET /api/fantasy/leagues/<id>/trade/available?type=skater|goalie|ref
+    Available players to acquire (current-season pool minus rostered), with names.
+    """
+    from app.services.fantasy_trade_service import get_available_players
+    of_type = request.args.get("type")
+    if of_type not in (None, "skater", "goalie", "ref"):
+        return error_response("BAD_REQUEST", "type must be skater, goalie, or ref", 400)
+
+    players = get_available_players(league_id, of_type=of_type)
+    # Attach the role-specific fantasy_points for the requested type so the UI
+    # shows a sensible number next to each candidate.
+    fp_key = {
+        "skater": "fantasy_points_skater",
+        "goalie": "fantasy_points_goalie",
+        "ref": "fantasy_points_ref",
+    }.get(of_type, "fantasy_points")
+    result = []
+    for p in players:
+        result.append({
+            "hb_human_id": p["hb_human_id"],
+            "first_name": p.get("first_name"),
+            "last_name": p.get("last_name"),
+            "player_name": f"{p.get('first_name', '')} {p.get('last_name', '')}".strip(),
+            "is_skater": p.get("is_skater", False),
+            "is_goalie": p.get("is_goalie", False),
+            "is_ref": p.get("is_ref", False),
+            "fantasy_points": round(float(p.get(fp_key, 0) or 0), 1),
+        })
+    # Sort by fantasy_points desc for a useful default order.
+    result.sort(key=lambda p: -p["fantasy_points"])
+    return jsonify({"players": result, "type": of_type})
+
+
+@fantasy_bp.route("/leagues/<int:league_id>/trade/initiate", methods=["POST"])
+@require_auth
+def initiate_trade(league_id: int):
+    """POST /api/fantasy/leagues/<id>/trade/initiate — creator starts a trade round."""
+    from app.services.fantasy_trade_service import initiate_trade_round
+    pred = PredSession()
+    user = g.pred_user
+    league = pred.get(FantasyLeague, league_id)
+    if league is None:
+        return error_response("NOT_FOUND", "League not found", 404)
+    if league.created_by != user.id:
+        return error_response("FORBIDDEN", "Only the league creator can start a trade round", 403)
+
+    body = request.get_json(silent=True) or {}
+    pick_hours = body.get("pick_hours", 24)
+    try:
+        rnd = initiate_trade_round(league_id, created_by=user.id, pick_hours=pick_hours)
+    except ValueError as e:
+        return error_response("CONFLICT", str(e), 409)
+    return jsonify(rnd)
+
+
+@fantasy_bp.route("/leagues/<int:league_id>/trade/swap", methods=["POST"])
+@require_auth
+def trade_swap(league_id: int):
+    """
+    POST /api/fantasy/leagues/<id>/trade/swap
+    Body: {"release_hb_human_id": int, "acquire_hb_human_id": int}
+    Execute a one-for-one swap on the caller's turn.
+    """
+    from app.services.fantasy_trade_service import make_trade
+    user = g.pred_user
+    body = request.get_json(silent=True) or {}
+    release_id = body.get("release_hb_human_id")
+    acquire_id = body.get("acquire_hb_human_id")
+    if not isinstance(release_id, int) or not isinstance(acquire_id, int):
+        return error_response("BAD_REQUEST",
+                              "release_hb_human_id and acquire_hb_human_id are required", 400)
+    try:
+        turn = make_trade(league_id, user.id, release_id, acquire_id)
+    except ValueError as e:
+        return error_response("CONFLICT", str(e), 409)
+    return jsonify(turn)
+
+
+@fantasy_bp.route("/leagues/<int:league_id>/trade/skip", methods=["POST"])
+@require_auth
+def trade_skip(league_id: int):
+    """POST /api/fantasy/leagues/<id>/trade/skip — caller keeps their team, ends turn."""
+    from app.services.fantasy_trade_service import skip_turn
+    user = g.pred_user
+    try:
+        turn = skip_turn(league_id, user.id)
+    except ValueError as e:
+        return error_response("CONFLICT", str(e), 409)
+    return jsonify(turn)
