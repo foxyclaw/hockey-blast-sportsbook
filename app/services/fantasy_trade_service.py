@@ -262,13 +262,87 @@ def advance_trade_round(round_id: int) -> None:
     if current.deadline and current.deadline > now:
         return  # still on the clock
 
-    # Deadline passed — mark missed (pass-1 missers get a pass-2 second chance).
+    # Deadline passed. First try to auto-trade on the manager's behalf: if they
+    # have a dead-weight skater (0 fantasy points), swap it for the best available
+    # skater. If that succeeds the turn auto-completes; otherwise mark it missed
+    # (pass-1 missers still get a pass-2 second chance).
+    if _try_auto_trade_for_expired_turn(league_id=rnd.league_id, round_id=round_id,
+                                        turn=current, pred=pred):
+        return  # make_trade already advanced to the next turn
+
     current.is_missed = True
     current.acted_at = None
     pred.commit()
     logger.info("[trade] round=%d user=%d missed turn (pass %d)",
                 round_id, current.user_id, current.pass_number)
     _activate_next_turn(round_id, pred)
+
+
+def _try_auto_trade_for_expired_turn(league_id: int, round_id: int, turn, pred) -> bool:
+    """
+    Auto-trade for a manager whose turn expired: if they hold a skater with zero
+    fantasy points, release it and acquire the highest-scoring available skater —
+    but only when that's a real upgrade (the acquired skater has > 0 points).
+
+    Returns True if an auto-trade was performed (turn is now complete), else False
+    (caller falls back to marking the turn missed). Notifies the manager like the
+    auto-draft flow does.
+    """
+    user_id = turn.user_id
+
+    # Skaters on this manager's roster (exclude goalies/refs).
+    roster_skaters = pred.execute(
+        select(FantasyRoster.hb_human_id).where(
+            FantasyRoster.league_id == league_id,
+            FantasyRoster.user_id == user_id,
+            FantasyRoster.is_goalie == False,  # noqa: E712
+            FantasyRoster.is_ref == False,  # noqa: E712
+        )
+    ).scalars().all()
+    if not roster_skaters:
+        return False
+
+    # Total fantasy points each rostered skater has earned in this league.
+    pts_rows = pred.execute(
+        select(
+            FantasyGameScores.hb_human_id,
+            func.coalesce(func.sum(FantasyGameScores.points), 0).label("pts"),
+        )
+        .where(
+            FantasyGameScores.league_id == league_id,
+            FantasyGameScores.hb_human_id.in_(roster_skaters),
+        )
+        .group_by(FantasyGameScores.hb_human_id)
+    ).all()
+    pts_map = {r.hb_human_id: float(r.pts or 0) for r in pts_rows}
+
+    # Zero-point skaters (includes skaters with no score rows at all). Deterministic
+    # release pick: lowest hb_human_id among them.
+    zero_skaters = sorted(h for h in roster_skaters if pts_map.get(h, 0.0) == 0.0)
+    if not zero_skaters:
+        return False
+    release_id = zero_skaters[0]
+
+    # Best available skater by fantasy points.
+    available = get_available_players(league_id, of_type="skater")
+    if not available:
+        return False
+    best = max(available, key=lambda p: float(p.get("fantasy_points_skater", 0) or 0))
+    if float(best.get("fantasy_points_skater", 0) or 0) <= 0:
+        return False  # no upgrade available — leave the turn to be marked missed
+    acquire_id = best["hb_human_id"]
+
+    try:
+        make_trade(league_id, user_id, release_id, acquire_id)
+    except ValueError as e:
+        logger.warning("[trade] auto-trade failed for league=%d user=%d: %s",
+                       league_id, user_id, e)
+        return False
+
+    logger.info("[trade] round=%d user=%d AUTO-traded release=%d acquire=%d",
+                round_id, user_id, release_id, acquire_id)
+    _notify_auto_trade(user_id, league_id, release_id, acquire_id, pred)
+    return True
 
 
 def advance_active_trade_rounds() -> dict:
@@ -647,3 +721,50 @@ def _notify_turn(user_id: int, league_id: int, deadline, pred) -> None:
         pred.commit()
     except Exception as e:
         logger.warning("[trade] could not notify user=%d: %s", user_id, e)
+
+
+def _hb_player_name(hb_human_id: int) -> str:
+    """Best-effort 'First Last' for a HB human id (for notifications)."""
+    try:
+        from app.db import HBSession
+        from sqlalchemy import text as sa_text
+        row = HBSession().execute(
+            sa_text("SELECT first_name, last_name FROM humans WHERE id = :hid"),
+            {"hid": hb_human_id},
+        ).fetchone()
+        if row:
+            return f"{row.first_name or ''} {row.last_name or ''}".strip() or f"#{hb_human_id}"
+    except Exception:
+        pass
+    return f"#{hb_human_id}"
+
+
+def _notify_auto_trade(user_id: int, league_id: int, release_hb_human_id: int,
+                       acquire_hb_human_id: int, pred) -> None:
+    """
+    Notify a manager that we auto-traded for them after their turn expired
+    (mirrors the auto-draft notification: fires immediately, delay=0).
+    """
+    try:
+        from app.services.notify_service import notify_user
+        league_name = ""
+        try:
+            lg = pred.get(FantasyLeague, league_id)
+            if lg:
+                league_name = f" · {lg.name}"
+        except Exception:
+            pass
+        dropped = _hb_player_name(release_hb_human_id)
+        added = _hb_player_name(acquire_hb_human_id)
+        notify_user(
+            db=pred,
+            user_id=user_id,
+            title=f"🔁 Auto-traded for you!{league_name}",
+            body=f"Your turn expired — dropped {dropped} (0 pts) for {added}.",
+            url=f"/fantasy/{league_id}?tab=trade",
+            notif_type="fantasy_trade",
+            delay_seconds=0,  # immediate — they missed their turn
+        )
+        pred.commit()
+    except Exception as e:
+        logger.warning("[trade] could not notify auto-trade for user=%d: %s", user_id, e)
