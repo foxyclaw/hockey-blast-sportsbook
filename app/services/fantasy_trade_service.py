@@ -278,60 +278,82 @@ def advance_trade_round(round_id: int) -> None:
     _activate_next_turn(round_id, pred)
 
 
+# Role → the pool's role-specific fantasy-points key (what the acquired player adds).
+_ROLE_FP_KEY = {
+    "skater": "fantasy_points_skater",
+    "goalie": "fantasy_points_goalie",
+    "ref": "fantasy_points_ref",
+}
+
+
 def _try_auto_trade_for_expired_turn(league_id: int, round_id: int, turn, pred) -> bool:
     """
-    Auto-trade for a manager whose turn expired: if they hold a skater with zero
-    fantasy points, release it and acquire the highest-scoring available skater —
-    but only when that's a real upgrade (the acquired skater has > 0 points).
+    Auto-trade for a manager whose turn expired: if they hold any player with zero
+    fantasy points, release it and acquire the best available replacement OF THE
+    SAME ROLE (skater→skater, goalie→goalie, ref→ref).
 
-    Returns True if an auto-trade was performed (turn is now complete), else False
-    (caller falls back to marking the turn missed). Notifies the manager like the
-    auto-draft flow does.
+    Because releasing a zero-point player adds exactly the acquired player's
+    points, we evaluate every role the manager has a zero-point player in and pick
+    the single swap that ADDS THE MOST POINTS overall. Only performed when it's a
+    real upgrade (acquired player has > 0 points).
+
+    Returns True if an auto-trade was performed (turn complete), else False (caller
+    marks the turn missed). Notifies the manager like the auto-draft flow.
     """
     user_id = turn.user_id
 
-    # Skaters on this manager's roster (exclude goalies/refs).
-    roster_skaters = pred.execute(
-        select(FantasyRoster.hb_human_id).where(
-            FantasyRoster.league_id == league_id,
-            FantasyRoster.user_id == user_id,
-            FantasyRoster.is_goalie == False,  # noqa: E712
-            FantasyRoster.is_ref == False,  # noqa: E712
-        )
-    ).scalars().all()
-    if not roster_skaters:
+    # This manager's roster with role flags.
+    roster = pred.execute(
+        select(FantasyRoster.hb_human_id, FantasyRoster.is_goalie, FantasyRoster.is_ref)
+        .where(FantasyRoster.league_id == league_id, FantasyRoster.user_id == user_id)
+    ).all()
+    if not roster:
         return False
 
-    # Total fantasy points each rostered skater has earned in this league.
+    # Points each rostered player has earned in this league.
+    ids = [r.hb_human_id for r in roster]
     pts_rows = pred.execute(
         select(
             FantasyGameScores.hb_human_id,
             func.coalesce(func.sum(FantasyGameScores.points), 0).label("pts"),
         )
-        .where(
-            FantasyGameScores.league_id == league_id,
-            FantasyGameScores.hb_human_id.in_(roster_skaters),
-        )
+        .where(FantasyGameScores.league_id == league_id, FantasyGameScores.hb_human_id.in_(ids))
         .group_by(FantasyGameScores.hb_human_id)
     ).all()
     pts_map = {r.hb_human_id: float(r.pts or 0) for r in pts_rows}
 
-    # Zero-point skaters (includes skaters with no score rows at all). Deterministic
-    # release pick: lowest hb_human_id among them.
-    zero_skaters = sorted(h for h in roster_skaters if pts_map.get(h, 0.0) == 0.0)
-    if not zero_skaters:
+    # Zero-point players grouped by role. Deterministic release pick per role:
+    # lowest hb_human_id.
+    zero_by_role: dict[str, int] = {}
+    for r in roster:
+        if pts_map.get(r.hb_human_id, 0.0) != 0.0:
+            continue
+        role = _player_type(r.is_goalie, r.is_ref)
+        if role not in zero_by_role or r.hb_human_id < zero_by_role[role]:
+            zero_by_role[role] = r.hb_human_id
+    if not zero_by_role:
         return False
-    release_id = zero_skaters[0]
 
-    # Best available skater by fantasy points.
-    available = get_available_players(league_id, of_type="skater")
-    if not available:
-        return False
-    best = max(available, key=lambda p: float(p.get("fantasy_points_skater", 0) or 0))
-    if float(best.get("fantasy_points_skater", 0) or 0) <= 0:
-        return False  # no upgrade available — leave the turn to be marked missed
-    acquire_id = best["hb_human_id"]
+    # For each role with a zero-point player, find the best available replacement
+    # of that role; keep the swap that adds the most points overall.
+    best_swap = None  # (points_added, release_id, acquire_id, role, acquire_name)
+    for role, release_id in zero_by_role.items():
+        available = get_available_players(league_id, of_type=role)
+        if not available:
+            continue
+        fp_key = _ROLE_FP_KEY[role]
+        cand = max(available, key=lambda p: float(p.get(fp_key, 0) or 0))
+        gain = float(cand.get(fp_key, 0) or 0)
+        if gain <= 0:
+            continue  # no upgrade for this role
+        if best_swap is None or gain > best_swap[0]:
+            name = f"{cand.get('first_name', '')} {cand.get('last_name', '')}".strip()
+            best_swap = (gain, release_id, cand["hb_human_id"], role, name)
 
+    if best_swap is None:
+        return False  # no positive-scoring replacement in any role — mark missed
+
+    _gain, release_id, acquire_id, role, _name = best_swap
     try:
         make_trade(league_id, user_id, release_id, acquire_id)
     except ValueError as e:
@@ -339,8 +361,8 @@ def _try_auto_trade_for_expired_turn(league_id: int, round_id: int, turn, pred) 
                        league_id, user_id, e)
         return False
 
-    logger.info("[trade] round=%d user=%d AUTO-traded release=%d acquire=%d",
-                round_id, user_id, release_id, acquire_id)
+    logger.info("[trade] round=%d user=%d AUTO-traded (%s) release=%d acquire=%d (+%.1f pts)",
+                round_id, user_id, role, release_id, acquire_id, _gain)
     _notify_auto_trade(user_id, league_id, release_id, acquire_id, pred)
     return True
 
