@@ -741,6 +741,38 @@ def score_active_leagues() -> dict:
     return summary
 
 
+def backfill_scoring_after_trade(league_id: int) -> int:
+    """
+    Re-score every already-scored game in a league so that a newly-acquired
+    player (who was NOT on any roster when the games were originally scored, e.g.
+    a free agent picked up in a trade) gets their fantasy_game_scores rows
+    created for the first time.
+
+    score_game() only records rows for players CURRENTLY on a roster. Reattributing
+    existing rows on a trade therefore does nothing for a player who never had rows.
+    Re-running score_game for the league's finalized games fixes that: it upserts
+    (idempotent) for players who already have rows, and creates rows for the newly
+    rostered player. Returns the number of games re-scored.
+    """
+    pred = PredSession()
+    scored_game_ids = [
+        r.game_id
+        for r in pred.execute(
+            text("SELECT DISTINCT game_id FROM fantasy_game_scores "
+                 "WHERE league_id = :lid AND is_provisional = FALSE"),
+            {"lid": league_id},
+        ).fetchall()
+    ]
+    for gid in scored_game_ids:
+        try:
+            score_game(league_id, gid)
+        except Exception as e:
+            logger.warning("[fantasy] backfill score_game(%d, %d) failed: %s", league_id, gid, e)
+    logger.info("[fantasy] backfill_scoring_after_trade league=%d rescored=%d games",
+                league_id, len(scored_game_ids))
+    return len(scored_game_ids)
+
+
 def _update_standings(league_id: int, pred) -> None:
     """Recompute total_points and week_points for all managers and update rank."""
     from sqlalchemy import func
