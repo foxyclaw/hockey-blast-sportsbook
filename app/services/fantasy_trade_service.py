@@ -457,10 +457,24 @@ def make_trade(league_id: int, user_id: int, release_hb_human_id: int,
     released.drafted_at = now
     pred.commit()
 
-    # FULL REATTRIBUTION: any existing scores for the acquired player in this
-    # league now belong to the new owner. (Released player's past scores stay as
-    # historical rows but are no longer on anyone's roster, so they drop out of
-    # team totals — see recompute_standings, which sums by current ownership.)
+    # SCORE + REATTRIBUTE the acquired player.
+    #
+    # score_game() only ever creates rows for players who were rostered at scoring
+    # time, so a free agent picked up in a trade (never previously rostered in this
+    # league) has NO score rows to reattribute. Now that the roster swap above has
+    # made them rostered under the new owner, re-score the league's already-scored
+    # games so their historical games are recorded for this owner (cheap: only the
+    # games the league has already scored). This creates rows for a never-scored
+    # acquisition and refreshes rows for a previously-rostered one.
+    try:
+        from app.services.fantasy_scoring_service import backfill_scoring_after_trade
+        backfill_scoring_after_trade(league_id)
+    except Exception as e:
+        logger.warning("[trade] backfill scoring failed for league=%d acquire=%d: %s",
+                       league_id, acquire_hb_human_id, e)
+
+    # Belt-and-suspenders: reassign any remaining rows for the acquired player to
+    # the new owner (covers score rows in games outside the re-scored set).
     _reassign_player_scores(league_id, acquire_hb_human_id, user_id, pred)
 
     # Record the turn outcome.
