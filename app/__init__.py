@@ -61,7 +61,14 @@ def create_app(config_name: str | None = None) -> Flask:
     _register_blueprints(app)
 
     # ── Background scheduler ───────────────────────────────────────────────────
-    if not app.config.get("TESTING"):
+    # DISABLE_SCHEDULER=1 lets dev/worktree runs skip background jobs entirely so
+    # they never mutate shared data (scoring, draft/trade advancement, grading).
+    _scheduler_disabled = os.environ.get("DISABLE_SCHEDULER", "").strip().lower() in ("1", "true", "yes")
+    if _scheduler_disabled:
+        logging.getLogger(__name__).warning(
+            "[init] DISABLE_SCHEDULER set — background jobs will NOT start"
+        )
+    if not app.config.get("TESTING") and not _scheduler_disabled:
         # Start scheduler once per process.
         # - Gunicorn: preload_app=True loads this in master; post_fork shuts it down in workers.
         # - Flask dev server: werkzeug reloader fires twice; only start in the child (WERKZEUG_RUN_MAIN=true).

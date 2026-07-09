@@ -50,6 +50,17 @@
             >
               {{ linkCopied ? '✅ Copied!' : '🔗 Share' }}
             </button>
+            <!-- Start Trade Round — creator only, active league, no round in progress -->
+            <button
+              v-if="league.is_creator && league.status === 'active' && !tradeState.round"
+              class="btn btn-secondary btn-xs"
+              :disabled="initiatingTrade"
+              @click="initiateTradeRound"
+              title="Start a mid-season trade round"
+            >
+              <span v-if="initiatingTrade" class="loading loading-spinner loading-xs"></span>
+              🔁 Start Trade Round
+            </button>
             <!-- Join button -->
             <button
               v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)"
@@ -567,6 +578,138 @@
           <RosterList :league-id="league.id" :user-id="myUserId" show-points />
         </div>
       </div>
+
+      <!-- ── Trade Tab ── -->
+      <div v-if="activeTab === 'trade'">
+        <!-- No round in progress -->
+        <div v-if="!tradeState.round" class="text-center py-10 text-base-content/40">
+          <div class="text-4xl mb-2">🔁</div>
+          <p class="font-medium">No trade round in progress.</p>
+          <p v-if="league.is_creator" class="text-sm mt-1">Use “Start Trade Round” in the header to begin one.</p>
+        </div>
+
+        <div v-else>
+          <!-- Turn status banner -->
+          <div class="alert mb-4" :class="tradeState.is_my_turn ? 'alert-success' : 'alert-info'">
+            <div>
+              <p class="font-semibold">
+                <template v-if="tradeState.is_my_turn">⬆️ It's your turn to trade!</template>
+                <template v-else-if="tradeState.current_turn">
+                  🕐 Waiting on {{ tradeManagerName(tradeState.current_turn.user_id) }}
+                </template>
+                <template v-else>Trade round {{ tradeState.round.status === 'completed' ? 'completed' : 'in progress' }}.</template>
+              </p>
+              <p v-if="tradeState.current_turn?.deadline" class="text-sm opacity-70 mt-0.5">
+                Deadline: {{ formatDeadline(tradeState.current_turn.deadline) }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Turn order list -->
+          <div class="mb-6">
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-base-content/50 mb-2">Turn Order (lowest fantasy points first)</h4>
+            <div class="flex flex-wrap gap-2">
+              <span
+                v-for="t in tradeState.turns"
+                :key="t.id"
+                class="badge gap-1"
+                :class="{
+                  'badge-success': tradeState.current_turn && t.id === tradeState.current_turn.id,
+                  'badge-ghost': t.is_resolved,
+                  'badge-outline': !t.is_resolved && (!tradeState.current_turn || t.id !== tradeState.current_turn.id),
+                }"
+                :title="t.pass_number === 2 ? 'Second-chance turn' : ''"
+              >
+                <span v-if="t.pass_number === 2">↻</span>
+                {{ tradeManagerName(t.user_id) }}
+                <template v-if="t.acquired_hb_human_id">✅</template>
+                <template v-else-if="t.is_skipped">⏭️</template>
+                <template v-else-if="t.is_missed">⌛</template>
+              </span>
+            </div>
+          </div>
+
+          <!-- The trade UI — only when it's my turn -->
+          <div v-if="tradeState.is_my_turn">
+            <div v-if="tradeError" class="alert alert-error mb-3 py-2 text-sm">{{ tradeError }}</div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- LEFT: my roster (select someone to release) -->
+              <div class="card bg-base-200 p-3">
+                <h4 class="font-semibold mb-2 text-sm">1. Select a player to release</h4>
+                <div v-if="tradeRosterLoading" class="py-6 text-center"><span class="loading loading-spinner"></span></div>
+                <ul v-else class="space-y-1">
+                  <li
+                    v-for="p in myTradeRoster"
+                    :key="p.hb_human_id"
+                    class="flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer hover:bg-base-300"
+                    :class="{ 'bg-primary/20 ring-1 ring-primary': tradeSelectedRelease === p.hb_human_id }"
+                    @click="selectRelease(p)"
+                  >
+                    <span class="truncate">
+                      {{ p.player_name || (p.first_name + ' ' + p.last_name) }}
+                      <span class="badge badge-xs ml-1" :class="p.is_goalie ? 'badge-info' : p.is_ref ? 'badge-warning' : 'badge-ghost'">
+                        {{ p.is_goalie ? 'G' : p.is_ref ? 'Ref' : 'Skater' }}
+                      </span>
+                    </span>
+                    <span class="text-xs font-mono opacity-70">{{ Number(p.fantasy_points).toFixed(1) }}</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- RIGHT: available candidates (placeholder until release selected) -->
+              <div class="card bg-base-200 p-3">
+                <h4 class="font-semibold mb-2 text-sm">2. Select a replacement</h4>
+                <div v-if="!tradeSelectedRelease" class="py-10 text-center text-base-content/40 text-sm">
+                  ← Pick someone to release first
+                </div>
+                <div v-else-if="tradeAvailableLoading" class="py-6 text-center"><span class="loading loading-spinner"></span></div>
+                <div v-else-if="tradeAvailable.length === 0" class="py-10 text-center text-base-content/40 text-sm">
+                  No available players of this type.
+                </div>
+                <ul v-else class="space-y-1 max-h-96 overflow-y-auto">
+                  <li
+                    v-for="p in tradeAvailable"
+                    :key="p.hb_human_id"
+                    class="flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer hover:bg-base-300"
+                    :class="{ 'bg-secondary/20 ring-1 ring-secondary': tradeSelectedAcquire === p.hb_human_id }"
+                    @click="selectAcquire(p)"
+                  >
+                    <span class="truncate">
+                      {{ p.player_name || (p.first_name + ' ' + p.last_name) }}
+                      <span class="badge badge-xs ml-1" :class="p.is_goalie ? 'badge-info' : p.is_ref ? 'badge-warning' : 'badge-ghost'">
+                        {{ p.is_goalie ? 'G' : p.is_ref ? 'Ref' : 'Skater' }}
+                      </span>
+                    </span>
+                    <span class="text-xs font-mono opacity-70">{{ Number(p.fantasy_points).toFixed(1) }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Confirmation prompt -->
+            <div v-if="tradeSelectedRelease && tradeSelectedAcquire" class="alert mt-4 flex-col items-stretch gap-2">
+              <p class="text-sm">
+                Release <strong>{{ releaseName }}</strong> and add <strong>{{ acquireName }}</strong> to your team?
+              </p>
+              <div class="flex gap-2">
+                <button class="btn btn-primary btn-sm" :disabled="tradeSubmitting" @click="confirmTrade">
+                  <span v-if="tradeSubmitting" class="loading loading-spinner loading-xs"></span>
+                  Confirm Trade
+                </button>
+                <button class="btn btn-ghost btn-sm" :disabled="tradeSubmitting" @click="tradeSelectedAcquire = null">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Skip option -->
+            <div class="mt-4 text-center">
+              <button class="btn btn-outline btn-sm" :disabled="tradeSubmitting" @click="skipTrade">
+                I like my team — skip my turn
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
 
     <div v-else class="text-center py-16 text-base-content/40">
@@ -728,11 +871,24 @@ const games = ref([])
 const gamesLoading = ref(false)
 const viewUserId = ref(null)  // whose roster to show in games tab (null = own)
 
+// ── Trade state ──────────────────────────────────────────────────────────────
+const tradeState = ref({ round: null, turns: [], current_turn: null, is_my_turn: false, can_initiate: false })
+const myTradeRoster = ref([])         // current user's roster (for the release list)
+const tradeRosterLoading = ref(false)
+const tradeSelectedRelease = ref(null)   // hb_human_id selected on the left
+const tradeAvailable = ref([])           // candidates of the released player's type
+const tradeAvailableLoading = ref(false)
+const tradeSelectedAcquire = ref(null)   // hb_human_id selected on the right
+const tradeSubmitting = ref(false)
+const tradeError = ref('')
+const initiatingTrade = ref(false)
+
 const allTabs = [
   { id: 'standings', label: '🏆 Standings' },
   { id: 'games', label: '🏒 Games' },
   { id: 'myteam', label: '⭐ My Team' },
   { id: 'rosters', label: '👥 Rosters' },
+  { id: 'trade', label: '🔁 Trade' },
   { id: 'draft', label: '📋 Draft' },
 ]
 const tabs = computed(() => {
@@ -742,6 +898,8 @@ const tabs = computed(() => {
   return allTabs.filter(t => {
     if (t.id === 'draft' && isLive) return false
     if (t.id === 'games' && !hasGames) return false
+    // Trade tab only while active, and only once a trade round exists (or it's your turn).
+    if (t.id === 'trade' && !(league.value.status === 'active' && tradeState.value.round)) return false
     return true
   })
 })
@@ -1162,6 +1320,133 @@ async function loadStandings() {
   }
 }
 
+// ── Trade loaders + actions ──────────────────────────────────────────────────
+async function loadTradeState({ silent = false } = {}) {
+  try {
+    const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/trade`)
+    tradeState.value = data
+  } catch {
+    if (!silent) tradeState.value = { round: null, turns: [], current_turn: null, is_my_turn: false, can_initiate: false }
+  }
+}
+
+// Map a manager user_id → team/display name for the turn list.
+const tradeManagerName = (userId) => {
+  const s = standings.value.find(s => s.user_id === userId)
+  return s?.team_name || s?.display_name || `Manager ${userId}`
+}
+
+async function loadMyTradeRoster() {
+  if (!myUserId.value) return
+  tradeRosterLoading.value = true
+  try {
+    const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/roster/${myUserId.value}`)
+    myTradeRoster.value = data.roster || []
+  } catch {
+    myTradeRoster.value = []
+  } finally {
+    tradeRosterLoading.value = false
+  }
+}
+
+// Role string for a roster player → matches backend type filter.
+function playerType(p) {
+  if (p.is_goalie) return 'goalie'
+  if (p.is_ref) return 'ref'
+  return 'skater'
+}
+
+// Step 1: select a player to release → load available candidates of the same type.
+async function selectRelease(player) {
+  tradeError.value = ''
+  tradeSelectedAcquire.value = null
+  tradeSelectedRelease.value = player.hb_human_id
+  tradeAvailableLoading.value = true
+  tradeAvailable.value = []
+  try {
+    const type = playerType(player)
+    const { data } = await api.get(
+      `/api/fantasy/leagues/${route.params.id}/trade/available?type=${type}`
+    )
+    tradeAvailable.value = data.players || []
+  } catch (e) {
+    tradeError.value = e?.response?.data?.message || 'Could not load available players'
+  } finally {
+    tradeAvailableLoading.value = false
+  }
+}
+
+// Step 2: select a candidate to acquire (shows the confirm prompt in the template).
+function selectAcquire(player) {
+  tradeError.value = ''
+  tradeSelectedAcquire.value = player.hb_human_id
+}
+
+const releaseName = computed(() => {
+  const p = myTradeRoster.value.find(p => p.hb_human_id === tradeSelectedRelease.value)
+  return p ? (p.player_name || `${p.first_name} ${p.last_name}`) : ''
+})
+const acquireName = computed(() => {
+  const p = tradeAvailable.value.find(p => p.hb_human_id === tradeSelectedAcquire.value)
+  return p ? (p.player_name || `${p.first_name} ${p.last_name}`) : ''
+})
+
+function resetTradeSelection() {
+  tradeSelectedRelease.value = null
+  tradeSelectedAcquire.value = null
+  tradeAvailable.value = []
+  tradeError.value = ''
+}
+
+async function confirmTrade() {
+  if (!tradeSelectedRelease.value || !tradeSelectedAcquire.value) return
+  tradeSubmitting.value = true
+  tradeError.value = ''
+  try {
+    await api.post(`/api/fantasy/leagues/${route.params.id}/trade/swap`, {
+      release_hb_human_id: tradeSelectedRelease.value,
+      acquire_hb_human_id: tradeSelectedAcquire.value,
+    })
+    resetTradeSelection()
+    // Refresh trade-state first (it advances the turn), then roster/standings.
+    await loadTradeState()
+    await Promise.all([loadMyTradeRoster(), loadStandings(), loadLeague({ silent: true })])
+  } catch (e) {
+    tradeError.value = e?.response?.data?.message || 'Trade failed'
+  } finally {
+    tradeSubmitting.value = false
+  }
+}
+
+async function skipTrade() {
+  tradeSubmitting.value = true
+  tradeError.value = ''
+  try {
+    await api.post(`/api/fantasy/leagues/${route.params.id}/trade/skip`)
+    resetTradeSelection()
+    await loadTradeState()
+    await Promise.all([loadMyTradeRoster(), loadStandings()])
+  } catch (e) {
+    tradeError.value = e?.response?.data?.message || 'Could not skip'
+  } finally {
+    tradeSubmitting.value = false
+  }
+}
+
+async function initiateTradeRound() {
+  if (!confirm('Start a trade round now? Managers will take turns (lowest fantasy points first) to make one swap each.')) return
+  initiatingTrade.value = true
+  try {
+    await api.post(`/api/fantasy/leagues/${route.params.id}/trade/initiate`, {})
+    await Promise.all([loadTradeState(), loadStandings(), loadMyTradeRoster()])
+    activeTab.value = 'trade'
+  } catch (e) {
+    alert(e?.response?.data?.message || 'Could not start trade round')
+  } finally {
+    initiatingTrade.value = false
+  }
+}
+
 async function joinLeague() {
   joinError.value = ''
   joining.value = true
@@ -1246,6 +1531,7 @@ watch(() => league.value?.has_live_game, (hasLive) => {
       await loadLeague({ silent: true })
       if (activeTab.value === 'games') loadGames(viewUserId.value)
       if (activeTab.value === 'standings') loadStandings()
+      if (league.value?.status === 'active') loadTradeState({ silent: true })
     }, 60000)
   }
 }, { immediate: true })
@@ -1265,6 +1551,10 @@ watch(activeTab, (tab) => {
   if (tab === 'standings') loadStandings()
   if (tab === 'games') loadGames()
   if (tab === 'draft') loadMyQueue()
+  if (tab === 'trade') {
+    resetTradeSelection()
+    loadTradeState().then(() => Promise.all([loadMyTradeRoster(), loadStandings()]))
+  }
 })
 
 // Auto-switch pool tab based on pick type
@@ -1295,10 +1585,15 @@ onMounted(async () => {
   }
 
   await loadLeague()
+  // Load trade state up front so the Trade tab + header button can appear.
+  if (league.value && league.value.status === 'active') {
+    await loadTradeState({ silent: true })
+  }
   // Honor ?tab=draft (or other tab) from notification link
   const tabParam = route.query.tab
   if (tabParam && tabs.value.some(t => t.id === tabParam)) {
     activeTab.value = tabParam
+    if (tabParam === 'trade') loadTradeState().then(() => Promise.all([loadMyTradeRoster(), loadStandings()]))
   }
   // Pre-fill join code only if league is still open for new members
   const urlCode = route.query.join_code

@@ -242,6 +242,29 @@ def start_scheduler(app):
         replace_existing=True,
     )
 
+    def _trade_advance_job():
+        """
+        Check all active trade rounds for expired turn deadlines and advance them
+        (mark missed, move to next manager, build second-chance pass, complete).
+        Runs every minute so turns progress promptly.
+        """
+        with _app.app_context():
+            try:
+                from app.services.fantasy_trade_service import advance_active_trade_rounds
+                summary = advance_active_trade_rounds()
+                if summary.get("rounds", 0):
+                    logger.debug("[trade] Checked %d active trade round(s)", summary["rounds"])
+            except Exception as exc:
+                logger.exception("[trade] Unhandled error in trade advance job: %s", exc)
+
+    _scheduler.add_job(
+        func=_trade_advance_job,
+        trigger=IntervalTrigger(minutes=1),
+        id="advance_trades",
+        name="Advance fantasy trade turns on deadline",
+        replace_existing=True,
+    )
+
 
     def _fantasy_score_job():
         """Score completed games for all active fantasy leagues."""
