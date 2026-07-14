@@ -132,10 +132,11 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
     # ── Unified player dict keyed by human_id ─────────────────────────────────
     players: dict[int, dict] = {}
 
-    def _base_entry(human_id, first_name, last_name):
+    def _base_entry(human_id, first_name, last_name, middle_name=None):
         return {
             "hb_human_id": human_id,
             "first_name": first_name,
+            "middle_name": middle_name,
             "last_name": last_name,
             # Role flags
             "is_skater": False,
@@ -168,7 +169,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
     skater_stmt = (
         select(
             DivisionStatsSkater.human_id,
-            Human.first_name, Human.last_name,
+            Human.first_name, Human.middle_name, Human.last_name,
             func.sum(DivisionStatsSkater.games_played).label("games_played"),
             func.sum(DivisionStatsSkater.goals).label("goals"),
             func.sum(DivisionStatsSkater.assists).label("assists"),
@@ -178,7 +179,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .join(Human, Human.id == DivisionStatsSkater.human_id)
         .where(DivisionStatsSkater.division_id.in_(div_ids_stmt))
         .where(DivisionStatsSkater.human_id.not_in(non_human_ids) if non_human_ids else True)
-        .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.last_name)
+        .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.middle_name, Human.last_name)
         .having(func.sum(DivisionStatsSkater.games_played) >= min_games)
     )
     for row in hb.execute(skater_stmt).all():
@@ -187,7 +188,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         assists = row.assists or 0
         penalties = row.penalties or 0
         fp = (goals * 3) + (assists * 2) + (gp * 1) - (penalties * 0.5)
-        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
+        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name, row.middle_name))
         p["is_skater"] = True
         p["games_played"] = row.games_played
         p["goals"] = goals
@@ -201,7 +202,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
     goalie_stmt = (
         select(
             DivisionStatsGoalie.human_id,
-            Human.first_name, Human.last_name,
+            Human.first_name, Human.middle_name, Human.last_name,
             func.sum(DivisionStatsGoalie.games_played).label("games_played"),
             func.sum(DivisionStatsGoalie.goals_allowed).label("goals_allowed"),
             func.avg(DivisionStatsGoalie.goals_allowed_per_game).label("goals_against_avg"),
@@ -210,14 +211,14 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .join(Human, Human.id == DivisionStatsGoalie.human_id)
         .where(DivisionStatsGoalie.division_id.in_(div_ids_stmt))
         .where(DivisionStatsGoalie.human_id.not_in(non_human_ids) if non_human_ids else True)
-        .group_by(DivisionStatsGoalie.human_id, Human.first_name, Human.last_name)
+        .group_by(DivisionStatsGoalie.human_id, Human.first_name, Human.middle_name, Human.last_name)
         .having(func.sum(DivisionStatsGoalie.games_played) >= min_games)
     )
     for row in hb.execute(goalie_stmt).all():
         gp = row.games_played or 1
         save_pct = float(row.save_percentage or 0)
         fp = float(gp) * 3.0 + (save_pct * 5.0 * gp)
-        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
+        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name, row.middle_name))
         p["is_goalie"] = True
         p["goalie_games"] = row.games_played
         p["goals_allowed"] = int(row.goals_allowed or 0)
@@ -230,7 +231,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
     ref_stmt = (
         select(
             DivisionStatsReferee.human_id,
-            Human.first_name, Human.last_name,
+            Human.first_name, Human.middle_name, Human.last_name,
             func.sum(DivisionStatsReferee.games_reffed).label("games_reffed"),
             func.sum(DivisionStatsReferee.penalties_given).label("penalties_given"),
             func.sum(DivisionStatsReferee.gm_given).label("gm_given"),
@@ -238,7 +239,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         .join(Human, Human.id == DivisionStatsReferee.human_id)
         .where(DivisionStatsReferee.division_id.in_(div_ids_stmt))
         .where(DivisionStatsReferee.human_id.not_in(non_human_ids) if non_human_ids else True)
-        .group_by(DivisionStatsReferee.human_id, Human.first_name, Human.last_name)
+        .group_by(DivisionStatsReferee.human_id, Human.first_name, Human.middle_name, Human.last_name)
         .having(func.sum(DivisionStatsReferee.games_reffed) >= min_games)
     )
     for row in hb.execute(ref_stmt).all():
@@ -246,7 +247,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         pg = int(row.penalties_given or 0)
         gm = int(row.gm_given or 0)
         fp = gr * 4.0 + pg * 2.0 + gm * 8.0
-        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name))
+        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name, row.middle_name))
         p["is_ref"] = True
         p["games_reffed"] = gr
         p["penalties_given"] = pg
