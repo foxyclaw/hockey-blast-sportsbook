@@ -163,28 +163,20 @@ def score_game(league_id: int, game_id: int) -> None:
             pass
 
     # ── Referee stats for this game ──────────────────────────────────────────
+    # Refs are recorded on games.referee_1_id / referee_2_id. (The old code queried
+    # ref_divisions.game_id and penalties.referee_id — neither column exists — so
+    # ref scoring silently produced nothing.) There is no per-ref penalty/GM
+    # attribution available, so refs score on games officiated only.
     ref_stats: dict[int, dict] = {}
     try:
-        ref_rows = hb.execute(
-            text("SELECT human_id FROM ref_divisions WHERE game_id = :gid"),
+        game_ref_row = hb.execute(
+            text("SELECT referee_1_id, referee_2_id FROM games WHERE id = :gid"),
             {"gid": game_id},
-        ).fetchall()
-        for r in ref_rows:
-            if r.human_id not in ref_stats:
-                ref_stats[r.human_id] = {"games": 1, "penalties": 0, "gm": 0}
-        # Count penalties called by each ref in this game
-        ref_pen_rows = hb.execute(
-            text("""SELECT referee_id,
-                    COUNT(*) AS cnt,
-                    SUM(CASE WHEN LOWER(penalty_type) LIKE '%game misconduct%' THEN 1 ELSE 0 END) AS gm_cnt
-                    FROM penalties WHERE game_id = :gid AND referee_id IS NOT NULL
-                    GROUP BY referee_id"""),
-            {"gid": game_id},
-        ).fetchall()
-        for r in ref_pen_rows:
-            if r.referee_id in ref_stats:
-                ref_stats[r.referee_id]["penalties"] = int(r.cnt or 0)
-                ref_stats[r.referee_id]["gm"] = int(r.gm_cnt or 0)
+        ).fetchone()
+        if game_ref_row:
+            for rid in (game_ref_row.referee_1_id, game_ref_row.referee_2_id):
+                if rid:
+                    ref_stats[rid] = {"games": 1, "penalties": 0, "gm": 0}
     except Exception as e:
         logger.debug("score_game: ref stats unavailable for game %d: %s", game_id, e)
         try:
@@ -355,28 +347,18 @@ def score_live_game(league_id: int, game_id: int) -> None:
         except Exception:
             pass
 
-    # Ref stats — count what's been called so far
+    # Ref stats — refs are on games.referee_1_id / referee_2_id (see score_game).
+    # Games officiated only; no per-ref penalty/GM data source.
     ref_stats: dict[int, dict] = {}
     try:
-        ref_rows = hb.execute(
-            text("SELECT human_id FROM ref_divisions WHERE game_id = :gid"),
+        game_ref_row = hb.execute(
+            text("SELECT referee_1_id, referee_2_id FROM games WHERE id = :gid"),
             {"gid": game_id},
-        ).fetchall()
-        for r in ref_rows:
-            if r.human_id not in ref_stats:
-                ref_stats[r.human_id] = {"games": 1, "penalties": 0, "gm": 0}
-        ref_pen_rows = hb.execute(
-            text("""SELECT referee_id,
-                    COUNT(*) AS cnt,
-                    SUM(CASE WHEN LOWER(penalty_type) LIKE '%game misconduct%' THEN 1 ELSE 0 END) AS gm_cnt
-                    FROM penalties WHERE game_id = :gid AND referee_id IS NOT NULL
-                    GROUP BY referee_id"""),
-            {"gid": game_id},
-        ).fetchall()
-        for r in ref_pen_rows:
-            if r.referee_id in ref_stats:
-                ref_stats[r.referee_id]["penalties"] = int(r.cnt or 0)
-                ref_stats[r.referee_id]["gm"] = int(r.gm_cnt or 0)
+        ).fetchone()
+        if game_ref_row:
+            for rid in (game_ref_row.referee_1_id, game_ref_row.referee_2_id):
+                if rid:
+                    ref_stats[rid] = {"games": 1, "penalties": 0, "gm": 0}
     except Exception as e:
         logger.debug("score_live_game: ref stats unavailable for game %d: %s", game_id, e)
         try:
@@ -508,7 +490,7 @@ def score_live_games() -> dict:
             open_games = hb.execute(
                 text(
                     f"SELECT id FROM games WHERE division_id IN ({div_ids_sql}) "
-                    f"AND status = 'OPEN'{date_filter}"
+                    f"AND status_id = 9{date_filter}"  # 9=OPEN (canonical status_id)
                 ),
                 date_params or None,
             ).fetchall()
@@ -701,7 +683,10 @@ def score_active_leagues() -> dict:
             final_games = hb.execute(
                 text(
                     f"SELECT id FROM games WHERE division_id IN ({div_ids_sql}) "
-                    f"AND status IN ('Final','Final.','Final/OT','Final/OT2','Final/SO','Final(SO)'){date_filter}"
+                    # status_id 3=FINAL, 4=FINAL_OT, 5=FINAL_SO. The legacy string
+                    # filter used mixed-case 'Final'... which no longer matches the
+                    # canonical uppercase status values, so finalization never ran.
+                    f"AND status_id IN (3, 4, 5){date_filter}"
                 ),
                 date_params or None,
             ).fetchall()
@@ -739,6 +724,116 @@ def score_active_leagues() -> dict:
                 pass
 
     return summary
+
+
+def compute_in_window_fp(league_id: int, hb_human_ids: list[int]) -> dict[int, dict]:
+    """
+    Compute each player's fantasy points using the SAME per-game scoring formula
+    and the SAME game window that standings use — i.e. FINAL games in the league's
+    tracked division on/after season_starts_at. Returns
+    {hb_human_id: {"skater": fp, "goalie": fp, "ref": fp}}.
+
+    This is what should be shown next to players during a trade: the number equals
+    what the player would actually contribute to standings, NOT the whole-season
+    division-stat aggregate from the draft pool (which ignores season_starts_at and
+    uses a different goalie formula).
+    """
+    result: dict[int, dict] = {h: {"skater": 0.0, "goalie": 0.0, "ref": 0.0} for h in hb_human_ids}
+    if not hb_human_ids:
+        return result
+
+    from app.models.fantasy_league import FantasyLeague
+    pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    if league is None or not league.hb_division_id:
+        return result
+
+    hb = HBSession()
+    # In-window FINAL game ids for this league's division.
+    date_filter = ""
+    params = {"did": league.hb_division_id}
+    if league.season_starts_at:
+        date_filter = " AND date >= :season_start"
+        params["season_start"] = league.season_starts_at.date()
+    # Filter on status_id (canonical): FINAL=3, FINAL_OT=4, FINAL_SO=5. The legacy
+    # `status` strings are now uppercase (FINAL/FINAL_SO), so the old mixed-case
+    # string IN (...) filter matches nothing — use status_id.
+    game_rows = hb.execute(
+        text(f"SELECT id FROM games WHERE division_id = :did "
+             f"AND status_id IN (3, 4, 5)"
+             f"{date_filter}"),
+        params,
+    ).fetchall()
+    game_ids = [r.id for r in game_rows]
+    if not game_ids:
+        return result
+
+    ids_sql = ",".join(str(int(g)) for g in game_ids)
+    hid_sql = ",".join(str(int(h)) for h in hb_human_ids)
+
+    # ── Skater: goals*3 + assists*2 + games_played*1 - penalties*0.5 ──────────
+    # games_played = count of in-window games where the player appears on a roster.
+    gp = {r.human_id: int(r.n) for r in hb.execute(text(
+        f"SELECT human_id, COUNT(DISTINCT game_id) n FROM game_rosters "
+        f"WHERE game_id IN ({ids_sql}) AND human_id IN ({hid_sql}) GROUP BY human_id")).fetchall()}
+    goals = {}
+    assists = {}
+    for r in hb.execute(text(
+        f"SELECT goal_scorer_id, assist_1_id, assist_2_id FROM goals WHERE game_id IN ({ids_sql})")).fetchall():
+        if r.goal_scorer_id in result:
+            goals[r.goal_scorer_id] = goals.get(r.goal_scorer_id, 0) + 1
+        for a in (r.assist_1_id, r.assist_2_id):
+            if a in result:
+                assists[a] = assists.get(a, 0) + 1
+    penalties = {r.penalized_player_id: int(r.n) for r in hb.execute(text(
+        f"SELECT penalized_player_id, COUNT(*) n FROM penalties "
+        f"WHERE game_id IN ({ids_sql}) AND penalized_player_id IN ({hid_sql}) "
+        f"GROUP BY penalized_player_id")).fetchall()}
+
+    # ── Goalie win/shutout BONUSES: credited to whoever was in net that game ───
+    # (score_game applies these from goalie_results regardless of roster role.)
+    goalie_win = {h: 0 for h in hb_human_ids}
+    goalie_so = {h: 0 for h in hb_human_ids}
+    for r in hb.execute(text(
+        f"SELECT home_goalie_id, visitor_goalie_id, home_final_score, visitor_final_score "
+        f"FROM games WHERE id IN ({ids_sql})")).fetchall():
+        if r.home_final_score is None or r.visitor_final_score is None:
+            continue
+        h, v = r.home_final_score, r.visitor_final_score
+        if r.home_goalie_id in result:
+            if h > v: goalie_win[r.home_goalie_id] += 1
+            if v == 0: goalie_so[r.home_goalie_id] += 1
+        if r.visitor_goalie_id in result:
+            if v > h: goalie_win[r.visitor_goalie_id] += 1
+            if h == 0: goalie_so[r.visitor_goalie_id] += 1
+
+    # ── Ref: games officiated * REF_GAME_PTS ──────────────────────────────────
+    # Matches the (now-fixed) score_game ref logic: refs are on
+    # games.referee_1_id / referee_2_id; scored on games officiated only (no
+    # per-ref penalty/GM data source).
+    ref_games: dict[int, int] = {}
+    for r in hb.execute(text(
+        f"SELECT referee_1_id, referee_2_id FROM games WHERE id IN ({ids_sql})")).fetchall():
+        for rid in (r.referee_1_id, r.referee_2_id):
+            if rid in result:
+                ref_games[rid] = ref_games.get(rid, 0) + 1
+
+    # Each value mirrors score_game exactly for a player of that roster role:
+    #   points = goals*3 + assists*2 + games_played*perGameMult + penalties*-0.5
+    #            + goalie_win_bonus + shutout_bonus
+    # where games_played = count of in-window games the player is in game_rosters
+    # (same for skater & goalie roles), perGameMult is 1 (skater) or 3 (goalie),
+    # and win/shutout bonuses are credited to whoever was in net (any role).
+    for h in hb_human_ids:
+        common = (goals.get(h, 0) * GOAL_PTS + assists.get(h, 0) * ASSIST_PTS
+                  + penalties.get(h, 0) * PENALTY_PTS
+                  + goalie_win.get(h, 0) * GOALIE_WIN_PTS
+                  + goalie_so.get(h, 0) * SHUTOUT_BONUS)
+        g_played = gp.get(h, 0)
+        result[h]["skater"] = round(common + g_played * GAME_PLAYED_PTS, 1)
+        result[h]["goalie"] = round(common + g_played * GOALIE_GAME_PLAYED_PTS, 1)
+        result[h]["ref"] = round(ref_games.get(h, 0) * REF_GAME_PTS, 1)
+    return result
 
 
 def backfill_scoring_after_trade(league_id: int) -> int:

@@ -1455,24 +1455,28 @@ def get_trade_available(league_id: int):
         return error_response("BAD_REQUEST", "type must be skater, goalie, or ref", 400)
 
     players = get_available_players(league_id, of_type=of_type)
-    # Attach the role-specific fantasy_points for the requested type so the UI
-    # shows a sensible number next to each candidate.
-    fp_key = {
-        "skater": "fantasy_points_skater",
-        "goalie": "fantasy_points_goalie",
-        "ref": "fantasy_points_ref",
-    }.get(of_type, "fantasy_points")
+
+    # Show the SAME points a player would actually contribute to standings: the
+    # in-window per-game total (FINAL games since season_starts_at, scoring
+    # formula), NOT the whole-season draft-pool aggregate. This keeps the number
+    # shown at trade time consistent with what lands in the roster/standings.
+    from app.services.fantasy_scoring_service import compute_in_window_fp
+    role_key = of_type or "skater"
+    fp_map = compute_in_window_fp(league_id, [p["hb_human_id"] for p in players])
+
     result = []
     for p in players:
+        hid = p["hb_human_id"]
+        fp = fp_map.get(hid, {}).get(role_key, 0.0)
         result.append({
-            "hb_human_id": p["hb_human_id"],
+            "hb_human_id": hid,
             "first_name": p.get("first_name"),
             "last_name": p.get("last_name"),
             "player_name": f"{p.get('first_name', '')} {p.get('last_name', '')}".strip(),
             "is_skater": p.get("is_skater", False),
             "is_goalie": p.get("is_goalie", False),
             "is_ref": p.get("is_ref", False),
-            "fantasy_points": round(float(p.get(fp_key, 0) or 0), 1),
+            "fantasy_points": round(float(fp or 0), 1),
         })
     # Sort by fantasy_points desc for a useful default order.
     result.sort(key=lambda p: -p["fantasy_points"])
