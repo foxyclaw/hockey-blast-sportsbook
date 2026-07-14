@@ -124,6 +124,14 @@ Hockey players often have **multiple records** in `humans` table representing th
 - Team builder: "find 15 players for a new team at Sharks Ice, Div C level"
 - Public leaderboards
 - Commissioner tools: manage league, override results
+- **Referee penalty/GM attribution (schema + backfill)** — fantasy ref scoring
+  currently counts games officiated only (`games.referee_1_id/referee_2_id`).
+  The penalties table has no officiating-referee link, so per-ref
+  penalties-called and game-misconducts can't be scored. Needs: (1) add a
+  referee link to penalty events in the pipeline/common-lib schema, (2) backfill
+  historical penalties with the calling ref, (3) then extend `score_game` +
+  `compute_in_window_fp` to award `REF_PENALTY_PTS` / `REF_GM_PTS`. (Follow-up
+  from PR #285, which fixed refs to score games-officiated.)
 
 ---
 
