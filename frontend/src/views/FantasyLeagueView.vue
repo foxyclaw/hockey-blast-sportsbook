@@ -250,7 +250,7 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>—</button>
                           </template>
                         </td>
-                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a></td>
                         <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals }}</td>
                         <td class="text-right">{{ p.assists }}</td>
@@ -311,7 +311,7 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>—</button>
                           </template>
                         </td>
-                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a></td>
                         <td class="text-right">{{ p.goalie_games ?? p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
@@ -370,7 +370,7 @@
                             <button class="btn btn-xs btn-disabled" disabled>—</button>
                           </template>
                         </td>
-                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ p.first_name }} {{ p.last_name }}</a></td>
+                        <td><a :href="`http://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a></td>
                         <td class="text-right">{{ p.games_reffed }}</td>
                         <td class="text-right">{{ p.penalties_given }}</td>
                         <td class="text-right">{{ p.gm_given }}</td>
@@ -1000,6 +1000,15 @@ function setRefSortKey(key) {
 }
 
 const myUserId = computed(() => userStore.predUser?.id)
+
+// Display name including middle name/initial when present, so distinct people
+// who share a first+last name (e.g. "Michael S Welch" vs "Michael J Welch") are
+// distinguishable. Prefers server-provided player_name, falls back to parts.
+function displayName(p) {
+  if (!p) return '—'
+  if (p.player_name) return p.player_name
+  return [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ')
+}
 
 // Priority queue helpers
 const queuePositionOf = (hb_human_id) => {

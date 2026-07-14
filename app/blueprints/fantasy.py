@@ -30,6 +30,7 @@ from app.models.fantasy_roster import FantasyRoster
 from app.models.fantasy_draft_queue import FantasyDraftQueue
 from app.models.fantasy_standings import FantasyStandings
 from app.models.pred_user import PredUser
+from app.utils.names import format_player_name
 from app.utils.response import error_response
 from hockey_blast_common_lib.game_status import StatusId, FINAL_STATUS_IDS
 
@@ -828,7 +829,7 @@ def get_draft_queue(league_id: int):
             humans = hb.execute(
                 select(Human).where(Human.id.in_(picked_ids))
             ).scalars().all()
-            human_names = {h.id: f"{h.first_name} {h.last_name}".strip() for h in humans}
+            human_names = {h.id: format_player_name(h.first_name, h.middle_name, h.last_name) for h in humans}
 
     # Manager names
     mgr_stmt = (
@@ -1112,8 +1113,9 @@ def get_roster(league_id: int, user_id: int):
         h = human_map.get(r.hb_human_id)
         if h:
             d["first_name"] = h.first_name
+            d["middle_name"] = h.middle_name
             d["last_name"] = h.last_name
-            d["player_name"] = f"{h.first_name} {h.last_name}".strip()
+            d["player_name"] = format_player_name(h.first_name, h.middle_name, h.last_name)
         s = stats_map.get(r.hb_human_id, {})
         d["goals"] = s.get("goals", 0)
         d["assists"] = s.get("assists", 0)
@@ -1234,9 +1236,9 @@ def get_league_games(league_id: int):
         if my_roster:
             hids_sql = ",".join(str(h) for h in my_roster)
             human_rows = hb.execute(
-                text(f"SELECT id, first_name, last_name FROM humans WHERE id IN ({hids_sql})")
+                text(f"SELECT id, first_name, middle_name, last_name FROM humans WHERE id IN ({hids_sql})")
             ).fetchall()
-            human_names = {r.id: f"{r.first_name or ''} {r.last_name or ''}".strip() for r in human_rows}
+            human_names = {r.id: format_player_name(r.first_name, r.middle_name, r.last_name) for r in human_rows}
 
     # Batch-load scores for completed games
     scored_games = {r.id for r in game_rows if r.status_id in FINAL_STATUS_IDS}
@@ -1471,8 +1473,9 @@ def get_trade_available(league_id: int):
         result.append({
             "hb_human_id": hid,
             "first_name": p.get("first_name"),
+            "middle_name": p.get("middle_name"),
             "last_name": p.get("last_name"),
-            "player_name": f"{p.get('first_name', '')} {p.get('last_name', '')}".strip(),
+            "player_name": format_player_name(p.get("first_name"), p.get("middle_name"), p.get("last_name")),
             "is_skater": p.get("is_skater", False),
             "is_goalie": p.get("is_goalie", False),
             "is_ref": p.get("is_ref", False),

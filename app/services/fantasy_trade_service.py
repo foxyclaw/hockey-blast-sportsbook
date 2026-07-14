@@ -347,7 +347,8 @@ def _try_auto_trade_for_expired_turn(league_id: int, round_id: int, turn, pred) 
         if gain <= 0:
             continue  # no upgrade for this role
         if best_swap is None or gain > best_swap[0]:
-            name = f"{cand.get('first_name', '')} {cand.get('last_name', '')}".strip()
+            from app.utils.names import format_player_name
+            name = format_player_name(cand.get("first_name"), cand.get("middle_name"), cand.get("last_name"))
             best_swap = (gain, release_id, cand["hb_human_id"], role, name)
 
     if best_swap is None:
@@ -760,16 +761,17 @@ def _notify_turn(user_id: int, league_id: int, deadline, pred) -> None:
 
 
 def _hb_player_name(hb_human_id: int) -> str:
-    """Best-effort 'First Last' for a HB human id (for notifications)."""
+    """Best-effort 'First Middle Last' for a HB human id (for notifications)."""
     try:
         from app.db import HBSession
         from sqlalchemy import text as sa_text
+        from app.utils.names import format_player_name
         row = HBSession().execute(
-            sa_text("SELECT first_name, last_name FROM humans WHERE id = :hid"),
+            sa_text("SELECT first_name, middle_name, last_name FROM humans WHERE id = :hid"),
             {"hid": hb_human_id},
         ).fetchone()
         if row:
-            return f"{row.first_name or ''} {row.last_name or ''}".strip() or f"#{hb_human_id}"
+            return format_player_name(row.first_name, row.middle_name, row.last_name) or f"#{hb_human_id}"
     except Exception:
         pass
     return f"#{hb_human_id}"
