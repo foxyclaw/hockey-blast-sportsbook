@@ -25,11 +25,10 @@ except ImportError:
 # Alembic Config object
 config = context.config
 
-# Inject the actual DB URL from environment
-pred_db_url = os.environ.get(
-    "PRED_DATABASE_URL",
-    "postgresql://foxyclaw:foxyhockey2026@192.168.86.83:5432/hockey_blast_predictions",
-)
+# Inject the actual DB URL from environment (no default: never migrate a guessed DB)
+pred_db_url = os.environ.get("PRED_DATABASE_URL")
+if not pred_db_url:
+    raise RuntimeError("PRED_DATABASE_URL is not set; alembic needs the predictions DB URL.")
 config.set_main_option("sqlalchemy.url", pred_db_url)
 
 # Logging

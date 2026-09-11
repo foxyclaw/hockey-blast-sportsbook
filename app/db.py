@@ -36,8 +36,14 @@ def init_db(app):
     """
     global _hb_engine, _pred_engine, HBSession, PredSession
 
-    hb_url = app.config["HB_DATABASE_URL"]
-    pred_url = app.config["PRED_DATABASE_URL"]
+    hb_url = app.config.get("HB_DATABASE_URL")
+    pred_url = app.config.get("PRED_DATABASE_URL")
+    missing = [n for n, u in (("HB_DATABASE_URL", hb_url), ("PRED_DATABASE_URL", pred_url)) if not u]
+    if missing:
+        raise RuntimeError(
+            f"{', '.join(missing)} not set. Put the DSN(s) in .env or the environment "
+            "(see .env.example); there is no default database."
+        )
 
     pool_kwargs = {
         "pool_pre_ping": app.config.get("SQLALCHEMY_POOL_PRE_PING", True),
