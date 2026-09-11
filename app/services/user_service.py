@@ -31,9 +31,15 @@ def get_or_create_pred_user(token_payload: dict[str, Any], session: Session) -> 
     now = datetime.now(timezone.utc)
 
     if user is None:
-        # Check if same email exists from a different auth provider — link accounts
+        # Same email from a different auth provider → link to the existing
+        # account instead of creating a duplicate. ONLY when Auth0 vouches for
+        # the address: an unverified email/password signup with someone else's
+        # address must never take over their account (balance, claims, fantasy
+        # rosters). Google/social logins carry email_verified=true; the tenant's
+        # post-login Action blocks unverified password signups before they get
+        # here, so this is the backstop, not the primary gate.
         email = token_payload.get("email")
-        if email:
+        if email and token_payload.get("email_verified") is True:
             existing = session.execute(
                 select(PredUser).where(PredUser.email == email)
             ).scalar_one_or_none()
