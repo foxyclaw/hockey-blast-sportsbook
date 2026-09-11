@@ -181,13 +181,28 @@ def get_history():
 
 
 def _set_mcp_env():
-    """Ensure MCP env vars are set before importing hockey_blast_mcp."""
+    """Ensure MCP env vars are set before importing hockey_blast_mcp.
+
+    DB_* are derived from the app's HB_DATABASE_URL so the MCP tools always
+    query the same hockey_blast database as the app (including sslmode).
+    """
+    from flask import current_app
+    from sqlalchemy.engine import make_url
+
+    url = make_url(current_app.config["HB_DATABASE_URL"])
+    if url.get_backend_name() == "postgresql":
+        db_env = {
+            "DB_HOST": url.host,
+            "DB_PORT": url.port or 5432,
+            "DB_NAME": url.database,
+            "DB_USER": url.username,
+            "DB_PASSWORD": url.password,
+            "DB_SSLMODE": url.query.get("sslmode"),
+        }
+        for k, v in db_env.items():
+            if v is not None:
+                os.environ[k] = str(v)
     defaults = {
-        "DB_HOST": "192.168.86.83",
-        "DB_USER": "foxyclaw",
-        "DB_PASSWORD": "foxyhockey2026",
-        "DB_NAME": "hockey_blast",
-        "DB_PORT": "5432",
         "AWS_REGION": "us-east-1",
         "BEDROCK_MODEL": "us.anthropic.claude-sonnet-4-6",
     }

@@ -18,14 +18,11 @@ class BaseConfig:
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
     # ── Databases ─────────────────────────────────────────────────────────────
-    HB_DATABASE_URL: str = os.environ.get(
-        "HB_DATABASE_URL",
-        "postgresql://foxyclaw:foxyhockey2026@192.168.86.83:5432/hockey_blast",
-    )
-    PRED_DATABASE_URL: str = os.environ.get(
-        "PRED_DATABASE_URL",
-        "postgresql://foxyclaw:foxyhockey2026@192.168.86.83:5432/hockey_blast_predictions",
-    )
+    # No credentialed defaults: both must come from the environment / .env.
+    # init_db() fails fast at app start if either is unset (tests override).
+    # Render Postgres requires TLS -> append ?sslmode=require to the URL.
+    HB_DATABASE_URL: str | None = os.environ.get("HB_DATABASE_URL")
+    PRED_DATABASE_URL: str | None = os.environ.get("PRED_DATABASE_URL")
 
     # SQLAlchemy pool settings
     SQLALCHEMY_POOL_PRE_PING: bool = True
