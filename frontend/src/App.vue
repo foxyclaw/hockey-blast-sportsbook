@@ -35,7 +35,7 @@ import { useUserStore } from '@/stores/user'
 
 const ChatWidget = defineAsyncComponent(() => import('@/components/ChatWidget.vue'))
 
-const { isAuthenticated, isLoading, idTokenClaims, getAccessTokenSilently, checkSession } = useAuth0()
+const { isAuthenticated, isLoading, idTokenClaims, getAccessTokenSilently, checkSession, loginWithRedirect } = useAuth0()
 const userStore = useUserStore()
 const router = useRouter()
 
@@ -49,6 +49,28 @@ onMounted(async () => {
     }
   }
 })
+
+// Cross-site SSO hand-off. The social site links here with `?sso=1`, meaning
+// "this visitor is signed in over there (same Auth0 tenant)". The iframe
+// checkSession() above is blocked on Safari/iOS (third-party cookie on the
+// *.auth0.com tenant domain), so instead we do a TOP-LEVEL redirect to
+// /authorize: with a live tenant session Auth0 completes it without showing a
+// form; without one the user sees the normal login page — also the right
+// outcome for a "go to the sportsbook" link. The param is stripped from the
+// return path so /callback cannot loop back into another redirect.
+function consumeSsoHint(authed) {
+  const url = new URL(window.location.href)
+  if (url.searchParams.get('sso') !== '1') return false
+  url.searchParams.delete('sso')
+  const returnTo = url.pathname + url.search + url.hash
+  if (authed) {
+    router.replace(returnTo)
+    return false
+  }
+  localStorage.setItem('auth_return_to', returnTo)
+  loginWithRedirect()
+  return true
+}
 const debugToken = ref(null)
 const debugLastCall = ref(null)
 const debugLastStatus = ref(null)
@@ -107,8 +129,10 @@ watch(
       }
     } else {
       userStore.reset()
+      if (consumeSsoHint(false)) return  // navigating to Auth0 — keep the spinner
     }
 
+    if (authed) consumeSsoHint(true)
     appReady.value = true
   },
   { immediate: true }
