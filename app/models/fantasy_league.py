@@ -48,6 +48,11 @@ class FantasyLeague(PredBase):
     season_starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_private: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     join_code: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    # Set when the league's real-life season finishes (status -> "completed")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    winner_user_id: Mapped[int | None] = mapped_column(
+        Integer, sa.ForeignKey("pred_users.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Relationships
     managers: Mapped[list["FantasyManager"]] = relationship(
@@ -92,6 +97,8 @@ class FantasyLeague(PredBase):
             "season_starts_at": self.season_starts_at.isoformat() if self.season_starts_at else None,
             "is_private": self.is_private,
             "join_code": self.join_code,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "winner_user_id": self.winner_user_id,
         }
 
     def __repr__(self) -> str:

@@ -4,6 +4,12 @@ fantasy_pool_service — builds the eligible player pool for a fantasy league.
 Each human gets ONE entry with boolean flags: is_skater, is_goalie, is_ref.
 Role-specific stats and fantasy points are stored per-role.
 This handles multi-role players (e.g. someone who skates AND goalies AND refs).
+
+The pool is seeded from ONE "draft season" (normally the last completed season,
+which has rich stats). Players who never appeared in that season but have already
+played at least one game in a NEWER season at the same level are merged in on top
+and flagged `is_new_this_season` — otherwise a league that forms a couple of weeks
+into a new season could never draft its newcomers.
 """
 
 from sqlalchemy import select, func
@@ -12,7 +18,14 @@ from app.db import HBSession
 from hockey_blast_common_lib.game_status import FINAL_STATUS_IDS
 
 
-def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, season_id: int = None, min_games: int = 1) -> dict:
+def get_player_pool(
+    level_id: int,
+    org_id: int = 1,
+    league_id: int = None,
+    season_id: int = None,
+    min_games: int = 1,
+    include_new_players: bool = True,
+) -> dict:
     """
     Returns the eligible player pool for a fantasy league at the given HB level.
 
@@ -23,8 +36,17 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
 
     Returns unified player list — each entry has is_skater/is_goalie/is_ref flags
     and role-specific stats. Sublists (skaters/goalies/refs) are derived from it.
+
+    include_new_players: also merge in humans who have played/reffed at least one
+    game in a season NEWER than the resolved draft season. They carry
+    is_new_this_season=True and their current-season stats (min_games is not
+    applied to them — one game is the whole point).
     """
-    from hockey_blast_common_lib.stats_models import DivisionStatsSkater, DivisionStatsGoalie
+    from hockey_blast_common_lib.stats_models import (
+        DivisionStatsSkater,
+        DivisionStatsGoalie,
+        DivisionStatsReferee,
+    )
     from hockey_blast_common_lib.models import Human, Division, Season
     from hockey_blast_common_lib.utils import get_non_human_ids
 
@@ -45,6 +67,25 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
             )
         )
 
+    from hockey_blast_common_lib.models import Game
+
+    def _completed_games(sid):
+        div_ids = hb.execute(
+            select(Division.id).where(
+                Division.level_id == level_id,
+                Division.org_id == org_id,
+                Division.season_id == sid,
+            )
+        ).scalars().all()
+        if not div_ids:
+            return 0
+        return hb.execute(
+            select(func.count(Game.id)).where(
+                Game.division_id.in_(div_ids),
+                Game.status_id.in_(FINAL_STATUS_IDS),
+            )
+        ).scalar() or 0
+
     if season_id is None:
         # Smart season resolution:
         # 1. Get the two most recent seasons with any divisions at this level
@@ -53,30 +94,12 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         #    use the previous one (latest season just started, sparse stats)
         # 4. Otherwise use the latest season with any completed games
         # 5. Fall back to newest season if none have games
-        from hockey_blast_common_lib.models import Game
         candidate_seasons = hb.execute(
             select(Division.season_id)
             .where(*season_filter)
             .distinct()
             .order_by(Division.season_id.desc())
         ).scalars().all()
-
-        def _completed_games(sid):
-            div_ids = hb.execute(
-                select(Division.id).where(
-                    Division.level_id == level_id,
-                    Division.org_id == org_id,
-                    Division.season_id == sid,
-                )
-            ).scalars().all()
-            if not div_ids:
-                return 0
-            return hb.execute(
-                select(func.count(Game.id)).where(
-                    Game.division_id.in_(div_ids),
-                    Game.status_id.in_(FINAL_STATUS_IDS),
-                )
-            ).scalar() or 0
 
         if len(candidate_seasons) >= 2:
             latest_sid = candidate_seasons[0]
@@ -129,6 +152,39 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         Division.season_id == season_id,
     )
 
+    # ── Newer seasons (already under way) ─────────────────────────────────────
+    # Anyone who has skated/tended/reffed at least once in a season newer than the
+    # draft season is draftable too, even though last season's stats don't know them.
+    new_season_id = None
+    _new_season_name = None
+    if include_new_players and season_id is not None:
+        newer_seasons = hb.execute(
+            select(Division.season_id)
+            .where(*season_filter, Division.season_id > season_id)
+            .distinct()
+            .order_by(Division.season_id.desc())
+        ).scalars().all()
+        # The newest season that has actually been played is "this season". Anything
+        # older than it but newer than the draft season is a gap we don't draft from.
+        for sid in newer_seasons:
+            if _completed_games(sid) > 0:
+                new_season_id = sid
+                break
+        if new_season_id is not None:
+            _newest = hb.execute(
+                select(Season).where(Season.id == new_season_id)
+            ).scalar_one_or_none()
+            if _newest:
+                _new_season_name = getattr(_newest, 'season_name', None) or f"Season {new_season_id}"
+
+    new_div_ids_stmt = None
+    if new_season_id is not None:
+        new_div_ids_stmt = select(Division.id).where(
+            Division.level_id == level_id,
+            Division.org_id == org_id,
+            Division.season_id == new_season_id,
+        )
+
     # ── Unified player dict keyed by human_id ─────────────────────────────────
     players: dict[int, dict] = {}
 
@@ -142,6 +198,8 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
             "is_skater": False,
             "is_goalie": False,
             "is_ref": False,
+            # True only for players merged in from a newer (already started) season
+            "is_new_this_season": False,
             # Skater stats
             "games_played": 0,
             "goals": 0,
@@ -165,94 +223,132 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
             "fantasy_points": 0.0,
         }
 
-    # ── Skaters ───────────────────────────────────────────────────────────────
-    skater_stmt = (
-        select(
-            DivisionStatsSkater.human_id,
-            Human.first_name, Human.middle_name, Human.last_name,
-            func.sum(DivisionStatsSkater.games_played).label("games_played"),
-            func.sum(DivisionStatsSkater.goals).label("goals"),
-            func.sum(DivisionStatsSkater.assists).label("assists"),
-            func.sum(DivisionStatsSkater.points).label("points"),
-            func.sum(DivisionStatsSkater.penalties).label("penalties"),
-        )
-        .join(Human, Human.id == DivisionStatsSkater.human_id)
-        .where(DivisionStatsSkater.division_id.in_(div_ids_stmt))
-        .where(DivisionStatsSkater.human_id.not_in(non_human_ids) if non_human_ids else True)
-        .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.middle_name, Human.last_name)
-        .having(func.sum(DivisionStatsSkater.games_played) >= min_games)
-    )
-    for row in hb.execute(skater_stmt).all():
-        gp = row.games_played or 1
-        goals = row.goals or 0
-        assists = row.assists or 0
-        penalties = row.penalties or 0
-        fp = (goals * 3) + (assists * 2) + (gp * 1) - (penalties * 0.5)
-        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name, row.middle_name))
-        p["is_skater"] = True
-        p["games_played"] = row.games_played
-        p["goals"] = goals
-        p["assists"] = assists
-        p["points"] = row.points or (goals + assists)
-        p["penalties"] = penalties
-        p["fantasy_points_skater"] = round(fp, 2)
-        p["fantasy_ppg"] = round(fp / gp, 3) if gp > 0 else 0.0
+    def _collect(div_stmt, gp_min: int, *, new_players_only: bool) -> None:
+        """
+        Fill `players` from the divisions selected by div_stmt.
 
-    # ── Goalies ───────────────────────────────────────────────────────────────
-    goalie_stmt = (
-        select(
-            DivisionStatsGoalie.human_id,
-            Human.first_name, Human.middle_name, Human.last_name,
-            func.sum(DivisionStatsGoalie.games_played).label("games_played"),
-            func.sum(DivisionStatsGoalie.goals_allowed).label("goals_allowed"),
-            func.avg(DivisionStatsGoalie.goals_allowed_per_game).label("goals_against_avg"),
-            func.avg(DivisionStatsGoalie.save_percentage).label("save_percentage"),
-        )
-        .join(Human, Human.id == DivisionStatsGoalie.human_id)
-        .where(DivisionStatsGoalie.division_id.in_(div_ids_stmt))
-        .where(DivisionStatsGoalie.human_id.not_in(non_human_ids) if non_human_ids else True)
-        .group_by(DivisionStatsGoalie.human_id, Human.first_name, Human.middle_name, Human.last_name)
-        .having(func.sum(DivisionStatsGoalie.games_played) >= min_games)
-    )
-    for row in hb.execute(goalie_stmt).all():
-        gp = row.games_played or 1
-        save_pct = float(row.save_percentage or 0)
-        fp = float(gp) * 3.0 + (save_pct * 5.0 * gp)
-        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name, row.middle_name))
-        p["is_goalie"] = True
-        p["goalie_games"] = row.games_played
-        p["goals_allowed"] = int(row.goals_allowed or 0)
-        p["goals_against_avg"] = round(float(row.goals_against_avg or 0), 3)
-        p["save_percentage"] = round(save_pct, 3)
-        p["fantasy_points_goalie"] = round(fp, 2)
+        new_players_only=True skips humans already in the pool, so the draft-season
+        entry (the richer, canonical one) always wins and only true newcomers are
+        added — flagged is_new_this_season.
+        """
 
-    # ── Refs ──────────────────────────────────────────────────────────────────
-    from hockey_blast_common_lib.stats_models import DivisionStatsReferee
-    ref_stmt = (
-        select(
-            DivisionStatsReferee.human_id,
-            Human.first_name, Human.middle_name, Human.last_name,
-            func.sum(DivisionStatsReferee.games_reffed).label("games_reffed"),
-            func.sum(DivisionStatsReferee.penalties_given).label("penalties_given"),
-            func.sum(DivisionStatsReferee.gm_given).label("gm_given"),
+        def _entry(human_id, first_name, last_name, middle_name):
+            if new_players_only and human_id not in players:
+                p = players.setdefault(
+                    human_id, _base_entry(human_id, first_name, last_name, middle_name)
+                )
+                p["is_new_this_season"] = True
+                return p
+            if new_players_only and not players[human_id]["is_new_this_season"]:
+                return None  # already known from the draft season — leave it alone
+            return players.setdefault(
+                human_id, _base_entry(human_id, first_name, last_name, middle_name)
+            )
+
+        # ── Skaters ───────────────────────────────────────────────────────────
+        skater_stmt = (
+            select(
+                DivisionStatsSkater.human_id,
+                Human.first_name, Human.middle_name, Human.last_name,
+                func.sum(DivisionStatsSkater.games_played).label("games_played"),
+                func.sum(DivisionStatsSkater.goals).label("goals"),
+                func.sum(DivisionStatsSkater.assists).label("assists"),
+                func.sum(DivisionStatsSkater.points).label("points"),
+                func.sum(DivisionStatsSkater.penalties).label("penalties"),
+            )
+            .join(Human, Human.id == DivisionStatsSkater.human_id)
+            .where(DivisionStatsSkater.division_id.in_(div_stmt))
+            .where(DivisionStatsSkater.human_id.not_in(non_human_ids) if non_human_ids else True)
+            .group_by(DivisionStatsSkater.human_id, Human.first_name, Human.middle_name, Human.last_name)
+            .having(func.sum(DivisionStatsSkater.games_played) >= gp_min)
         )
-        .join(Human, Human.id == DivisionStatsReferee.human_id)
-        .where(DivisionStatsReferee.division_id.in_(div_ids_stmt))
-        .where(DivisionStatsReferee.human_id.not_in(non_human_ids) if non_human_ids else True)
-        .group_by(DivisionStatsReferee.human_id, Human.first_name, Human.middle_name, Human.last_name)
-        .having(func.sum(DivisionStatsReferee.games_reffed) >= min_games)
-    )
-    for row in hb.execute(ref_stmt).all():
-        gr = int(row.games_reffed or 0)
-        pg = int(row.penalties_given or 0)
-        gm = int(row.gm_given or 0)
-        fp = gr * 4.0 + pg * 2.0 + gm * 8.0
-        p = players.setdefault(row.human_id, _base_entry(row.human_id, row.first_name, row.last_name, row.middle_name))
-        p["is_ref"] = True
-        p["games_reffed"] = gr
-        p["penalties_given"] = pg
-        p["gm_given"] = gm
-        p["fantasy_points_ref"] = round(fp, 2)
+        for row in hb.execute(skater_stmt).all():
+            p = _entry(row.human_id, row.first_name, row.last_name, row.middle_name)
+            if p is None:
+                continue
+            gp = row.games_played or 1
+            goals = row.goals or 0
+            assists = row.assists or 0
+            penalties = row.penalties or 0
+            fp = (goals * 3) + (assists * 2) + (gp * 1) - (penalties * 0.5)
+            p["is_skater"] = True
+            p["games_played"] = row.games_played
+            p["goals"] = goals
+            p["assists"] = assists
+            p["points"] = row.points or (goals + assists)
+            p["penalties"] = penalties
+            p["fantasy_points_skater"] = round(fp, 2)
+            p["fantasy_ppg"] = round(fp / gp, 3) if gp > 0 else 0.0
+
+        # ── Goalies ───────────────────────────────────────────────────────────
+        goalie_stmt = (
+            select(
+                DivisionStatsGoalie.human_id,
+                Human.first_name, Human.middle_name, Human.last_name,
+                func.sum(DivisionStatsGoalie.games_played).label("games_played"),
+                func.sum(DivisionStatsGoalie.goals_allowed).label("goals_allowed"),
+                func.avg(DivisionStatsGoalie.goals_allowed_per_game).label("goals_against_avg"),
+                func.avg(DivisionStatsGoalie.save_percentage).label("save_percentage"),
+            )
+            .join(Human, Human.id == DivisionStatsGoalie.human_id)
+            .where(DivisionStatsGoalie.division_id.in_(div_stmt))
+            .where(DivisionStatsGoalie.human_id.not_in(non_human_ids) if non_human_ids else True)
+            .group_by(DivisionStatsGoalie.human_id, Human.first_name, Human.middle_name, Human.last_name)
+            .having(func.sum(DivisionStatsGoalie.games_played) >= gp_min)
+        )
+        for row in hb.execute(goalie_stmt).all():
+            p = _entry(row.human_id, row.first_name, row.last_name, row.middle_name)
+            if p is None:
+                continue
+            gp = row.games_played or 1
+            save_pct = float(row.save_percentage or 0)
+            fp = float(gp) * 3.0 + (save_pct * 5.0 * gp)
+            p["is_goalie"] = True
+            p["goalie_games"] = row.games_played
+            p["goals_allowed"] = int(row.goals_allowed or 0)
+            p["goals_against_avg"] = round(float(row.goals_against_avg or 0), 3)
+            p["save_percentage"] = round(save_pct, 3)
+            p["fantasy_points_goalie"] = round(fp, 2)
+
+        # ── Refs ──────────────────────────────────────────────────────────────
+        ref_stmt = (
+            select(
+                DivisionStatsReferee.human_id,
+                Human.first_name, Human.middle_name, Human.last_name,
+                func.sum(DivisionStatsReferee.games_reffed).label("games_reffed"),
+                func.sum(DivisionStatsReferee.penalties_given).label("penalties_given"),
+                func.sum(DivisionStatsReferee.gm_given).label("gm_given"),
+            )
+            .join(Human, Human.id == DivisionStatsReferee.human_id)
+            .where(DivisionStatsReferee.division_id.in_(div_stmt))
+            .where(DivisionStatsReferee.human_id.not_in(non_human_ids) if non_human_ids else True)
+            .group_by(DivisionStatsReferee.human_id, Human.first_name, Human.middle_name, Human.last_name)
+            .having(func.sum(DivisionStatsReferee.games_reffed) >= gp_min)
+        )
+        for row in hb.execute(ref_stmt).all():
+            p = _entry(row.human_id, row.first_name, row.last_name, row.middle_name)
+            if p is None:
+                continue
+            gr = int(row.games_reffed or 0)
+            pg = int(row.penalties_given or 0)
+            gm = int(row.gm_given or 0)
+            fp = gr * 4.0 + pg * 2.0 + gm * 8.0
+            p["is_ref"] = True
+            p["games_reffed"] = gr
+            p["penalties_given"] = pg
+            p["gm_given"] = gm
+            p["fantasy_points_ref"] = round(fp, 2)
+
+    # Draft season first — it owns every human it knows about.
+    _collect(div_ids_stmt, min_games, new_players_only=False)
+
+    # Then newcomers from the season(s) already under way. One game is enough:
+    # min_games is a "prove it over last season" filter and must not hide them.
+    _new_player_count = 0
+    if new_div_ids_stmt is not None:
+        _before = set(players)
+        _collect(new_div_ids_stmt, 1, new_players_only=True)
+        _new_player_count = len(set(players) - _before)
 
     # ── Set primary fantasy_points = best role ────────────────────────────────
     for p in players.values():
@@ -299,4 +395,7 @@ def get_player_pool(level_id: int, org_id: int = 1, league_id: int = None, seaso
         "resolved_season_id": season_id,
         "resolved_season_name": _resolved_season_name,
         "last_game_date": _last_game_date,
+        "new_player_season_id": new_season_id,
+        "new_player_season_name": _new_season_name,
+        "new_player_count": _new_player_count,
     }

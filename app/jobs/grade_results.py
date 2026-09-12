@@ -286,6 +286,15 @@ def start_scheduler(app):
                         "[auto-season] Assigned new seasons: checked=%d assigned=%d errors=%d",
                         season_summary["checked"], season_summary["assigned"], season_summary["errors"],
                     )
+                # Close out leagues whose real-life season has finished — must run
+                # after scoring so the champion is crowned on the final standings.
+                from app.services.fantasy_scoring_service import complete_finished_leagues
+                end_summary = complete_finished_leagues()
+                if end_summary["completed"] > 0 or end_summary["errors"] > 0:
+                    logger.info(
+                        "[fantasy-end] Completed leagues: checked=%d completed=%d errors=%d",
+                        end_summary["checked"], end_summary["completed"], end_summary["errors"],
+                    )
             except Exception as exc:
                 logger.exception("[fantasy] Unhandled error in fantasy score job: %s", exc)
 

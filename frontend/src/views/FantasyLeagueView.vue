@@ -74,6 +74,20 @@
           </div>
         </div>
 
+        <!-- Champion banner — season over -->
+        <div
+          v-if="league.status === 'completed' && league.winner_team_name"
+          class="mt-3 p-3 rounded-xl border border-warning/40 bg-warning/10 flex items-center gap-3"
+        >
+          <span class="text-2xl">🏆</span>
+          <div class="leading-tight">
+            <p class="font-extrabold text-base">{{ league.winner_team_name }}</p>
+            <p class="text-xs text-base-content/60">
+              Champion — {{ league.winner_display_name }}<span v-if="league.completed_at"> · season ended {{ formatDay(league.completed_at) }}</span>
+            </p>
+          </div>
+        </div>
+
         <!-- Stats row -->
         <div class="flex gap-6 mt-3 text-sm text-base-content/60">
           <span>👥 {{ league.manager_count }} / {{ league.max_managers }} managers</span>
@@ -250,7 +264,10 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>—</button>
                           </template>
                         </td>
-                        <td><a :href="`https://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a></td>
+                        <td>
+                          <a :href="`https://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a>
+                          <span v-if="p.is_new_this_season" class="badge badge-xs badge-accent ml-1 align-middle" :title="`New this season — stats are from ${poolNewSeasonName || 'the season under way'}`">NEW</span>
+                        </td>
                         <td class="text-right">{{ p.games_played }}</td>
                         <td class="text-right">{{ p.goals }}</td>
                         <td class="text-right">{{ p.assists }}</td>
@@ -311,7 +328,10 @@
                             <button class="btn btn-xs btn-disabled" title="Not your turn" disabled>—</button>
                           </template>
                         </td>
-                        <td><a :href="`https://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a></td>
+                        <td>
+                          <a :href="`https://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a>
+                          <span v-if="p.is_new_this_season" class="badge badge-xs badge-accent ml-1 align-middle" :title="`New this season — stats are from ${poolNewSeasonName || 'the season under way'}`">NEW</span>
+                        </td>
                         <td class="text-right">{{ p.goalie_games ?? p.games_played }}</td>
                         <td class="text-right">{{ p.goals_against_avg ?? '—' }}</td>
                         <td class="text-right">{{ p.save_percentage != null ? (p.save_percentage * 100).toFixed(1) + '%' : '—' }}</td>
@@ -370,7 +390,10 @@
                             <button class="btn btn-xs btn-disabled" disabled>—</button>
                           </template>
                         </td>
-                        <td><a :href="`https://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a></td>
+                        <td>
+                          <a :href="`https://hockey-blast.com/human_stats/human_stats?human_id=${p.hb_human_id}`" target="_blank" class="link link-hover text-blue-400">{{ displayName(p) }}</a>
+                          <span v-if="p.is_new_this_season" class="badge badge-xs badge-accent ml-1 align-middle" :title="`New this season — stats are from ${poolNewSeasonName || 'the season under way'}`">NEW</span>
+                        </td>
                         <td class="text-right">{{ p.games_reffed }}</td>
                         <td class="text-right">{{ p.penalties_given }}</td>
                         <td class="text-right">{{ p.gm_given }}</td>
@@ -455,13 +478,15 @@
                 :key="row.user_id"
                 :class="[
                   { 'bg-primary/10 font-semibold': row.user_id === myUserId },
+                  { 'bg-warning/15 font-bold text-base-content': row.is_winner },
                   league.hb_division_id ? 'cursor-pointer hover:bg-base-300' : ''
                 ]"
                 @click="league.hb_division_id ? (activeTab = 'games', loadGames(row.user_id)) : null"
                 :title="league.hb_division_id ? `View ${row.team_name}'s games` : ''"
               >
-                <td>{{ row.rank || '—' }}</td>
+                <td>{{ row.is_winner ? '🏆' : (row.rank || '—') }}</td>
                 <td>{{ row.team_name }}
+                  <span v-if="row.is_winner" class="badge badge-xs badge-warning ml-1 align-middle">Champion</span>
                   <span v-if="league.hb_division_id" class="text-xs opacity-40 ml-1">🏒</span>
                 </td>
                 <td class="text-base-content/60 text-sm">{{ row.display_name }}</td>
@@ -493,7 +518,13 @@
           No games found for this season.
         </div>
         <div v-else class="space-y-2">
-          <div v-for="game in games" :key="game.id" class="card card-compact bg-base-200 shadow-sm">
+          <div
+            v-for="game in games"
+            :key="game.id"
+            :ref="el => { if (game.id === focusGameId) focusGameEl = el }"
+            class="card card-compact bg-base-200 shadow-sm"
+            :class="{ 'ring-2 ring-primary/50': game.id === focusGameId }"
+          >
             <div class="card-body p-3">
               <!-- Meta row -->
               <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -501,6 +532,7 @@
                   <span>{{ game.date }}</span>
                   <span v-if="game.time">{{ game.time }}</span>
                   <span v-if="game.location" class="hidden sm:inline">· {{ game.location }}</span>
+                  <span v-if="game.date === todayISO" class="badge badge-xs badge-primary">TODAY</span>
                 </div>
                 <div class="flex items-center gap-1">
                   <span v-if="game.game_type" class="badge badge-xs badge-outline">{{ game.game_type }}</span>
@@ -865,11 +897,13 @@ const league = ref(null)
 const loading = ref(true)
 const draftQueue = ref([])
 const pool = ref({ skaters: [], goalies: [], refs: [] })
+const poolNewSeasonName = computed(() => pool.value?.new_player_season_name || null)
 const standings = ref([])
 const standingsLoading = ref(false)
 const games = ref([])
 const gamesLoading = ref(false)
 const viewUserId = ref(null)  // whose roster to show in games tab (null = own)
+const focusGameEl = ref(null) // DOM node of the game we auto-scroll to
 
 // ── Trade state ──────────────────────────────────────────────────────────────
 const tradeState = ref({ round: null, turns: [], current_turn: null, is_my_turn: false, can_initiate: false })
@@ -1248,6 +1282,11 @@ function statusBadgeClass(s) {
   return { forming: 'badge-info', draft_open: 'badge-warning', drafting: 'badge-warning', active: 'badge-success', completed: 'badge-neutral' }[s] || 'badge-ghost'
 }
 
+function formatDay(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function formatDeadline(iso) {
   if (!iso) return ''
   const d = new Date(iso)
@@ -1303,17 +1342,43 @@ async function loadPoolSilent() {
   }
 }
 
-async function loadGames(userId = null) {
+// Local calendar day as YYYY-MM-DD — games carry plain ISO dates, no timezone.
+const todayISO = computed(() => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+})
+
+// Where the Games tab should land: today's game, else the next one coming up,
+// else the last one played (a finished season opens on its finale).
+const focusGameId = computed(() => {
+  if (!games.value.length) return null
+  const upcoming = games.value.find(g => g.date && g.date >= todayISO.value)
+  return (upcoming || games.value[games.value.length - 1]).id
+})
+
+async function loadGames(userId = null, { autoScroll = true } = {}) {
   gamesLoading.value = true
   viewUserId.value = userId
   try {
     const params = userId ? `?user_id=${userId}` : ''
     const { data } = await api.get(`/api/fantasy/leagues/${route.params.id}/games${params}`)
     games.value = data.games || []
+    if (autoScroll) scrollToFocusGame()
   } catch {
     games.value = []
   } finally {
     gamesLoading.value = false
+  }
+}
+
+// Scroll the today/next game into view once it's rendered. Only on an explicit
+// load — background polls must never yank the page out from under the reader.
+async function scrollToFocusGame() {
+  await nextTick()
+  await nextTick()  // cards render after gamesLoading flips off
+  const el = focusGameEl.value
+  if (el && typeof el.scrollIntoView === 'function') {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }
 }
 
@@ -1538,7 +1603,7 @@ watch(() => league.value?.has_live_game, (hasLive) => {
   if (hasLive) {
     _livePollInterval = setInterval(async () => {
       await loadLeague({ silent: true })
-      if (activeTab.value === 'games') loadGames(viewUserId.value)
+      if (activeTab.value === 'games') loadGames(viewUserId.value, { autoScroll: false })
       if (activeTab.value === 'standings') loadStandings()
       if (league.value?.status === 'active') loadTradeState({ silent: true })
     }, 60000)
