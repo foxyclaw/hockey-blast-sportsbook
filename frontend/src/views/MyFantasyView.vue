@@ -77,6 +77,12 @@
                     </span>
                   </div>
                 </div>
+                <div v-if="league.status === 'completed' && league.winner_team_name"
+                     class="mt-2 flex items-center gap-2 text-sm">
+                  <span>🏆</span>
+                  <span class="font-bold">{{ league.winner_team_name }}</span>
+                  <span class="text-xs text-base-content/50">{{ league.winner_display_name }}</span>
+                </div>
                 <div class="flex items-center gap-3 mt-3 text-xs text-base-content/60">
                   <span>👥 {{ league.manager_count }} / {{ league.max_managers }} managers</span>
                   <span v-if="league.is_your_turn" class="badge badge-xs badge-warning animate-pulse">⚡ Your Turn!</span>

@@ -607,6 +607,95 @@ def auto_assign_seasons() -> dict:
     return summary
 
 
+def complete_finished_leagues() -> dict:
+    """
+    Flip active leagues to "completed" once their real-life season is over.
+
+    A league is finished when its tracked division has games inside the league's
+    window, none of them are still pending (SCHEDULED / NOT_STARTED / OPEN), and
+    the last one was played before today — the extra day keeps a league from
+    closing the same evening its finale ends, while the schedule can still gain
+    a playoff game.
+
+    Standings are recomputed first so the champion is read off fresh ranks.
+    Returns {"checked": int, "completed": int, "errors": int}
+    """
+    from datetime import date as _date
+    from app.models.fantasy_league import FantasyLeague
+    from hockey_blast_common_lib.game_status import PENDING_STATUS_IDS
+
+    summary = {"checked": 0, "completed": 0, "errors": 0}
+    pred = PredSession()
+
+    try:
+        leagues = pred.execute(
+            select(FantasyLeague).where(
+                FantasyLeague.status == "active",
+                FantasyLeague.hb_division_id.is_not(None),
+            )
+        ).scalars().all()
+    except Exception as e:
+        logger.exception("[fantasy-end] Could not load active leagues: %s", e)
+        return summary
+
+    pending_ids = ",".join(str(i) for i in sorted(PENDING_STATUS_IDS))
+
+    for league in leagues:
+        summary["checked"] += 1
+        try:
+            hb = HBSession()
+            date_filter = ""
+            params = {"did": league.hb_division_id}
+            if league.season_starts_at:
+                date_filter = " AND date >= :season_start"
+                params["season_start"] = league.season_starts_at.date()
+
+            row = hb.execute(
+                text(
+                    f"SELECT COUNT(*) AS total, "
+                    f"COUNT(*) FILTER (WHERE status_id IN ({pending_ids})) AS pending, "
+                    f"MAX(date) AS last_date "
+                    f"FROM games WHERE division_id = :did{date_filter}"
+                ),
+                params,
+            ).fetchone()
+
+            if not row or not row.total:
+                continue          # nothing scheduled yet — season hasn't begun
+            if row.pending:
+                continue          # games still to be played
+            if not row.last_date or row.last_date >= _date.today():
+                continue          # finale is today — give the schedule one more day
+
+            _update_standings(league.id, pred)
+
+            winner = pred.execute(
+                select(FantasyStandings.user_id)
+                .where(FantasyStandings.league_id == league.id)
+                .order_by(
+                    FantasyStandings.rank.asc().nullslast(),
+                    FantasyStandings.total_points.desc(),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+
+            league.status = "completed"
+            league.completed_at = datetime.now(timezone.utc)
+            league.winner_user_id = winner
+            pred.commit()
+            summary["completed"] += 1
+            logger.info(
+                "[fantasy-end] League %d completed (last game %s, winner user_id=%s)",
+                league.id, row.last_date, winner,
+            )
+        except Exception as e:
+            summary["errors"] += 1
+            pred.rollback()
+            logger.exception("[fantasy-end] Error completing league %d: %s", league.id, e)
+
+    return summary
+
+
 def resolve_and_cache_division(league_id: int) -> int | None:
     """
     Look up division_id for a league from HB (level_id + hb_season_id),

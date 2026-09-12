@@ -241,6 +241,9 @@ def get_level_pool():
             "resolved_season_id": pool.get("resolved_season_id"),
             "resolved_season_name": pool.get("resolved_season_name"),
             "last_game_date": pool.get("last_game_date"),
+            "new_player_season_id": pool.get("new_player_season_id"),
+            "new_player_season_name": pool.get("new_player_season_name"),
+            "new_player_count": pool.get("new_player_count", 0),
         })
     except Exception as e:
         return jsonify({"max_managers": 12, "roster_skaters": 8})  # fallback
@@ -471,6 +474,20 @@ def list_leagues():
 
     leagues = pred.execute(stmt).scalars().all()
 
+    # Batch-load champions for completed leagues
+    winner_ids = {l.winner_user_id for l in leagues if l.winner_user_id}
+    winner_map = {}
+    if winner_ids:
+        for mgr, user in pred.execute(
+            select(FantasyManager, PredUser)
+            .join(PredUser, PredUser.id == FantasyManager.user_id)
+            .where(
+                FantasyManager.user_id.in_(winner_ids),
+                FantasyManager.league_id.in_([l.id for l in leagues]),
+            )
+        ).all():
+            winner_map[(mgr.league_id, mgr.user_id)] = (mgr.team_name, user.display_name)
+
     # Batch-load org names and HB league names for display
     from hockey_blast_common_lib.models import Organization, League as HBLeague
     hb = HBSession()
@@ -494,6 +511,9 @@ def list_leagues():
         d["manager_count"] = mgr_count
         d["org_name"] = org_names.get(league.org_id)
         d["hb_league_name"] = hb_league_name_map.get(league.hb_league_id) if league.hb_league_id else None
+        _w = winner_map.get((league.id, league.winner_user_id))
+        d["winner_team_name"] = _w[0] if _w else None
+        d["winner_display_name"] = _w[1] if _w else None
 
         # Is current user a member? Is it their turn to draft?
         if g.pred_user:
@@ -571,6 +591,10 @@ def get_league(league_id: int):
     d = league.to_dict()
     d["managers"] = managers
     d["manager_count"] = len(managers)
+
+    winner = next((m for m in managers if m["user_id"] == league.winner_user_id), None) if league.winner_user_id else None
+    d["winner_team_name"] = winner["team_name"] if winner else None
+    d["winner_display_name"] = winner["display_name"] if winner else None
 
     if g.pred_user:
         is_member = any(m["user_id"] == g.pred_user.id for m in managers)
@@ -769,15 +793,25 @@ def get_pool(league_id: int):
     all_skaters.sort(key=lambda p: p.get("fantasy_ppg", 0), reverse=True)
     all_goalies.sort(key=lambda p: p.get("fantasy_points", 0), reverse=True)
 
+    # Season the newcomers' stats come from — the UI labels the NEW badge with it.
+    pool_meta = {
+        "draft_season_id": pool.get("resolved_season_id"),
+        "draft_season_name": pool.get("resolved_season_name"),
+        "new_player_season_id": pool.get("new_player_season_id"),
+        "new_player_season_name": pool.get("new_player_season_name"),
+        "new_player_count": pool.get("new_player_count", 0),
+    }
+
     if type_filter == "skaters":
-        return jsonify({"skaters": all_skaters, "goalies": []})
+        return jsonify({"skaters": all_skaters, "goalies": [], **pool_meta})
     elif type_filter == "goalies":
-        return jsonify({"skaters": [], "goalies": all_goalies})
+        return jsonify({"skaters": [], "goalies": all_goalies, **pool_meta})
 
     return jsonify({
         "skaters": all_skaters,
         "goalies": all_goalies,
         "refs": all_refs,
+        **pool_meta,
     })
 
 
@@ -1139,6 +1173,8 @@ def get_roster(league_id: int, user_id: int):
 def get_standings(league_id: int):
     """GET /api/fantasy/leagues/<id>/standings — standings table."""
     pred = PredSession()
+    league = pred.get(FantasyLeague, league_id)
+    winner_user_id = league.winner_user_id if league and league.status == "completed" else None
 
     stmt = (
         select(FantasyStandings, FantasyManager, PredUser)
@@ -1155,6 +1191,7 @@ def get_standings(league_id: int):
         d["team_name"] = mgr.team_name
         d["display_name"] = user.display_name
         d["avatar_url"] = user.avatar_url
+        d["is_winner"] = winner_user_id is not None and s.user_id == winner_user_id
         standings.append(d)
 
     # If no standings yet, show managers with 0 pts
@@ -1175,6 +1212,7 @@ def get_standings(league_id: int):
                 "team_name": mgr.team_name,
                 "display_name": user.display_name,
                 "avatar_url": user.avatar_url,
+                "is_winner": False,
             })
 
     return jsonify({"standings": standings})
