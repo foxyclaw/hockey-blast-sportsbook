@@ -123,3 +123,58 @@ def _empty_snapshot() -> dict:
         "skill_differential": None,
         "is_upset_pick": False,
     }
+
+
+def get_team_avg_skills(team_ids) -> dict[int, float]:
+    """
+    Batched ``get_team_avg_skill``: ONE query for many teams.
+
+    Per team the semantics are identical to the single-team version — average
+    ``skater_skill_value`` over the distinct humans appearing in the team's last
+    200 non-goalie roster rows, ignoring NULL and 0 skills — but computed with a
+    window function instead of a per-team round trip.  Teams with no usable
+    data are absent from the result (callers ``.get()`` -> None).
+    """
+    ids = [t for t in dict.fromkeys(team_ids) if t is not None]
+    if not ids:
+        return {}
+    try:
+        from hockey_blast_common_lib.models import GameRoster, Human
+    except ImportError:
+        return {}
+
+    session = HBSession()
+    stmt = build_team_avg_skills_stmt(GameRoster, Human, ids)
+    rows = session.execute(stmt).all()
+    return {team_id: float(avg) for team_id, avg in rows if avg is not None}
+
+
+def build_team_avg_skills_stmt(GameRoster, Human, team_ids: list[int]):
+    """SELECT team_id, avg(skill) for the given teams (see get_team_avg_skills)."""
+    rn = (
+        func.row_number()
+        .over(partition_by=GameRoster.team_id, order_by=GameRoster.id.desc())
+        .label("rn")
+    )
+    recent = (
+        select(GameRoster.team_id, GameRoster.human_id, rn)
+        .where(GameRoster.team_id.in_(team_ids), GameRoster.role != "G")
+        .subquery("recent")
+    )
+    # DISTINCT so each human counts once per team — same as the `Human.id IN (...)`
+    # semi-join of the single-team query.
+    recent_humans = (
+        select(recent.c.team_id, recent.c.human_id)
+        .where(recent.c.rn <= 200)
+        .distinct()
+        .subquery("recent_humans")
+    )
+    return (
+        select(recent_humans.c.team_id, func.avg(Human.skater_skill_value))
+        .select_from(recent_humans.join(Human, Human.id == recent_humans.c.human_id))
+        .where(
+            Human.skater_skill_value.isnot(None),
+            Human.skater_skill_value > 0,  # 0 means uninitialized, not elite
+        )
+        .group_by(recent_humans.c.team_id)
+    )

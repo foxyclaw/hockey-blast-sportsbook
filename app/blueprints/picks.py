@@ -10,7 +10,7 @@ GET    /api/picks/<pick_id>        — single pick detail
 import logging
 
 from flask import Blueprint, g, jsonify, request
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.auth.jwt_validator import require_auth
 from app.db import HBSession, PredSession
@@ -33,20 +33,47 @@ def _team_name(team_id: int, hb_session) -> str | None:
         return None
     try:
         from hockey_blast_common_lib.models import Team
+
         team = hb_session.execute(select(Team).where(Team.id == team_id)).scalar_one_or_none()
         return team.name if team else None
     except Exception:
         return None
 
 
-def _enrich_pick(pick, hb_session) -> dict:
-    """Serialize a PredPick with computed display fields."""
+def _team_names_for(picks, hb_session) -> dict[int, str | None]:
+    """{team_id: name} for every team referenced by a page of picks — ONE HB query."""
+    from app.services.hb_ref_data import get_team_names
+
+    team_ids = [
+        tid
+        for pick in picks
+        for tid in (pick.home_team_id, pick.away_team_id, pick.picked_team_id)
+        if tid
+    ]
+    try:
+        return get_team_names(team_ids, hb_session)
+    except Exception:  # same swallow-all contract as _team_name
+        return {}
+
+
+def _enrich_pick(pick, hb_session, team_names: dict | None = None) -> dict:
+    """
+    Serialize a PredPick with computed display fields.
+
+    ``team_names`` (from ``_team_names_for``) avoids three HB queries per pick;
+    without it the per-id lookup is used.
+    """
     d = pick.to_dict()
 
     # Team names
-    home_name = _team_name(pick.home_team_id, hb_session)
-    away_name = _team_name(pick.away_team_id, hb_session)
-    picked_name = _team_name(pick.picked_team_id, hb_session)
+    if team_names is None:
+        home_name = _team_name(pick.home_team_id, hb_session)
+        away_name = _team_name(pick.away_team_id, hb_session)
+        picked_name = _team_name(pick.picked_team_id, hb_session)
+    else:
+        home_name = team_names.get(pick.home_team_id) if pick.home_team_id else None
+        away_name = team_names.get(pick.away_team_id) if pick.away_team_id else None
+        picked_name = team_names.get(pick.picked_team_id) if pick.picked_team_id else None
     d["home_team_name"] = home_name
     d["away_team_name"] = away_name
     d["picked_team_name"] = picked_name
@@ -64,6 +91,7 @@ def _enrich_pick(pick, hb_session) -> dict:
         d["points_earned"] = None
 
     return d
+
 
 picks_bp = Blueprint("picks", __name__)
 
@@ -102,11 +130,13 @@ def _get_or_create_global_league(user, pred_session) -> int:
     ).scalar_one_or_none()
 
     if not existing:
-        pred_session.add(PredLeagueMember(
-            user_id=user.id,
-            league_id=league.id,
-            role=MemberRole.MEMBER,
-        ))
+        pred_session.add(
+            PredLeagueMember(
+                user_id=user.id,
+                league_id=league.id,
+                role=MemberRole.MEMBER,
+            )
+        )
         pred_session.flush()
 
     return league.id
@@ -145,7 +175,9 @@ def create_pick():
 
     if wager is not None:
         if not isinstance(wager, int) or wager < 1 or wager > 500:
-            return error_response("VALIDATION_ERROR", "Wager must be an integer between 1 and 500", 400)
+            return error_response(
+                "VALIDATION_ERROR", "Wager must be an integer between 1 and 500", 400
+            )
 
     pred_session = PredSession()
     user = g.pred_user
@@ -190,29 +222,42 @@ def create_pick():
 
     # Reload db_user to get fresh balance after wager deduction
     from app.models.pred_user import PredUser as PredUserModel
+
     fresh_user = pred_session.get(PredUserModel, user.id)
 
     from app.services.event_tracker import track
-    track("pick", user_id=user.id, ip_address=request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())
 
-    return jsonify({
-        "pick_id": pick.id,
-        "game_id": pick.game_id,
-        "league_id": pick.league_id,
-        "picked_team_id": pick.picked_team_id,
-        "confidence": pick.confidence,
-        "wager": pick.wager,
-        "odds_at_pick": float(pick.odds_at_pick) if pick.odds_at_pick is not None else None,
-        "effective_wager": pick.effective_wager,
-        "potential_payout": pick.potential_payout,
-        "is_upset_pick": pick.is_upset_pick,
-        "skill_differential": (
-            float(pick.skill_differential) if pick.skill_differential is not None else None
+    track(
+        "pick",
+        user_id=user.id,
+        ip_address=request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        .split(",")[0]
+        .strip(),
+    )
+
+    return (
+        jsonify(
+            {
+                "pick_id": pick.id,
+                "game_id": pick.game_id,
+                "league_id": pick.league_id,
+                "picked_team_id": pick.picked_team_id,
+                "confidence": pick.confidence,
+                "wager": pick.wager,
+                "odds_at_pick": float(pick.odds_at_pick) if pick.odds_at_pick is not None else None,
+                "effective_wager": pick.effective_wager,
+                "potential_payout": pick.potential_payout,
+                "is_upset_pick": pick.is_upset_pick,
+                "skill_differential": (
+                    float(pick.skill_differential) if pick.skill_differential is not None else None
+                ),
+                "projected_points": projected,
+                "lock_deadline": lock_deadline.isoformat() if lock_deadline else None,
+                "balance": fresh_user.balance if fresh_user else user.balance,
+            }
         ),
-        "projected_points": projected,
-        "lock_deadline": lock_deadline.isoformat() if lock_deadline else None,
-        "balance": fresh_user.balance if fresh_user else user.balance,
-    }), 201
+        201,
+    )
 
 
 @picks_bp.route("/mine", methods=["GET"])
@@ -249,23 +294,27 @@ def my_picks():
 
     stmt = stmt.order_by(PredPick.game_scheduled_start.desc())
 
-    # Count total
-    all_ids = pred_session.execute(stmt.with_only_columns(PredPick.id)).scalars().all()
-    total = len(all_ids)
+    # Count total (COUNT(*) in SQL rather than pulling every id across the wire)
+    total = pred_session.execute(
+        stmt.order_by(None).with_only_columns(func.count(PredPick.id))
+    ).scalar_one()
 
     offset = (page - 1) * per_page
     picks = pred_session.execute(stmt.offset(offset).limit(per_page)).scalars().all()
 
     hb_session = HBSession()
-    picks_data = [_enrich_pick(pick, hb_session) for pick in picks]
+    team_names = _team_names_for(picks, hb_session)
+    picks_data = [_enrich_pick(pick, hb_session, team_names=team_names) for pick in picks]
 
-    return jsonify({
-        "picks": picks_data,
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-        "pages": (total + per_page - 1) // per_page,
-    })
+    return jsonify(
+        {
+            "picks": picks_data,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": (total + per_page - 1) // per_page,
+        }
+    )
 
 
 @picks_bp.route("/<int:pick_id>", methods=["GET"])
@@ -302,6 +351,7 @@ def delete_pick(pick_id: int):
         # Refund effective wager on retraction
         if effective_wager_refund > 0:
             from app.models.pred_user import PredUser as PredUserModel
+
             db_user = pred_session.get(PredUserModel, user.id)
             if db_user:
                 db_user.balance += effective_wager_refund

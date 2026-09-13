@@ -21,6 +21,7 @@ from app.db import HBSession
 def _get_lock_buffer_minutes() -> int:
     try:
         from flask import current_app
+
         return current_app.config.get("PICK_LOCK_BUFFER_MINUTES", 0)
     except RuntimeError:
         return 0
@@ -44,6 +45,7 @@ def _game_start_dt(game) -> datetime | None:
 def _get_game(game_id: int):
     try:
         from hockey_blast_common_lib.models import Game
+
         session = HBSession()
         stmt = select(Game).where(Game.id == game_id)
         return session.execute(stmt).scalar_one_or_none()
@@ -51,10 +53,12 @@ def _get_game(game_id: int):
         return None
 
 
-def is_game_pickable(game_id: int) -> tuple[bool, str]:
+def is_game_pickable(game_id: int, game=None) -> tuple[bool, str]:
+    """Pass ``game`` when the row is already loaded to skip the re-fetch."""
     from hockey_blast_common_lib.game_status import is_scheduled, status_name
 
-    game = _get_game(game_id)
+    if game is None:
+        game = _get_game(game_id)
 
     if game is None:
         return False, "Game not found"
@@ -79,8 +83,10 @@ def is_game_pickable(game_id: int) -> tuple[bool, str]:
     return True, ""
 
 
-def get_lock_deadline(game_id: int) -> datetime | None:
-    game = _get_game(game_id)
+def get_lock_deadline(game_id: int, game=None) -> datetime | None:
+    """Pass ``game`` when the row is already loaded to skip the re-fetch."""
+    if game is None:
+        game = _get_game(game_id)
     if game is None:
         return None
 
