@@ -125,7 +125,7 @@ def _empty_snapshot() -> dict:
     }
 
 
-def get_team_avg_skills(team_ids) -> dict[int, float]:
+def get_team_avg_skills(team_ids, hb_session=None) -> dict[int, float]:
     """
     Batched ``get_team_avg_skill``: ONE query for many teams.
 
@@ -143,7 +143,7 @@ def get_team_avg_skills(team_ids) -> dict[int, float]:
     except ImportError:
         return {}
 
-    session = HBSession()
+    session = hb_session if hb_session is not None else HBSession()
     stmt = build_team_avg_skills_stmt(GameRoster, Human, ids)
     rows = session.execute(stmt).all()
     return {team_id: float(avg) for team_id, avg in rows if avg is not None}

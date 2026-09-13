@@ -8,7 +8,7 @@ Query budget: the hockey_blast DB is remote (~45 ms per round trip), so a page
 of games must not issue per-game lookups.  ``build_game_maps`` resolves every
 team / division / level / org / skill / pick for the page with one query per
 table (fewer with warm caches, see app.services.hb_ref_data) and
-``_serialize_game`` reads from those maps.
+``_serialize_game`` reads only from those maps.
 """
 
 import logging
@@ -19,29 +19,27 @@ from sqlalchemy import and_, func, or_, select
 
 from app.auth.jwt_validator import optional_auth
 from app.db import HBSession, PredSession
-from app.services.hb_ref_data import get_divisions, get_orgs, get_team_names
-from app.services.lock_checker import get_lock_deadline, is_game_pickable
-from app.services.skill_snapshot import get_team_avg_skill, get_team_avg_skills
+from app.services.hb_ref_data import (
+    get_divisions,
+    get_orgs,
+    get_team_avg_skills_cached,
+    get_team_names,
+)
+from app.services.lock_checker import _game_start_dt, get_lock_deadline, is_game_pickable
 from app.utils.response import error_response
 
 games_bp = Blueprint("games", __name__)
 logger = logging.getLogger(__name__)
 
-
-def _game_start_dt(game) -> datetime | None:
-    """Combine game.date + game.time into a naive datetime."""
-    game_date = getattr(game, "date", None)
-    game_time = getattr(game, "time", None)
-    if game_date is None:
-        return None
-    if game_time is not None:
-        return datetime.combine(game_date, game_time)
-    return datetime(game_date.year, game_date.month, game_date.day)
+# join_code of the auto-joined default league (see picks._get_or_create_global_league)
+GLOBAL_LEAGUE_JOIN_CODE = "GLOBAL01"
 
 
 def _not_started_clause(Game, now: datetime):
     """
-    SQL form of the old Python filter ``_game_start_dt(g) is None or _game_start_dt(g) >= now``.
+    SQL twin of ``lock_checker._game_start_dt(g) >= now`` (the Python filter this
+    endpoint used to apply after fetching the whole window).  Keep the two in sync;
+    tests/unit/test_games_batched.py checks they agree row-for-row.
 
     Callers already bound ``Game.date`` (so it is never NULL here):
       * date > today                         -> keep (NULL time = midnight, still ahead)
@@ -53,28 +51,46 @@ def _not_started_clause(Game, now: datetime):
 
 
 def _load_user_picks(game_ids, pred_user, pred_session) -> dict:
-    """{game_id: PredPick} for the user's picks on these games — ONE pred-DB query."""
+    """
+    {game_id: PredPick} for the user's picks on these games — ONE pred-DB query.
+
+    A user can hold one pick per league on the same game; the pick shown on the
+    games list is the GLOBAL league's, falling back to the oldest (lowest id).
+    """
+    from app.models.pred_league import PredLeague
     from app.models.pred_pick import PredPick
 
     if not game_ids:
         return {}
     stmt = (
-        select(PredPick)
+        select(PredPick, PredLeague.join_code)
+        .join(PredLeague, PredPick.league_id == PredLeague.id)
         .where(PredPick.user_id == pred_user.id, PredPick.game_id.in_(game_ids))
         .order_by(PredPick.id.asc())
     )
     picks: dict = {}
-    for pick in pred_session.execute(stmt).scalars():
-        picks.setdefault(pick.game_id, pick)  # first (oldest) pick per game
+    for pick, join_code in pred_session.execute(stmt).all():
+        if join_code == GLOBAL_LEAGUE_JOIN_CODE:
+            picks[pick.game_id] = pick
+        else:
+            picks.setdefault(pick.game_id, pick)
     return picks
 
 
 def _safe_load(loader, ids, hb_session) -> dict:
-    """Run a batched reference loader; on failure behave like the old per-id helpers (None)."""
+    """
+    Run a batched reference loader; on failure log, roll back the (now aborted)
+    HB transaction so later queries in the request still work, and return {} so
+    the page degrades (None names/skills) instead of 500ing.
+    """
     try:
         return loader(ids, hb_session)
-    except Exception:  # noqa: BLE001 — same swallow-all contract as _get_team & co.
+    except Exception:  # noqa: BLE001
         logger.warning("[games] batched %s lookup failed", loader.__name__, exc_info=True)
+        try:
+            hb_session.rollback()
+        except Exception:  # noqa: BLE001
+            logger.warning("[games] rollback after failed lookup also failed", exc_info=True)
         return {}
 
 
@@ -83,8 +99,8 @@ def build_game_maps(games, hb_session, pred_user=None, pred_session=None) -> dic
     Pre-load everything ``_serialize_game`` needs for a page of games.
 
     Returns {"teams": {id: name}, "divisions": {id: dict|None}, "orgs": {id: dict|None},
-             "skills": {team_id: float}, "picks": {game_id: PredPick}}  (picks only when
-    a user is given).  Missing ids simply map to None / are absent.
+             "skills": {team_id: float|None}, "picks": {game_id: PredPick}}.
+    ``picks`` is {} for anonymous requests.  Missing ids map to None / are absent.
     """
     team_ids: list = []
     skill_team_ids: list = []
@@ -105,46 +121,34 @@ def build_game_maps(games, hb_session, pred_user=None, pred_session=None) -> dic
         "teams": _safe_load(get_team_names, team_ids, hb_session),
         "divisions": _safe_load(get_divisions, division_ids, hb_session),
         "orgs": _safe_load(get_orgs, org_ids, hb_session),
-        "skills": get_team_avg_skills(skill_team_ids),
+        "skills": _safe_load(get_team_avg_skills_cached, skill_team_ids, hb_session),
+        "picks": {},
     }
     if pred_user and pred_session:
         maps["picks"] = _load_user_picks([game.id for game in games], pred_user, pred_session)
     return maps
 
 
-def _serialize_game(game, hb_session, pred_user=None, pred_session=None, maps=None) -> dict:
+def _serialize_game(game, maps, pred_user=None) -> dict:
     """
-    Build JSON representation of a game.
-
-    ``maps`` (from ``build_game_maps``) supplies the page-wide lookups so no
-    per-game queries are issued.  Without it, falls back to the per-id helpers
-    below (kept for other callers).
+    Build JSON representation of a game from the page-wide ``maps``
+    (see ``build_game_maps``).  Issues no queries of its own.
     """
     org_id = getattr(game, "org_id", None)
     division_id = getattr(game, "division_id", None)
 
-    if maps is None:
-        home_team = _get_team(game.home_team_id, hb_session)
-        visitor_team = _get_team(game.visitor_team_id, hb_session)
-        home_name = home_team.name if home_team else str(game.home_team_id)
-        visitor_name = visitor_team.name if visitor_team else str(game.visitor_team_id)
-        home_skill = get_team_avg_skill(game.home_team_id, org_id) if org_id else None
-        visitor_skill = get_team_avg_skill(game.visitor_team_id, org_id) if org_id else None
-        division = _get_division(division_id, hb_session)
-        org = _get_org(org_id, hb_session)
-    else:
-        team_names = maps.get("teams", {})
-        home_name = team_names.get(game.home_team_id)
-        if home_name is None:
-            home_name = str(game.home_team_id)
-        visitor_name = team_names.get(game.visitor_team_id)
-        if visitor_name is None:
-            visitor_name = str(game.visitor_team_id)
-        skills = maps.get("skills", {})
-        home_skill = skills.get(game.home_team_id) if org_id else None
-        visitor_skill = skills.get(game.visitor_team_id) if org_id else None
-        division = maps.get("divisions", {}).get(division_id) if division_id else None
-        org = maps.get("orgs", {}).get(org_id) if org_id else None
+    team_names = maps["teams"]
+    home_name = team_names.get(game.home_team_id)
+    if home_name is None:
+        home_name = str(game.home_team_id)
+    visitor_name = team_names.get(game.visitor_team_id)
+    if visitor_name is None:
+        visitor_name = str(game.visitor_team_id)
+    skills = maps["skills"]
+    home_skill = skills.get(game.home_team_id) if org_id else None
+    visitor_skill = skills.get(game.visitor_team_id) if org_id else None
+    division = maps["divisions"].get(division_id) if division_id else None
+    org = maps["orgs"].get(org_id) if org_id else None
 
     # The game row is already in hand — no need for lock_checker to re-fetch it.
     is_pickable, lock_reason = is_game_pickable(game.id, game=game)
@@ -180,75 +184,11 @@ def _serialize_game(game, hb_session, pred_user=None, pred_session=None, maps=No
         "odds": odds,
     }
 
-    if pred_user and pred_session:
-        if maps is not None and "picks" in maps:
-            user_pick = maps["picks"].get(game.id)
-        else:
-            from app.models.pred_pick import PredPick
-
-            pick_stmt = (
-                select(PredPick)
-                .where(PredPick.user_id == pred_user.id, PredPick.game_id == game.id)
-                .limit(1)
-            )
-            user_pick = pred_session.execute(pick_stmt).scalar_one_or_none()
+    if pred_user:
+        user_pick = maps["picks"].get(game.id)
         data["user_pick"] = user_pick.to_dict() if user_pick else None
 
     return data
-
-
-def _get_team(team_id: int, hb_session):
-    try:
-        from hockey_blast_common_lib.models import Team
-
-        stmt = select(Team).where(Team.id == team_id)
-        return hb_session.execute(stmt).scalar_one_or_none()
-    except Exception:
-        return None
-
-
-def _get_division(division_id: int | None, hb_session) -> dict | None:
-    if not division_id:
-        return None
-    try:
-        from hockey_blast_common_lib.models import Division, Level
-
-        div = hb_session.execute(
-            select(Division).where(Division.id == division_id)
-        ).scalar_one_or_none()
-        if not div:
-            return None
-        # Prefer Level.short_name (e.g. "4B", "O35"), fall back to div.level
-        short_name = None
-        if div.level_id:
-            lvl = hb_session.execute(
-                select(Level).where(Level.id == div.level_id)
-            ).scalar_one_or_none()
-            if lvl:
-                short_name = lvl.short_name or lvl.level_name
-        return {
-            "id": div.id,
-            "name": div.level,  # full name e.g. "Adult Division 4B"
-            "short_name": short_name or div.level,  # e.g. "4B"
-        }
-    except Exception:
-        pass
-    return None
-
-
-def _get_org(org_id: int | None, hb_session) -> dict | None:
-    if not org_id:
-        return None
-    try:
-        from hockey_blast_common_lib.models import Organization
-
-        stmt = select(Organization).where(Organization.id == org_id)
-        org = hb_session.execute(stmt).scalar_one_or_none()
-        if org:
-            return {"id": org.id, "name": org.organization_name}
-    except Exception:
-        pass
-    return None
 
 
 @games_bp.route("", methods=["GET"])
@@ -323,9 +263,7 @@ def list_games():
 
     return jsonify(
         {
-            "games": [
-                _serialize_game(gm, hb_session, pred_user, pred_session, maps=maps) for gm in games
-            ],
+            "games": [_serialize_game(gm, maps, pred_user) for gm in games],
             "total": total,
             "page": page,
             "per_page": per_page,
@@ -354,4 +292,4 @@ def get_game(game_id: int):
     pred_session = PredSession() if pred_user else None
     maps = build_game_maps([game], hb_session, pred_user, pred_session)
 
-    return jsonify(_serialize_game(game, hb_session, pred_user, pred_session, maps=maps))
+    return jsonify(_serialize_game(game, maps, pred_user))

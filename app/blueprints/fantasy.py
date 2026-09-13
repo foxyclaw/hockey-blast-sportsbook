@@ -489,15 +489,16 @@ def list_leagues():
             winner_map[(mgr.league_id, mgr.user_id)] = (mgr.team_name, user.display_name)
 
     # Batch-load org names and HB league names for display
-    from hockey_blast_common_lib.models import Organization, League as HBLeague
+    from hockey_blast_common_lib.models import League as HBLeague
     hb = HBSession()
     org_ids = {l.org_id for l in leagues if l.org_id}
     hb_league_ids = {l.hb_league_id for l in leagues if l.hb_league_id}
     org_names = {}
     hb_league_name_map = {}
     if org_ids:
-        for row in hb.execute(select(Organization.id, Organization.organization_name).where(Organization.id.in_(org_ids))).all():
-            org_names[row.id] = row.organization_name
+        from app.services.hb_ref_data import get_orgs
+
+        org_names = {oid: o["name"] for oid, o in get_orgs(org_ids, hb).items() if o}
     if hb_league_ids:
         for row in hb.execute(select(HBLeague.id, HBLeague.league_name).where(HBLeague.id.in_(hb_league_ids))).all():
             hb_league_name_map[row.id] = row.league_name

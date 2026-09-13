@@ -1173,14 +1173,10 @@ def _build_orgs_list(org_ids) -> list:
     present_org_ids = {oid for oid in org_ids if oid is not None}
     if present_org_ids:
         try:
-            from hockey_blast_common_lib.models import Organization
-            hb = HBSession()
-            org_objs = hb.execute(
-                select(Organization.id, Organization.organization_name)
-                .where(Organization.id.in_(present_org_ids))
-                .order_by(Organization.id)
-            ).all()
-            orgs_out += [{"id": o.id, "name": o.organization_name} for o in org_objs]
+            from app.services.hb_ref_data import get_orgs
+
+            orgs = get_orgs(present_org_ids, HBSession())
+            orgs_out += [orgs[oid] for oid in sorted(present_org_ids) if orgs.get(oid)]
         except Exception as e:
             logging.getLogger(__name__).warning("Could not fetch org names: %s", e)
             orgs_out += [{"id": oid, "name": f"Org #{oid}"} for oid in sorted(present_org_ids)]

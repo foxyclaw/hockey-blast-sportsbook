@@ -20,10 +20,11 @@ team_cache = TTLCache()
 division_cache = TTLCache()
 level_cache = TTLCache()
 org_cache = TTLCache()
+skill_cache = TTLCache()  # team_id -> avg skill (float) or None
 
 
 def clear_all_caches() -> None:
-    for cache in (team_cache, division_cache, level_cache, org_cache):
+    for cache in (team_cache, division_cache, level_cache, org_cache, skill_cache):
         cache.clear()
 
 
@@ -109,3 +110,16 @@ def get_divisions(division_ids: Iterable[int | None], hb_session) -> dict[int, d
             "short_name": short_name or div["level"],  # e.g. "4B"
         }
     return out
+
+
+def get_team_avg_skills_cached(
+    team_ids: Iterable[int | None], hb_session
+) -> dict[int, float | None]:
+    """
+    {team_id: avg skater skill or None} — the heaviest lookup on the games page,
+    so it sits behind the same TTL cache.  Misses are resolved by ONE windowed
+    query (skill_snapshot.get_team_avg_skills); teams with no data cache as None.
+    """
+    from app.services.skill_snapshot import get_team_avg_skills
+
+    return load_cached(skill_cache, team_ids, lambda ids: get_team_avg_skills(ids, hb_session))
