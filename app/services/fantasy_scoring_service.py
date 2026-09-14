@@ -8,6 +8,8 @@ Scoring rules:
   Penalty (per minor) = -0.5 pts
   Goalie win  = 5 pts
   Goalie shutout bonus = +3 pts
+  Ref: game officiated = 4 pts, penalty called = 2 pts, game misconduct = 8 pts
+       (both officials are credited with every penalty in a game they worked)
 """
 
 import logging
@@ -117,17 +119,23 @@ def score_game(league_id: int, game_id: int) -> None:
 
     # ── Penalties: penalized_player_id ───────────────────────────────────────
     penalties_by_player: dict[int, int] = {}
+    game_penalties = 0   # every penalty in the game — both refs are credited with all of them
+    game_gms = 0         # of those, the game misconducts
     try:
         pen_rows = hb.execute(
-            text("SELECT penalized_player_id FROM penalties WHERE game_id = :gid"),
+            text("SELECT penalized_player_id, penalty_minutes FROM penalties WHERE game_id = :gid"),
             {"gid": game_id},
         ).fetchall()
         for p in pen_rows:
+            game_penalties += 1
+            if (p.penalty_minutes or "").strip().lower() == "gm":
+                game_gms += 1
             if p.penalized_player_id:
                 penalties_by_player[p.penalized_player_id] = (
                     penalties_by_player.get(p.penalized_player_id, 0) + 1
                 )
     except Exception as e:
+        game_penalties = game_gms = 0
         logger.warning("score_game: could not query penalties for game %d: %s", game_id, e)
         try:
             hb.rollback()
@@ -163,10 +171,11 @@ def score_game(league_id: int, game_id: int) -> None:
             pass
 
     # ── Referee stats for this game ──────────────────────────────────────────
-    # Refs are recorded on games.referee_1_id / referee_2_id. (The old code queried
-    # ref_divisions.game_id and penalties.referee_id — neither column exists — so
-    # ref scoring silently produced nothing.) There is no per-ref penalty/GM
-    # attribution available, so refs score on games officiated only.
+    # Refs are recorded on games.referee_1_id / referee_2_id. There is no per-ref
+    # attribution of who blew the whistle, so every official working the game is
+    # credited with ALL of its penalties and GMs — a two-ref game scores the same
+    # call twice, once for each of them. (HB's own referee stats instead split the
+    # game's penalties in half between the two; fantasy deliberately does not.)
     ref_stats: dict[int, dict] = {}
     try:
         game_ref_row = hb.execute(
@@ -176,7 +185,7 @@ def score_game(league_id: int, game_id: int) -> None:
         if game_ref_row:
             for rid in (game_ref_row.referee_1_id, game_ref_row.referee_2_id):
                 if rid:
-                    ref_stats[rid] = {"games": 1, "penalties": 0, "gm": 0}
+                    ref_stats[rid] = {"games": 1, "penalties": game_penalties, "gm": game_gms}
     except Exception as e:
         logger.debug("score_game: ref stats unavailable for game %d: %s", game_id, e)
         try:
@@ -330,17 +339,23 @@ def score_live_game(league_id: int, game_id: int) -> None:
             pass
 
     penalties_by_player: dict[int, int] = {}
+    game_penalties = 0   # every penalty in the game — both refs are credited with all of them
+    game_gms = 0         # of those, the game misconducts
     try:
         pen_rows = hb.execute(
-            text("SELECT penalized_player_id FROM penalties WHERE game_id = :gid"),
+            text("SELECT penalized_player_id, penalty_minutes FROM penalties WHERE game_id = :gid"),
             {"gid": game_id},
         ).fetchall()
         for p in pen_rows:
+            game_penalties += 1
+            if (p.penalty_minutes or "").strip().lower() == "gm":
+                game_gms += 1
             if p.penalized_player_id:
                 penalties_by_player[p.penalized_player_id] = (
                     penalties_by_player.get(p.penalized_player_id, 0) + 1
                 )
     except Exception as e:
+        game_penalties = game_gms = 0
         logger.warning("score_live_game: could not query penalties for game %d: %s", game_id, e)
         try:
             hb.rollback()
@@ -348,7 +363,7 @@ def score_live_game(league_id: int, game_id: int) -> None:
             pass
 
     # Ref stats — refs are on games.referee_1_id / referee_2_id (see score_game).
-    # Games officiated only; no per-ref penalty/GM data source.
+    # Both officials are credited with all of the game's penalties and GMs.
     ref_stats: dict[int, dict] = {}
     try:
         game_ref_row = hb.execute(
@@ -358,7 +373,7 @@ def score_live_game(league_id: int, game_id: int) -> None:
         if game_ref_row:
             for rid in (game_ref_row.referee_1_id, game_ref_row.referee_2_id):
                 if rid:
-                    ref_stats[rid] = {"games": 1, "penalties": 0, "gm": 0}
+                    ref_stats[rid] = {"games": 1, "penalties": game_penalties, "gm": game_gms}
     except Exception as e:
         logger.debug("score_live_game: ref stats unavailable for game %d: %s", game_id, e)
         try:
@@ -896,16 +911,28 @@ def compute_in_window_fp(league_id: int, hb_human_ids: list[int]) -> dict[int, d
             if v > h: goalie_win[r.visitor_goalie_id] += 1
             if h == 0: goalie_so[r.visitor_goalie_id] += 1
 
-    # ── Ref: games officiated * REF_GAME_PTS ──────────────────────────────────
-    # Matches the (now-fixed) score_game ref logic: refs are on
-    # games.referee_1_id / referee_2_id; scored on games officiated only (no
-    # per-ref penalty/GM data source).
+    # ── Ref: games*4 + penalties*2 + GMs*8 ────────────────────────────────────
+    # Matches score_game: refs come off games.referee_1_id / referee_2_id, and
+    # every official working a game is credited with ALL of its penalties and GMs
+    # (there is no per-ref attribution of who made the call).
+    pen_by_game = {
+        r.game_id: (int(r.n or 0), int(r.gm or 0))
+        for r in hb.execute(text(
+            f"SELECT game_id, COUNT(*) n, "
+            f"COUNT(*) FILTER (WHERE lower(trim(penalty_minutes)) = 'gm') gm "
+            f"FROM penalties WHERE game_id IN ({ids_sql}) GROUP BY game_id")).fetchall()
+    }
     ref_games: dict[int, int] = {}
+    ref_pens: dict[int, int] = {}
+    ref_gms: dict[int, int] = {}
     for r in hb.execute(text(
-        f"SELECT referee_1_id, referee_2_id FROM games WHERE id IN ({ids_sql})")).fetchall():
+        f"SELECT id, referee_1_id, referee_2_id FROM games WHERE id IN ({ids_sql})")).fetchall():
+        n_pen, n_gm = pen_by_game.get(r.id, (0, 0))
         for rid in (r.referee_1_id, r.referee_2_id):
             if rid in result:
                 ref_games[rid] = ref_games.get(rid, 0) + 1
+                ref_pens[rid] = ref_pens.get(rid, 0) + n_pen
+                ref_gms[rid] = ref_gms.get(rid, 0) + n_gm
 
     # Each value mirrors score_game exactly for a player of that roster role:
     #   points = goals*3 + assists*2 + games_played*perGameMult + penalties*-0.5
@@ -921,7 +948,12 @@ def compute_in_window_fp(league_id: int, hb_human_ids: list[int]) -> dict[int, d
         g_played = gp.get(h, 0)
         result[h]["skater"] = round(common + g_played * GAME_PLAYED_PTS, 1)
         result[h]["goalie"] = round(common + g_played * GOALIE_GAME_PLAYED_PTS, 1)
-        result[h]["ref"] = round(ref_games.get(h, 0) * REF_GAME_PTS, 1)
+        result[h]["ref"] = round(
+            ref_games.get(h, 0) * REF_GAME_PTS
+            + ref_pens.get(h, 0) * REF_PENALTY_PTS
+            + ref_gms.get(h, 0) * REF_GM_PTS,
+            1,
+        )
     return result
 
 
