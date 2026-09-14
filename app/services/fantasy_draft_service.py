@@ -131,6 +131,11 @@ def build_draft_queue(league_id: int) -> None:
             total_skaters = len([p for p in pool_info.get("skaters", []) if p["hb_human_id"] not in blocked_ids])
             total_goalies = len([p for p in pool_info.get("goalies", []) if p["hb_human_id"] not in blocked_ids])
             total_refs = len([p for p in pool_info.get("refs", []) if p["hb_human_id"] not in blocked_ids])
+            # The pool is built from last season and over-counts — size rosters from
+            # the number of skaters we expect to actually play (league.max_pool_skaters),
+            # so we never hand out more roster spots than there are real players.
+            from app.services.fantasy_pool_service import cap_skater_pool
+            total_skaters = cap_skater_pool(total_skaters, league.max_pool_skaters)
             league.roster_skaters = max(1, min(10, total_skaters // n))
             league.roster_goalies = max(0, min(1, total_goalies // n))
             league.roster_refs = max(0, min(1, total_refs // n))

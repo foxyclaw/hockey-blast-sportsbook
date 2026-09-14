@@ -615,9 +615,13 @@ def launch_fantasy_season():
                 pool = get_player_pool(level_id, org_id, league_id=data.get('hb_league_id'))
                 max_managers = pool.get("max_managers", 8)
                 roster_skaters = pool.get("roster_skaters", 6)
+                # Cap the pool at teams * SKATERS_PER_TEAM — last season's stats
+                # over-count how many skaters will actually play this season.
+                max_pool_skaters = pool.get("max_pool_skaters")
             except Exception:
                 max_managers = 8
                 roster_skaters = 6
+                max_pool_skaters = None
             # Admin override: fixed managers count, max 10+goalie roster
             if max_managers_override:
                 max_managers = max_managers_override
@@ -636,6 +640,7 @@ def launch_fantasy_season():
                 max_managers=max_managers,
                 roster_skaters=roster_skaters,
                 roster_goalies=1,
+                max_pool_skaters=max_pool_skaters,
                 draft_pick_hours=24,
                 season_starts_at=start_dt,
                 draft_opens_at=draft_opens_dt,
@@ -769,7 +774,7 @@ def update_fantasy_league(league_id: int):
 
     orig_season_id = league.hb_season_id  # capture before any edits
 
-    EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name", "hb_season_id", "max_managers")
+    EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name", "hb_season_id", "max_managers", "max_pool_skaters")
     DATETIME_FIELDS = {"season_starts_at", "draft_opens_at", "draft_closes_at"}
 
     for field in EDITABLE:

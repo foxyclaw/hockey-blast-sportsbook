@@ -210,6 +210,28 @@
             </div>
           </div>
 
+          <!-- Skaters actually in play this season (caps every roster calculation) -->
+          <div v-if="createForm.level_id && !poolLoading" class="form-control">
+            <label class="label py-1">
+              <span class="label-text text-sm">Skaters playing this season</span>
+              <span class="label-text-alt text-xs text-base-content/40">max {{ poolPlayerCounts.skaters }}</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              :max="poolPlayerCounts.skaters || 1"
+              v-model.number="createForm.max_pool_skaters"
+              class="input input-bordered input-sm"
+            />
+            <div class="text-xs text-base-content/40 px-1 mt-1">
+              <template v-if="poolTeamsThisSeason">
+                {{ poolTeamsThisSeason }} teams × 15 = {{ poolTeamsThisSeason * 15 }}.
+              </template>
+              Stats come from last season, so the pool includes players who have left.
+              Roster sizes are computed from this number.
+            </div>
+          </div>
+
           <!-- Auto-adjust rosters toggle (shown after level selected) -->
           <div v-if="createForm.level_id && !poolLoading" class="form-control">
             <label class="label cursor-pointer justify-start gap-3">
@@ -217,8 +239,9 @@
               <span class="label-text text-sm">⚖️ Auto adjust rosters based on number of managers</span>
             </label>
             <div v-if="createForm.auto_adjust_rosters" class="text-xs text-base-content/40 px-1 mt-1">
-              Roster sizes are computed when the draft opens, based on how many managers actually joined.
-              (e.g. 6 managers → ~10 skaters / 1 goalie / 1 ref each; 10 managers → ~6 / 0 / 0).
+              Roster sizes are computed when the draft opens, from how many managers actually joined
+              and the {{ draftableSkaters }} skaters expected to play
+              (e.g. 6 managers → ~{{ autoSkatersFor(6) }} skaters each; 10 managers → ~{{ autoSkatersFor(10) }} each).
             </div>
           </div>
 
@@ -393,6 +416,7 @@ const createForm = ref({
   roster_refs: 1,
   auto_adjust_rosters: false,
   min_games_played: 1,
+  max_pool_skaters: null,
 })
 const createdJoinCode = ref('')
 const showJoinCodeModal = ref(false)
@@ -462,10 +486,26 @@ const poolMaxManagers = ref(null)
 const poolSeasonName = ref(null)
 const poolLoading = ref(false)
 const poolPlayerCounts = ref({ skaters: 0, goalies: 0, refs: 0 })
+const poolTeamsThisSeason = ref(null)
+
+// The skater pool is built from LAST season's stats, so it over-counts: players who
+// have since left the league still show up. max_pool_skaters is the cap on how many
+// will actually take the ice (defaults to teams * 15). Every roster calculation uses
+// this number, not the raw pool.
+const draftableSkaters = computed(() => {
+  const total = poolPlayerCounts.value.skaters || 0
+  const cap = createForm.value.max_pool_skaters
+  return cap ? Math.min(total, cap) : total
+})
+
+// Mirrors the server-side auto-adjust sizing (build_draft_queue) for the preview text.
+function autoSkatersFor(n) {
+  return Math.max(1, Math.min(10, Math.floor(draftableSkaters.value / n)))
+}
 
 // Max managers based on roster selections - can't exceed available players
 const managerOptions = computed(() => {
-  const availableSkaters = poolPlayerCounts.value.skaters || 0
+  const availableSkaters = draftableSkaters.value
 
   // Auto-adjust mode: cap is floor(total_skaters / 2) so each manager gets at least 2 skaters.
   if (createForm.value.auto_adjust_rosters) {
@@ -500,7 +540,7 @@ const rosterFeasibility = computed(() => {
   const goaliesNeeded = n * (createForm.value.roster_goalies ?? 1)
   const refsNeeded = n * (createForm.value.roster_refs ?? 1)
   
-  const availableSkaters = poolPlayerCounts.value.skaters || 0
+  const availableSkaters = draftableSkaters.value
   const availableGoalies = poolPlayerCounts.value.goalies || 0
   const availableRefs = poolPlayerCounts.value.refs || 0
   
@@ -597,6 +637,8 @@ async function loadLevels(leagueId) {
 async function loadPoolInfo(levelId, hbLeagueId, { recomputeSkaters = true } = {}) {
   poolMaxManagers.value = null; poolSeasonName.value = null
   poolPlayerCounts.value = { skaters: 0, goalies: 0, refs: 0 }
+  poolTeamsThisSeason.value = null
+  createForm.value.max_pool_skaters = null
   createForm.value.max_managers = null
   if (!levelId) return
   poolLoading.value = true
@@ -616,6 +658,8 @@ async function loadPoolInfo(levelId, hbLeagueId, { recomputeSkaters = true } = {
       goalies: data.goalie_count || 0,
       refs: data.ref_count || 0,
     }
+    poolTeamsThisSeason.value = data.teams_this_season || null
+    createForm.value.max_pool_skaters = data.max_pool_skaters || data.skater_count || null
     // Smart skaters default: limiting resource determines max managers.
     // With goalies=1/refs=1 defaults, max managers = min(goalies_available, refs_available).
     // Then skaters per team = floor(skaters_available / max_managers).
@@ -627,7 +671,7 @@ async function loadPoolInfo(levelId, hbLeagueId, { recomputeSkaters = true } = {
       const maxByR = rPer > 0 ? Math.floor(poolPlayerCounts.value.refs / rPer) : 999
       // limiting = max possible managers based on goalies/refs constraint
       const limiting = Math.max(1, Math.min(maxByG, maxByR))
-      const skaterDefault = Math.max(1, Math.floor(poolPlayerCounts.value.skaters / limiting))
+      const skaterDefault = Math.max(1, Math.floor(draftableSkaters.value / limiting))
       createForm.value.roster_skaters = skaterDefault
     }
     // Default max_managers: highest valid option (respects auto-adjust cap when on).
@@ -663,7 +707,7 @@ async function openCreateModal() {
   createModalKey.value++
   showCreateModal.value = true
   createError.value = ''
-  poolMaxManagers.value = null; poolSeasonName.value = null; poolPlayerCounts.value = { skaters: 0, goalies: 0, refs: 0 }
+  poolMaxManagers.value = null; poolSeasonName.value = null; poolPlayerCounts.value = { skaters: 0, goalies: 0, refs: 0 }; poolTeamsThisSeason.value = null
   createForm.value = {
     hb_league_id: null,
     level_id: null,
@@ -678,6 +722,7 @@ async function openCreateModal() {
     roster_goalies: 1,
     roster_refs: 1,
     auto_adjust_rosters: false,
+    max_pool_skaters: null,
     min_games_played: 1,
   }
   levels.value = []
@@ -689,7 +734,7 @@ async function openCreateModal() {
 function onLeagueChange() {
   createForm.value.level_id = null
   createForm.value.max_managers = null
-  poolMaxManagers.value = null; poolSeasonName.value = null; poolPlayerCounts.value = { skaters: 0, goalies: 0, refs: 0 }
+  poolMaxManagers.value = null; poolSeasonName.value = null; poolPlayerCounts.value = { skaters: 0, goalies: 0, refs: 0 }; poolTeamsThisSeason.value = null
   loadLevels(createForm.value.hb_league_id)
 }
 
@@ -719,6 +764,7 @@ async function createLeague() {
       roster_goalies: createForm.value.roster_goalies,
       roster_refs: createForm.value.roster_refs,
       min_games_played: createForm.value.min_games_played,
+      max_pool_skaters: createForm.value.max_pool_skaters,
       season_starts_at: createForm.value.season_starts_at ? new Date(createForm.value.season_starts_at).toISOString() : undefined,
       draft_opens_at: createForm.value.draft_opens_at ? new Date(createForm.value.draft_opens_at).toISOString() : undefined,
       draft_closes_at: new Date(createForm.value.draft_closes_at).toISOString(),
@@ -735,6 +781,7 @@ async function createLeague() {
       hb_league_id: null, level_id: null, team_name: '', is_private: true,
       season_label: '', season_starts_at: '2026-04-01T00:00', draft_opens_at: '2026-03-28T16:00', draft_closes_at: '2026-03-30T23:00', max_managers: null,
       roster_skaters: 2, roster_goalies: 1, roster_refs: 1, auto_adjust_rosters: false, min_games_played: 1,
+      max_pool_skaters: null,
     }
   } catch (e) {
     createError.value = e?.response?.data?.message || 'Failed to create league'

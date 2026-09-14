@@ -34,6 +34,11 @@ class FantasyLeague(PredBase):
         Boolean, nullable=False, default=False, server_default="false"
     )
     min_games_played: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # Upper bound on how many skaters from the pool are assumed to actually play this
+    # season. The stats pool is built from LAST season, so it can contain players who
+    # have since left. Roster sizes are derived from this number, not from the raw pool.
+    # NULL = no cap (use the whole pool).
+    max_pool_skaters: Mapped[int | None] = mapped_column(Integer, nullable=True)
     draft_pick_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
     settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[int | None] = mapped_column(Integer, sa.ForeignKey("pred_users.id"), nullable=True)
@@ -87,6 +92,7 @@ class FantasyLeague(PredBase):
             "roster_refs": self.roster_refs,
             "auto_adjust_rosters": self.auto_adjust_rosters,
             "min_games_played": self.min_games_played,
+            "max_pool_skaters": self.max_pool_skaters,
             "draft_pick_hours": self.draft_pick_hours,
             "settings": self.settings,
             "created_by": self.created_by,
