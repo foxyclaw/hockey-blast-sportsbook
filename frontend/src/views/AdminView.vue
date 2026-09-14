@@ -548,8 +548,13 @@
                     <td colspan="10" class="p-3">
                       <div class="flex flex-wrap gap-3 items-end">
                         <div class="form-control">
+                          <label class="label py-0"><span class="label-text text-xs">League Name</span></label>
+                          <input v-model="leagueEditForm.name" type="text" placeholder="e.g. O35 — Spring 2026" class="input input-bordered input-xs w-64" />
+                        </div>
+                        <div class="form-control">
                           <label class="label py-0"><span class="label-text text-xs font-bold text-warning">Season Label ⚠️</span></label>
                           <input v-model="leagueEditForm.season_label" type="text" placeholder="e.g. Spring 2026" class="input input-bordered input-xs w-40" />
+                          <span class="label-text-alt text-xs opacity-50 mt-0.5">Name follows the label unless edited above.</span>
                         </div>
                         <div class="form-control">
                           <label class="label py-0"><span class="label-text text-xs">Season Start</span></label>
@@ -1022,7 +1027,7 @@ const deleteResult = ref(null)
 
 // ── Inline league edit ───────────────────────────────────────────────────────
 const editingLeagueId = ref(null)
-const leagueEditForm = ref({ season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '', hb_season_id: null, max_managers: null })
+const leagueEditForm = ref({ name: '', season_label: '', season_starts_at: '', draft_opens_at: '', draft_closes_at: '', hb_season_id: null, max_managers: null })
 const hbSeasons = ref([])
 const leagueEditSaving = ref(false)
 const leagueEditError = ref(null)
@@ -1057,6 +1062,7 @@ function openLeagueEdit(league) {
   leagueEditError.value = null
   hbSeasons.value = []
   leagueEditForm.value = {
+    name: league.name || '',
     season_label: league.season_label || '',
     season_starts_at: toLocalDtInput(league.season_starts_at),
     draft_opens_at: toLocalDtInput(league.draft_opens_at),
@@ -1133,7 +1139,10 @@ async function saveLeagueEdit(leagueId) {
   leagueEditSaving.value = true
   leagueEditError.value = null
   try {
+    const original = adminLeagues.value.find(l => l.id === leagueId)
+    const nameEdited = (leagueEditForm.value.name || '') !== (original?.name || '')
     const { data } = await api.patch(`/api/admin/fantasy/leagues/${leagueId}`, {
+      ...(nameEdited ? { name: leagueEditForm.value.name || null } : {}),
       season_label: leagueEditForm.value.season_label || null,
       season_starts_at: leagueEditForm.value.season_starts_at ? new Date(leagueEditForm.value.season_starts_at).toISOString() : null,
       draft_opens_at: leagueEditForm.value.draft_opens_at ? new Date(leagueEditForm.value.draft_opens_at).toISOString() : null,
