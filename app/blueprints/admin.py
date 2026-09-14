@@ -1065,9 +1065,55 @@ def toggle_blocked_player(league_id: int):
         current_set.discard(hb_human_id)
     settings["draft_blocked"] = sorted(current_set)
     league.settings = settings  # reassign so SQLAlchemy detects the JSONB change
+
+    # A blocked player is skipped by the draft engine, but leaving them sitting in
+    # managers' wishlists is misleading — someone's #1 pick silently never happens.
+    # Evict them and close the gap in the remaining positions.
+    evicted = 0
+    if blocked:
+        evicted = _evict_from_queues(pred, league_id, hb_human_id)
+
     pred.commit()
 
-    return jsonify({"ok": True, "blocked": settings["draft_blocked"]})
+    return jsonify({
+        "ok": True,
+        "blocked": settings["draft_blocked"],
+        "queue_entries_removed": evicted,
+    })
+
+
+def _evict_from_queues(pred, league_id: int, hb_human_id: int) -> int:
+    """Drop a player from every manager's draft queue in a league, then resequence."""
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
+    from sqlalchemy import select as sa_select
+
+    doomed = pred.execute(
+        sa_select(FantasyManagerQueue).where(
+            FantasyManagerQueue.league_id == league_id,
+            FantasyManagerQueue.hb_human_id == hb_human_id,
+        )
+    ).scalars().all()
+    if not doomed:
+        return 0
+
+    affected_users = {q.user_id for q in doomed}
+    for q in doomed:
+        pred.delete(q)
+    pred.flush()
+
+    for uid in affected_users:
+        remaining = pred.execute(
+            sa_select(FantasyManagerQueue)
+            .where(
+                FantasyManagerQueue.league_id == league_id,
+                FantasyManagerQueue.user_id == uid,
+            )
+            .order_by(FantasyManagerQueue.position.asc())
+        ).scalars().all()
+        for pos, item in enumerate(remaining, 1):
+            item.position = pos
+
+    return len(doomed)
 
 
 @admin_bp.route("/chat/questions", methods=["GET"])
