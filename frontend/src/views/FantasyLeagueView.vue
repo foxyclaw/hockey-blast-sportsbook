@@ -22,7 +22,7 @@
               <span v-if="league.hb_league_name">🏒 {{ league.hb_league_name }}</span>
               <span>📊 {{ league.level_name }}</span>
               <span v-if="league.hb_season_name">📅 {{ league.hb_season_name }}</span>
-              <span v-else-if="league.season_label">📅 {{ league.season_label }}</span>
+              <span v-if="league.season_label">🏷️ {{ league.season_label }}</span>
             </p>
             <!-- Invite code callout — only visible to creator while league is forming/draft_open -->
             <div v-if="league.is_private && league.join_code && league.is_creator && ['forming','draft_open'].includes(league.status)"

@@ -777,6 +777,18 @@ def update_fantasy_league(league_id: int):
     EDITABLE = ("season_starts_at", "draft_opens_at", "draft_closes_at", "season_label", "name", "hb_season_id", "max_managers", "max_pool_skaters")
     DATETIME_FIELDS = {"season_starts_at", "draft_opens_at", "draft_closes_at"}
 
+    # `name` is a separate column, snapshotted from the season label when the league
+    # was created. Editing only the label used to leave the name frozen, so the change
+    # never showed up anywhere the name is displayed. Re-derive it here — but only if
+    # nobody has hand-edited the name away from the generated shape.
+    orig_name = league.name
+    orig_label = league.season_label
+
+    def _derived_names(label):
+        if not label:
+            return []
+        return [f"{league.level_name} — {label}", f"Level {league.level_name} — {label}"]
+
     for field in EDITABLE:
         if field not in data:
             continue
@@ -788,6 +800,15 @@ def update_fantasy_league(league_id: int):
                 setattr(league, field, parsed)
         else:
             setattr(league, field, data[field] or None)
+
+    if (
+        "name" not in data                          # caller didn't set the name itself
+        and league.season_label != orig_label       # the label actually changed
+        and league.season_label                     # ...to something non-empty
+        and orig_name in _derived_names(orig_label)  # name was still auto-generated
+    ):
+        prefix = "Level " if orig_name.startswith("Level ") else ""
+        league.name = f"{prefix}{league.level_name} — {league.season_label}"
 
     # Auto-transition to draft_open if max_managers set to <= current manager count
     if league.status == "forming" and league.max_managers is not None:
