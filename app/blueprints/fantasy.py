@@ -236,6 +236,8 @@ def get_level_pool():
             "max_managers": pool["max_managers"],
             "roster_skaters": pool["roster_skaters"],
             "skater_count": len(pool.get("skaters", [])),
+            "teams_this_season": pool.get("teams_this_season"),
+            "max_pool_skaters": pool.get("max_pool_skaters"),
             "goalie_count": len(pool.get("goalies", [])),
             "ref_count": len(pool.get("refs", [])),
             "resolved_season_id": pool.get("resolved_season_id"),
@@ -320,12 +322,27 @@ def create_league():
     total_goalies = len(pool_info.get("goalies", []))
     total_refs = len(pool_info.get("refs", []))
 
+    # How many of those skaters will actually play this season. The pool comes from
+    # last season's stats and over-counts (players leave); teams * SKATERS_PER_TEAM
+    # is the better estimate. Caller may override, but never above the real pool.
+    max_pool_skaters = data.get("max_pool_skaters")
+    if max_pool_skaters is not None:
+        try:
+            max_pool_skaters = max(1, min(total_skaters, int(max_pool_skaters)))
+        except (ValueError, TypeError):
+            max_pool_skaters = None
+    if max_pool_skaters is None:
+        max_pool_skaters = pool_info.get("max_pool_skaters") or total_skaters
+    # Every roster calculation from here on uses the capped count, not the raw pool.
+    from app.services.fantasy_pool_service import cap_skater_pool
+    draftable_skaters = cap_skater_pool(total_skaters, max_pool_skaters)
+
     auto_adjust_rosters = bool(data.get("auto_adjust_rosters", False))
 
     if auto_adjust_rosters:
         # Roster sizes are recomputed when the draft opens based on actual managers joined.
         # Cap max_managers so each manager is guaranteed at least 2 skaters.
-        max_managers = total_skaters // 2
+        max_managers = draftable_skaters // 2
         max_managers = max(2, max_managers) if max_managers >= 2 else 2
 
         override = data.get("max_managers_override")
@@ -338,7 +355,7 @@ def create_league():
                 pass
 
         # Placeholder roster sizes assuming the league fills up — recomputed at draft open.
-        roster_skaters = max(1, min(10, total_skaters // max_managers))
+        roster_skaters = max(1, min(10, draftable_skaters // max_managers))
         roster_goalies = max(0, min(1, total_goalies // max_managers))
         roster_refs = max(0, min(1, total_refs // max_managers))
     else:
@@ -356,7 +373,7 @@ def create_league():
             roster_skaters, roster_goalies, roster_refs = 2, 1, 1
 
         # Default max_managers is min(12, available players per position)
-        max_by_skaters = total_skaters // roster_skaters if roster_skaters > 0 else 0
+        max_by_skaters = draftable_skaters // roster_skaters if roster_skaters > 0 else 0
         max_by_goalies = total_goalies // roster_goalies if roster_goalies > 0 else 999
         max_by_refs = total_refs // roster_refs if roster_refs > 0 else 999
         max_managers = min(12, max_by_skaters, max_by_goalies, max_by_refs)
@@ -422,6 +439,7 @@ def create_league():
             roster_refs=roster_refs,
             auto_adjust_rosters=auto_adjust_rosters,
             min_games_played=min_games_played,
+            max_pool_skaters=max_pool_skaters,
             draft_pick_hours=data.get("draft_pick_hours", 24),
             created_by=user.id,
             is_private=is_private,
@@ -801,6 +819,8 @@ def get_pool(league_id: int):
         "new_player_season_id": pool.get("new_player_season_id"),
         "new_player_season_name": pool.get("new_player_season_name"),
         "new_player_count": pool.get("new_player_count", 0),
+        "teams_this_season": pool.get("teams_this_season"),
+        "max_pool_skaters": league.max_pool_skaters,
     }
 
     if type_filter == "skaters":

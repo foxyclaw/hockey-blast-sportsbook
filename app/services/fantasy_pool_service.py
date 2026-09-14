@@ -17,6 +17,29 @@ from sqlalchemy import select, func
 from app.db import HBSession
 from hockey_blast_common_lib.game_status import FINAL_STATUS_IDS
 
+# Rough roster size of a real beer-league team. Used to cap the draftable skater
+# pool: the pool is built from LAST season's stats and always over-counts, because
+# players who have since left the league still have stats. teams * this is a much
+# better estimate of how many skaters will actually take the ice this season.
+SKATERS_PER_TEAM = 15
+
+
+def suggest_max_pool_skaters(total_skaters: int, teams_this_season: int | None) -> int:
+    """
+    Default cap on the draftable skater pool: teams * SKATERS_PER_TEAM, never more
+    than the pool actually holds. With no team count known, the raw pool stands.
+    """
+    if not teams_this_season or teams_this_season <= 0:
+        return total_skaters
+    return min(total_skaters, teams_this_season * SKATERS_PER_TEAM)
+
+
+def cap_skater_pool(total_skaters: int, max_pool_skaters: int | None) -> int:
+    """Effective skater count every roster calculation must be sized against."""
+    if not max_pool_skaters or max_pool_skaters <= 0:
+        return total_skaters
+    return min(total_skaters, int(max_pool_skaters))
+
 
 def get_player_pool(
     level_id: int,
@@ -385,6 +408,32 @@ def get_player_pool(
     max_managers = min(12, usable // roster_skaters) if roster_skaters > 0 else 4
     max_managers = max(2, max_managers)
 
+    # ── How many skaters will actually play this season ───────────────────────
+    # Count the teams registered in the newest season at this level/league that
+    # has any teams at all, and cap the pool at teams * SKATERS_PER_TEAM.
+    from hockey_blast_common_lib.models import TeamDivision
+
+    _teams_this_season = None
+    _teams_season_id = None
+    try:
+        team_rows = hb.execute(
+            select(Division.season_id, func.count(func.distinct(TeamDivision.team_id)))
+            .select_from(Division)
+            .join(TeamDivision, TeamDivision.division_id == Division.id)
+            .where(*season_filter)
+            .group_by(Division.season_id)
+            .order_by(Division.season_id.desc())
+        ).all()
+        for sid, n_teams in team_rows:
+            if n_teams and n_teams > 0:
+                _teams_season_id = sid
+                _teams_this_season = int(n_teams)
+                break
+    except Exception:
+        _teams_this_season = None
+
+    _max_pool_skaters = suggest_max_pool_skaters(pool_size, _teams_this_season)
+
     return {
         "players": player_list,   # unified list with all flags
         "skaters": skaters,       # is_skater=True, sorted by skater FP
@@ -392,6 +441,9 @@ def get_player_pool(
         "refs": refs,             # is_ref=True, sorted by ref FP
         "roster_skaters": roster_skaters,
         "max_managers": max_managers,
+        "teams_this_season": _teams_this_season,
+        "teams_season_id": _teams_season_id,
+        "max_pool_skaters": _max_pool_skaters,
         "resolved_season_id": season_id,
         "resolved_season_name": _resolved_season_name,
         "last_game_date": _last_game_date,
