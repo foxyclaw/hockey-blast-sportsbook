@@ -611,6 +611,22 @@ def get_league(league_id: int):
     d["managers"] = managers
     d["manager_count"] = len(managers)
 
+    # While a league is still forming with auto-adjust on, the stored roster_skaters is
+    # only the placeholder written at creation (pool / max_managers, i.e. assuming the
+    # league fills up). Project what build_draft_queue will actually write at draft
+    # open, using the same rule against the managers who have actually joined. Goalies
+    # and refs are left as stored: their projection needs the live pool counts, and
+    # min(1, pool // managers) only ever differs from 1 past the manager cap.
+    d["projected_roster_skaters"] = None
+    if (
+        league.status == "forming"
+        and league.auto_adjust_rosters
+        and league.max_pool_skaters
+        and len(managers) > 0
+    ):
+        from app.services.fantasy_pool_service import roster_skaters_for
+        d["projected_roster_skaters"] = roster_skaters_for(league.max_pool_skaters, len(managers))
+
     winner = next((m for m in managers if m["user_id"] == league.winner_user_id), None) if league.winner_user_id else None
     d["winner_team_name"] = winner["team_name"] if winner else None
     d["winner_display_name"] = winner["display_name"] if winner else None
@@ -926,13 +942,19 @@ def get_my_draft_queue(league_id: int):
     )
     items = pred.execute(stmt).scalars().all()
 
-    # Never show a blocked player as if it were still a live wish — the draft engine
-    # skips them, so listing them would misrepresent where a manager's picks land.
+    # A blocked player stays in the queue — the manager chose them, and a block can be
+    # lifted. Flag them so the UI can show the entry as unavailable; the draft engine
+    # skips them either way.
     league = pred.get(FantasyLeague, league_id)
     blocked_ids = set((league.settings or {}).get("draft_blocked", []) if league else [])
-    items = [i for i in items if i.hb_human_id not in blocked_ids]
 
-    return jsonify({"queue": [i.to_dict() for i in items]})
+    queue = []
+    for i in items:
+        entry = i.to_dict()
+        entry["is_blocked"] = i.hb_human_id in blocked_ids
+        queue.append(entry)
+
+    return jsonify({"queue": queue})
 
 
 @fantasy_bp.route("/leagues/<int:league_id>/draft/my-queue", methods=["PUT"])
@@ -950,14 +972,13 @@ def save_my_draft_queue(league_id: int):
     human_ids = data.get("queue", [])
     if not isinstance(human_ids, list):
         return error_response("INVALID", "queue must be a list", 400)
-    league = pred.get(FantasyLeague, league_id)
-    blocked_ids = set((league.settings or {}).get("draft_blocked", []) if league else [])
-
-    # Deduplicate preserving order, dropping anything blocked from this draft
+    # Deduplicate preserving order. Blocked players are NOT stripped — the block is a
+    # draft-time filter, and silently editing someone's saved list would lose their
+    # ordering if the block is later lifted.
     seen = set()
     deduped = []
     for hid in human_ids:
-        if isinstance(hid, int) and hid not in seen and hid not in blocked_ids:
+        if isinstance(hid, int) and hid not in seen:
             seen.add(hid)
             deduped.append(hid)
 

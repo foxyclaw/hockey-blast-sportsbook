@@ -1066,54 +1066,27 @@ def toggle_blocked_player(league_id: int):
     settings["draft_blocked"] = sorted(current_set)
     league.settings = settings  # reassign so SQLAlchemy detects the JSONB change
 
-    # A blocked player is skipped by the draft engine, but leaving them sitting in
-    # managers' wishlists is misleading — someone's #1 pick silently never happens.
-    # Evict them and close the gap in the remaining positions.
-    evicted = 0
-    if blocked:
-        evicted = _evict_from_queues(pred, league_id, hb_human_id)
-
     pred.commit()
+
+    # Deliberately non-destructive: a manager's queue is their own data. Blocking is
+    # a draft-time availability filter — _queue_pick and _best_available skip blocked
+    # players, make_pick rejects them, and the pool endpoint hides them. Deleting the
+    # queue rows would lose the manager's ordering for good, and unblocking could not
+    # put it back.
+    from sqlalchemy import func as _func, select as _select
+    from app.models.fantasy_manager_queue import FantasyManagerQueue
+    affected = pred.execute(
+        _select(_func.count(_func.distinct(FantasyManagerQueue.user_id))).where(
+            FantasyManagerQueue.league_id == league_id,
+            FantasyManagerQueue.hb_human_id == hb_human_id,
+        )
+    ).scalar() or 0
 
     return jsonify({
         "ok": True,
         "blocked": settings["draft_blocked"],
-        "queue_entries_removed": evicted,
+        "managers_with_player_queued": affected,
     })
-
-
-def _evict_from_queues(pred, league_id: int, hb_human_id: int) -> int:
-    """Drop a player from every manager's draft queue in a league, then resequence."""
-    from app.models.fantasy_manager_queue import FantasyManagerQueue
-    from sqlalchemy import select as sa_select
-
-    doomed = pred.execute(
-        sa_select(FantasyManagerQueue).where(
-            FantasyManagerQueue.league_id == league_id,
-            FantasyManagerQueue.hb_human_id == hb_human_id,
-        )
-    ).scalars().all()
-    if not doomed:
-        return 0
-
-    affected_users = {q.user_id for q in doomed}
-    for q in doomed:
-        pred.delete(q)
-    pred.flush()
-
-    for uid in affected_users:
-        remaining = pred.execute(
-            sa_select(FantasyManagerQueue)
-            .where(
-                FantasyManagerQueue.league_id == league_id,
-                FantasyManagerQueue.user_id == uid,
-            )
-            .order_by(FantasyManagerQueue.position.asc())
-        ).scalars().all()
-        for pos, item in enumerate(remaining, 1):
-            item.position = pos
-
-    return len(doomed)
 
 
 @admin_bp.route("/chat/questions", methods=["GET"])
