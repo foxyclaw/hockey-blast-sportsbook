@@ -24,6 +24,7 @@ from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select, func, distinct, or_
 
 from hockey_blast_common_lib.merge_humans import merge_humans
+from app.services.human_merge_policy import human_merges_enabled, log_skipped_merge
 
 from app.auth.jwt_validator import require_auth
 from app.db import HBSession, PredSession
@@ -478,7 +479,11 @@ def confirm_identity():
                 )
             ).scalars().all()
 
-            if len(confirmed_claims) >= 2:
+            if len(confirmed_claims) >= 2 and not human_merges_enabled():
+                log_skipped_merge(
+                    "confirm_identity", user.id, [c.hb_human_id for c in confirmed_claims]
+                )
+            elif len(confirmed_claims) >= 2:
                 primary_claim = next((c for c in confirmed_claims if c.is_primary), None)
                 if primary_claim:
                     import os as _os
