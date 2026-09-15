@@ -527,7 +527,6 @@ def _best_available(league_id: int, user_id: int, pred, league, current_slot=Non
     is_ref_pick = current_slot.is_ref_pick if current_slot else False
 
     # Build the full available pool for this pick type
-    all_pool = pool["goalies"] + pool.get("refs", []) + pool["skaters"]
     if is_goalie_pick:
         eligible = [p for p in pool["goalies"]
                     if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids]
@@ -535,10 +534,18 @@ def _best_available(league_id: int, user_id: int, pred, league, current_slot=Non
         eligible = [p for p in pool.get("refs", [])
                     if p["hb_human_id"] not in drafted_ids and p["hb_human_id"] not in blocked_ids]
     else:
-        eligible = [p for p in all_pool
+        # Skater slot: only players who actually skate. This must match make_pick,
+        # which rejects a manual pick of anyone who is not is_skater ("Goalies can
+        # only be picked in the goalie round"), and _queue_pick, which already reads
+        # pool["skaters"]. Autopick used to draw from goalies + refs + skaters and
+        # exclude only refs, so an absent manager could be handed a pure goalie in a
+        # skater round — recorded with is_goalie=False, scoring 1 pt/game instead of
+        # 3 and leaving them a skater short. Excluding on is_ref was also wrong in
+        # the other direction: it dropped a ref who also skates, whom make_pick
+        # allows. pool["skaters"] is exactly the is_skater set, so it handles both.
+        eligible = [p for p in pool["skaters"]
                     if p["hb_human_id"] not in drafted_ids
-                    and p["hb_human_id"] not in blocked_ids
-                    and not p.get("is_ref")]
+                    and p["hb_human_id"] not in blocked_ids]
         # If this manager must pick a goalie now (last picks remaining = goalies needed),
         # force goalie regardless of queue
         force_goalie = (picks_remaining > 0 and picks_remaining <= goalies_still_needed)
