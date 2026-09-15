@@ -92,12 +92,12 @@
         <div class="flex gap-6 mt-3 text-sm text-base-content/60">
           <span>👥 {{ league.manager_count }} / {{ league.max_managers }} managers</span>
           <span>
-            📋 {{ league.roster_skaters }} skaters + {{ league.roster_goalies }} goalie(s){{ league.roster_refs ? ' + ' + league.roster_refs + ' ref(s)' : '' }} per team
+            📋 {{ league.projected_roster_skaters ?? league.roster_skaters }} skaters + {{ league.roster_goalies }} goalie(s){{ league.roster_refs ? ' + ' + league.roster_refs + ' ref(s)' : '' }} per team
             <span
-              v-if="league.status === 'forming' && league.auto_adjust_rosters"
+              v-if="league.projected_roster_skaters"
               class="text-base-content/40"
-              title="Roster sizes are recomputed when the draft opens, from the managers who actually joined."
-            >(recalculated at draft open)</span>
+              :title="`${league.max_pool_skaters} skaters in play ÷ ${league.manager_count} managers. Locked in when the draft opens; changes if more managers join.`"
+            >(projected)</span>
           </span>
           <span v-if="league.max_pool_skaters">🏒 {{ league.max_pool_skaters }} skaters in play this season</span>
           <template v-if="['active','completed'].includes(league.status)">

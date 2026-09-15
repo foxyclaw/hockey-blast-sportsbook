@@ -34,6 +34,19 @@ def suggest_max_pool_skaters(total_skaters: int, teams_this_season: int | None) 
     return min(total_skaters, teams_this_season * SKATERS_PER_TEAM)
 
 
+def roster_skaters_for(draftable_skaters: int, manager_count: int) -> int:
+    """
+    Skaters per team for `manager_count` managers sharing `draftable_skaters`.
+
+    The single definition of the auto-adjust rule — used both by build_draft_queue
+    when it writes the real roster at draft open, and by the league endpoint to
+    project that number while the league is still forming, so the two can't drift.
+    """
+    if manager_count <= 0:
+        return 1
+    return max(1, min(10, draftable_skaters // manager_count))
+
+
 def cap_skater_pool(total_skaters: int, max_pool_skaters: int | None) -> int:
     """Effective skater count every roster calculation must be sized against."""
     if not max_pool_skaters or max_pool_skaters <= 0:

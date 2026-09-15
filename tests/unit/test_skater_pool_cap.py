@@ -11,6 +11,7 @@ import pytest
 from app.services.fantasy_pool_service import (
     SKATERS_PER_TEAM,
     cap_skater_pool,
+    roster_skaters_for,
     suggest_max_pool_skaters,
 )
 
@@ -71,3 +72,33 @@ class TestAutoRosterSizing:
 
     def test_never_below_one(self):
         assert self._roster_skaters(3, 3, 8) == 1
+
+
+class TestProjectedRosterMatchesTheRealThing:
+    """
+    The league page projects skaters-per-team while a league is still forming; the
+    real value is written by build_draft_queue at draft open. Both call
+    roster_skaters_for, so they must agree for the same inputs.
+    """
+
+    @pytest.mark.parametrize("managers,expected", [(6, 10), (7, 8), (8, 7), (9, 6), (10, 6)])
+    def test_league_122_shape(self, managers, expected):
+        # 72 in the stats pool, capped to 60 actually playing.
+        assert roster_skaters_for(cap_skater_pool(72, 60), managers) == expected
+
+    def test_projection_equals_draft_open_value(self):
+        # The page has only the cap; build_draft_queue has the capped pool. Same answer
+        # whenever the cap does not exceed the pool, which create_league guarantees.
+        for pool, cap, n in [(72, 60, 9), (90, 60, 7), (40, 40, 5), (60, 60, 12)]:
+            page = roster_skaters_for(cap, n)
+            draft_open = roster_skaters_for(cap_skater_pool(pool, cap), n)
+            assert page == draft_open, (pool, cap, n)
+
+    def test_capped_at_ten(self):
+        assert roster_skaters_for(200, 2) == 10
+
+    def test_never_below_one(self):
+        assert roster_skaters_for(3, 9) == 1
+
+    def test_no_managers(self):
+        assert roster_skaters_for(60, 0) == 1
