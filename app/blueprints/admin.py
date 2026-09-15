@@ -19,6 +19,7 @@ import sqlalchemy as sa
 from sqlalchemy import select, func
 
 from hockey_blast_common_lib.merge_humans import merge_humans
+from app.services.human_merge_policy import human_merges_enabled, log_skipped_merge
 from hockey_blast_common_lib.game_status import StatusId, FINAL_STATUS_IDS
 
 from app.auth.admin_required import require_admin
@@ -148,7 +149,11 @@ def approve_claim(claim_id: int):
             )
         ).scalars().all()
 
-        if len(confirmed_claims) >= 2:
+        if len(confirmed_claims) >= 2 and not human_merges_enabled():
+            log_skipped_merge(
+                "approve_claim", claim.user_id, [c.hb_human_id for c in confirmed_claims]
+            )
+        elif len(confirmed_claims) >= 2:
             primary_claim = next((c for c in confirmed_claims if c.is_primary), None)
             if primary_claim:
                 import os as _os
@@ -263,7 +268,11 @@ def approve_claims_batch():
             )
         ).scalars().all()
 
-        if len(confirmed_claims) >= 2:
+        if len(confirmed_claims) >= 2 and not human_merges_enabled():
+            log_skipped_merge(
+                "approve_claims_batch", user_id, [c.hb_human_id for c in confirmed_claims]
+            )
+        elif len(confirmed_claims) >= 2:
             primary_claim = next((c for c in confirmed_claims if c.is_primary), None)
             if primary_claim:
                 import os as _os
