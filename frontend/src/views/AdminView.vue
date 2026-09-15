@@ -1136,6 +1136,17 @@ async function loadHbSeasons(leagueId) {
 }
 
 async function saveLeagueEdit(leagueId) {
+  const f = leagueEditForm.value
+  // Same rule the server enforces (validate_draft_window): a draft still running
+  // when the season starts loses those games from scoring for everyone.
+  if (f.draft_opens_at && f.draft_closes_at && new Date(f.draft_closes_at) <= new Date(f.draft_opens_at)) {
+    leagueEditError.value = 'Draft Closes must be after Draft Opens'
+    return
+  }
+  if (f.draft_closes_at && f.season_starts_at && new Date(f.draft_closes_at) > new Date(f.season_starts_at)) {
+    leagueEditError.value = 'Draft Closes must be on or before Season Starts'
+    return
+  }
   leagueEditSaving.value = true
   leagueEditError.value = null
   try {

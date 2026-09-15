@@ -39,6 +39,43 @@ fantasy_bp = Blueprint("fantasy", __name__)
 
 # ── Levels ────────────────────────────────────────────────────────────────────
 
+def parse_league_dt(val):
+    """Parse a league datetime from the API — ISO (with or without Z) or plain forms."""
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        return val
+    from datetime import timezone as _tz
+    normalized = str(val).replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(str(val), fmt).replace(tzinfo=_tz.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def validate_draft_window(opens_at, closes_at, season_starts_at):
+    """
+    Returns an error message if the draft window is impossible, else None.
+
+    A draft that closes after the season starts silently loses games: scoring only
+    counts games on/after season_starts_at, so anything played while the draft is
+    still running never scores for anyone.
+    """
+    if opens_at and closes_at and closes_at <= opens_at:
+        return "Draft Closes must be after Draft Opens"
+    if closes_at and season_starts_at and closes_at > season_starts_at:
+        return "Draft Closes must be on or before Season Starts — games played while the draft is still running are not scored"
+    if opens_at and season_starts_at and opens_at >= season_starts_at:
+        return "Draft Opens must be before Season Starts"
+    return None
+
+
 @fantasy_bp.route("/levels", methods=["GET"])
 @optional_auth
 def list_levels():
@@ -396,6 +433,17 @@ def create_league():
     if not data.get("draft_closes_at"):
         return error_response("VALIDATION_ERROR", "draft_closes_at is required", 400)
 
+    # The draft has to finish before the season it drafts for starts playing. A draft
+    # running past the first puck drop can't be fixed after the fact: scoring only
+    # counts games on/after season_starts_at, so those games are silently skipped.
+    err = validate_draft_window(
+        parse_league_dt(data.get("draft_opens_at")),
+        parse_league_dt(data.get("draft_closes_at")),
+        parse_league_dt(data.get("season_starts_at")),
+    )
+    if err:
+        return error_response("VALIDATION_ERROR", err, 400)
+
     # Handle private league + join_code
     is_private = bool(data.get("is_private", False))
     join_code = None
@@ -404,24 +452,7 @@ def create_league():
 
     pred = PredSession()
     try:
-        # Parse optional datetime fields
-        def _parse_dt(val):
-            if not val:
-                return None
-            from datetime import timezone as _tz
-            # Normalize Z suffix for broad compatibility
-            normalized = val.replace("Z", "+00:00")
-            try:
-                return datetime.fromisoformat(normalized)
-            except ValueError:
-                pass
-            for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
-                try:
-                    dt = datetime.strptime(val, fmt)
-                    return dt.replace(tzinfo=_tz.utc)
-                except ValueError:
-                    continue
-            return None
+        _parse_dt = parse_league_dt
 
         league = FantasyLeague(
             name=name,

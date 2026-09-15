@@ -568,11 +568,10 @@ def launch_fantasy_season():
     draft_opens_dt = _parse_dt(data.get("draft_opens_at"))
     draft_closes_dt = _parse_dt(data.get("draft_closes_at"))
 
-    # Sanity checks on date ordering
-    if draft_opens_dt and draft_closes_dt and draft_opens_dt >= draft_closes_dt:
-        return jsonify({"error": "VALIDATION_ERROR", "message": "Draft open time must be before draft close time"}), 400
-    if draft_closes_dt and start_dt and draft_closes_dt > start_dt:
-        return jsonify({"error": "VALIDATION_ERROR", "message": "Draft must close before season start"}), 400
+    from app.blueprints.fantasy import validate_draft_window
+    _err = validate_draft_window(draft_opens_dt, draft_closes_dt, start_dt)
+    if _err:
+        return error_response("VALIDATION_ERROR", _err, 400)
 
     from hockey_blast_common_lib.models import Level
     from app.db import HBSession, PredSession
@@ -809,6 +808,14 @@ def update_fantasy_league(league_id: int):
     ):
         prefix = "Level " if orig_name.startswith("Level ") else ""
         league.name = f"{prefix}{league.level_name} — {league.season_label}"
+
+    # Validate the window the edit would leave behind — the fields arrive one at a
+    # time, so only the combined result tells you whether it is coherent.
+    from app.blueprints.fantasy import validate_draft_window
+    _err = validate_draft_window(league.draft_opens_at, league.draft_closes_at, league.season_starts_at)
+    if _err:
+        pred.rollback()
+        return jsonify({"error": "VALIDATION_ERROR", "message": _err}), 400
 
     # Auto-transition to draft_open if max_managers set to <= current manager count
     if league.status == "forming" and league.max_managers is not None:

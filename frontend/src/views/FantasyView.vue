@@ -322,17 +322,18 @@
           <div class="grid grid-cols-2 gap-3">
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Opens</span></label>
-              <input v-model="createForm.draft_opens_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" />
+              <input v-model="createForm.draft_opens_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" :min="nowLocal" :max="createForm.draft_closes_at || undefined" />
             </div>
             <div class="form-control">
               <label class="label py-1"><span class="label-text text-xs">Draft Closes *</span></label>
-              <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" required />
+              <input v-model="createForm.draft_closes_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" required :min="createForm.draft_opens_at || nowLocal" :max="createForm.season_starts_at || undefined" />
             </div>
           </div>
           <div class="text-xs text-base-content/40 -mt-2 mb-1">All picks must be made between Draft Opens and Draft Closes. If you miss your turn, a pick is automatically made for you — the highest Fantasy Points player still available.</div>
           <div class="form-control">
             <label class="label py-1"><span class="label-text text-xs">Season Starts</span></label>
-            <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" required :min="nowLocal" />
+            <input v-model="createForm.season_starts_at" type="datetime-local" class="input input-bordered w-full h-auto min-h-[3.5rem] py-2 text-sm" required :min="createForm.draft_closes_at || nowLocal" />
+            <div v-if="draftWindowError" class="text-error text-xs mt-1">{{ draftWindowError }}</div>
           </div>
 
           <!-- Private toggle -->
@@ -401,6 +402,19 @@ const showCreateModal = ref(false)
 const createModalKey = ref(0)
 const creating = ref(false)
 const createError = ref('')
+
+// Mirrors validate_draft_window() on the server. A draft that closes after the
+// season starts silently loses games — scoring only counts games on/after
+// season_starts_at, so anything played mid-draft never scores for anyone.
+const draftWindowError = computed(() => {
+  const o = createForm.value.draft_opens_at
+  const c = createForm.value.draft_closes_at
+  const s = createForm.value.season_starts_at
+  if (o && c && new Date(c) <= new Date(o)) return 'Draft Closes must be after Draft Opens'
+  if (c && s && new Date(c) > new Date(s)) return 'Draft Closes must be on or before Season Starts — games played while the draft is still running are not scored'
+  if (o && s && new Date(o) >= new Date(s)) return 'Draft Opens must be before Season Starts'
+  return ''
+})
 const createForm = ref({
   hb_league_id: null,
   level_id: null,
@@ -744,6 +758,10 @@ function onLevelChange() {
 
 async function createLeague() {
   createError.value = ''
+  if (draftWindowError.value) {
+    createError.value = draftWindowError.value
+    return
+  }
   creating.value = true
   try {
     const lvl = levels.value.find(l => l.level_id === createForm.value.level_id)
