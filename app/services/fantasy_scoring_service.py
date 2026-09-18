@@ -8,7 +8,7 @@ Scoring rules:
   Penalty (per minor) = -0.5 pts
   Goalie win  = 5 pts
   Goalie shutout bonus = +3 pts
-  Ref: game officiated = 4 pts, penalty called = 2 pts, game misconduct = 8 pts
+  Ref: game officiated = 4 pts, penalty called = 0.5 pts, game misconduct = 2 pts
        (both officials are credited with every penalty in a game they worked)
 """
 
@@ -26,10 +26,17 @@ from app.models.fantasy_standings import FantasyStandings
 logger = logging.getLogger(__name__)
 
 GOAL_PTS = 3.0
-# Ref scoring
+# Ref scoring. Calibrated 2026-09-18 against the two completed O35 seasons so the ref
+# slot is worth about what the goalie slot is worth. Both officials are credited with
+# every penalty in a game, and O35 averages 2.09 penalties/game, so the per-penalty
+# rate is the dominant term — at the original 2.0 a ref averaged 8.1-10.4 pts/game
+# against 3.4-3.6 for a skater and 5.3-5.5 for a goalie, taking 17-24% of a median
+# team's season from 12.5% of its roster, and one brawl-heavy game paid 72 points.
+# At 0.5/2.0 a ref averages 5.0-5.6 (goalie parity), takes 10.7-13.6% of a team, and
+# the worst-case game pays 21 — the same as the best single game a skater had.
 REF_GAME_PTS = 4.0
-REF_PENALTY_PTS = 2.0
-REF_GM_PTS = 8.0
+REF_PENALTY_PTS = 0.5
+REF_GM_PTS = 2.0
 ASSIST_PTS = 2.0
 GAME_PLAYED_PTS = 1.0
 GOALIE_GAME_PLAYED_PTS = 3.0

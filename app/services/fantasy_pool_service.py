@@ -68,7 +68,7 @@ def get_player_pool(
     Scoring:
       Skater:  fantasy_points = (goals*3) + (assists*2) + (gp*1) - (penalties*0.5)
       Goalie:  fantasy_points = gp*3 + save_pct*5*gp
-      Ref:     fantasy_points = games_reffed*4 + penalties_given*2 + gm_given*8
+      Ref:     fantasy_points = games_reffed*4 + penalties_given*0.5 + gm_given*2
 
     Returns unified player list — each entry has is_skater/is_goalie/is_ref flags
     and role-specific stats. Sublists (skaters/goalies/refs) are derived from it.
@@ -368,7 +368,9 @@ def get_player_pool(
             gr = int(row.games_reffed or 0)
             pg = int(row.penalties_given or 0)
             gm = int(row.gm_given or 0)
-            fp = gr * 4.0 + pg * 2.0 + gm * 8.0
+            # Must track fantasy_scoring_service REF_* constants — the board should
+            # rank refs by what they will actually be paid.
+            fp = gr * 4.0 + pg * 0.5 + gm * 2.0
             p["is_ref"] = True
             p["games_reffed"] = gr
             p["penalties_given"] = pg
