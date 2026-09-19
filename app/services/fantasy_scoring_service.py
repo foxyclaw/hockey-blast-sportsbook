@@ -56,6 +56,41 @@ GOALIE_TIE_PTS = 2.0
 SHUTOUT_BONUS = 3.0
 
 
+def _shootout_winner_team(hb, game_id: int, home_team_id: int, visitor_team_id: int):
+    """
+    Which team won a shootout, from the `shootout` table.
+
+    The games row is no help: 15% of FINAL_SO games (24% in O35) store a tied
+    final score with the deciding goal missing. The shootout table records every
+    attempt (shooting_team_id, has_scored, sequence_number), so:
+
+      1. If one team scored more shootout goals, it won.
+      2. Otherwise the shootout ended the moment it was decided, so the LAST
+         recorded attempt is the decisive one — scored means that team won,
+         missed means the other did.
+
+    Validated against the 2,333 FINAL_SO games whose final score already names a
+    winner: 99.6% agreement, and it resolves all 652 tie-stored games that carry
+    shootout rows. Returns the winning team_id, or None when the game has no
+    shootout rows at all (27 games league-wide).
+    """
+    rows = hb.execute(
+        text("SELECT shooting_team_id, has_scored FROM shootout "
+             "WHERE game_id = :gid ORDER BY sequence_number"),
+        {"gid": game_id},
+    ).fetchall()
+    if not rows:
+        return None
+    home_goals = sum(1 for r in rows if r.shooting_team_id == home_team_id and r.has_scored)
+    away_goals = sum(1 for r in rows if r.shooting_team_id == visitor_team_id and r.has_scored)
+    if home_goals != away_goals:
+        return home_team_id if home_goals > away_goals else visitor_team_id
+    last = rows[-1]
+    if last.has_scored:
+        return last.shooting_team_id
+    return visitor_team_id if last.shooting_team_id == home_team_id else home_team_id
+
+
 def _compute_points(goals, assists, penalties, games_played, is_goalie_win, is_shutout,
                     ref_games=0, ref_penalties=0, ref_gm=0, is_goalie=False,
                     is_goalie_tie=False) -> float:
@@ -167,8 +202,9 @@ def score_game(league_id: int, game_id: int) -> None:
     goalie_results: dict[int, dict] = {}
     try:
         game_row = hb.execute(
-            text("SELECT home_goalie_id, visitor_goalie_id, status_id, "
-                 "home_final_score, visitor_final_score FROM games WHERE id = :gid"),
+            text("SELECT home_goalie_id, visitor_goalie_id, status_id, home_team_id, "
+                 "visitor_team_id, home_final_score, visitor_final_score "
+                 "FROM games WHERE id = :gid"),
             {"gid": game_id},
         ).fetchone()
         if game_row and game_row.home_final_score is not None and game_row.visitor_final_score is not None:
@@ -179,17 +215,29 @@ def score_game(league_id: int, game_id: int) -> None:
             # lands here for BOTH goalies — the winner is not recoverable from the
             # data, there is no shootout-goals column, so neither is given the win.
             past_regulation = game_row.status_id in (StatusId.FINAL_OT, StatusId.FINAL_SO)
+
+            # A shootout's result is in the `shootout` table, not the score — the
+            # feed often stores FINAL_SO games with the deciding goal missing.
+            so_winner = None
+            if game_row.status_id == StatusId.FINAL_SO:
+                so_winner = _shootout_winner_team(
+                    hb, game_id, game_row.home_team_id, game_row.visitor_team_id)
+
+            def _outcome(mine, theirs, my_team):
+                if so_winner is not None:
+                    won = my_team == so_winner
+                    return won, not won          # the SO loser is paid as a tie
+                return mine > theirs, (mine == theirs or (mine < theirs and past_regulation))
+
             if game_row.home_goalie_id:
+                win, tie = _outcome(h, v, game_row.home_team_id)
                 goalie_results[game_row.home_goalie_id] = {
-                    "is_win":     h > v,
-                    "is_tie":     h == v or (h < v and past_regulation),
-                    "is_shutout": v == 0,
+                    "is_win": win, "is_tie": tie, "is_shutout": v == 0,
                 }
             if game_row.visitor_goalie_id:
+                win, tie = _outcome(v, h, game_row.visitor_team_id)
                 goalie_results[game_row.visitor_goalie_id] = {
-                    "is_win":     v > h,
-                    "is_tie":     h == v or (v < h and past_regulation),
-                    "is_shutout": h == 0,
+                    "is_win": win, "is_tie": tie, "is_shutout": h == 0,
                 }
     except Exception as e:
         logger.warning("score_game: could not query goalie data for game %d: %s", game_id, e)
@@ -960,19 +1008,30 @@ def compute_in_window_fp(league_id: int, hb_human_ids: list[int]) -> dict[int, d
     goalie_so = {h: 0 for h in hb_human_ids}
     goalie_tie = {h: 0 for h in hb_human_ids}
     for r in hb.execute(text(
-        f"SELECT home_goalie_id, visitor_goalie_id, status_id, "
+        f"SELECT id, home_goalie_id, visitor_goalie_id, status_id, home_team_id, visitor_team_id, "
         f"home_final_score, visitor_final_score FROM games WHERE id IN ({ids_sql})")).fetchall():
         if r.home_final_score is None or r.visitor_final_score is None:
             continue
         h, v = r.home_final_score, r.visitor_final_score
         past_regulation = r.status_id in (StatusId.FINAL_OT, StatusId.FINAL_SO)
+        so_winner = (_shootout_winner_team(hb, r.id, r.home_team_id, r.visitor_team_id)
+                     if r.status_id == StatusId.FINAL_SO else None)
+
+        def _outcome(mine, theirs, my_team):
+            if so_winner is not None:
+                won = my_team == so_winner
+                return won, not won
+            return mine > theirs, (mine == theirs or (mine < theirs and past_regulation))
+
         if r.home_goalie_id in result:
-            if h > v: goalie_win[r.home_goalie_id] += 1
-            elif h == v or past_regulation: goalie_tie[r.home_goalie_id] += 1
+            win, tie = _outcome(h, v, r.home_team_id)
+            if win: goalie_win[r.home_goalie_id] += 1
+            elif tie: goalie_tie[r.home_goalie_id] += 1
             if v == 0: goalie_so[r.home_goalie_id] += 1
         if r.visitor_goalie_id in result:
-            if v > h: goalie_win[r.visitor_goalie_id] += 1
-            elif h == v or past_regulation: goalie_tie[r.visitor_goalie_id] += 1
+            win, tie = _outcome(v, h, r.visitor_team_id)
+            if win: goalie_win[r.visitor_goalie_id] += 1
+            elif tie: goalie_tie[r.visitor_goalie_id] += 1
             if h == 0: goalie_so[r.visitor_goalie_id] += 1
 
     # ── Ref: games*4 + penalties*0.5 + GMs*2 ─────────────────────────────────
