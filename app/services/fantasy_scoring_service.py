@@ -15,7 +15,7 @@ Scoring rules:
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import delete as sa_delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db import HBSession, PredSession
@@ -202,6 +202,7 @@ def score_game(league_id: int, game_id: int) -> None:
 
     now = datetime.now(timezone.utc)
     scored = 0
+    scored_ids: set[int] = set()
 
     # ── Score each rostered player who was in this game ───────────────────────
     for hb_human_id, roster_entry in rostered_ids.items():
@@ -232,6 +233,7 @@ def score_game(league_id: int, game_id: int) -> None:
             )
             pred.execute(stmt)
             scored += 1
+            scored_ids.add(hb_human_id)
             continue
 
         if hb_human_id not in participants:
@@ -283,9 +285,33 @@ def score_game(league_id: int, game_id: int) -> None:
         )
         pred.execute(stmt)
         scored += 1
+        scored_ids.add(hb_human_id)
+
+    # ── Reconcile: this FINAL pass is authoritative ───────────────────────────
+    # Live scoring writes rows from game_rosters as it stood mid-game, and HB
+    # rewrites the roster when a game is finalised. A player dropped from the
+    # roster keeps a stuck-provisional row that the loop above never revisits —
+    # it `continue`s past anyone not in `participants` — so the phantom points
+    # were paid out forever. Anything this pass did not produce is not real.
+    removed = 0
+    if participants or ref_stats:
+        del_stmt = sa_delete(FantasyGameScores).where(
+            FantasyGameScores.league_id == league_id,
+            FantasyGameScores.game_id == game_id,
+        )
+        if scored_ids:
+            del_stmt = del_stmt.where(FantasyGameScores.hb_human_id.notin_(scored_ids))
+        removed = pred.execute(del_stmt).rowcount or 0
+        if removed:
+            logger.info(
+                "score_game: league=%d game=%d removed %d stale score row(s) "
+                "for players no longer on the game roster",
+                league_id, game_id, removed,
+            )
 
     pred.commit()
-    logger.info("score_game: league=%d game=%d scored=%d players", league_id, game_id, scored)
+    logger.info("score_game: league=%d game=%d scored=%d players removed=%d",
+                league_id, game_id, scored, removed)
 
     # ── Update standings ──────────────────────────────────────────────────────
     _update_standings(league_id, pred)
