@@ -28,6 +28,10 @@ class FantasyGameScores(PredBase):
     games_played: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_goalie_win: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_shutout: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Tie, or a loss once the game went past regulation — both pay GOALIE_TIE_PTS.
+    is_goalie_tie: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     ref_games: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ref_penalties: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ref_gm: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -52,6 +56,7 @@ class FantasyGameScores(PredBase):
             "games_played": self.games_played,
             "is_goalie_win": self.is_goalie_win,
             "is_shutout": self.is_shutout,
+            "is_goalie_tie": self.is_goalie_tie,
             "ref_games": self.ref_games,
             "ref_penalties": self.ref_penalties,
             "ref_gm": self.ref_gm,

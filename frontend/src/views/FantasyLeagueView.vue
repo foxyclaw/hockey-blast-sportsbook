@@ -586,9 +586,10 @@
                     <span v-if="p.assists" class="text-info">{{ p.assists }}A</span>
                     <span v-if="p.is_goalie_win" class="text-warning">W</span>
                     <span v-if="p.is_shutout" class="text-accent">SO</span>
+                    <span v-if="p.is_goalie_tie" class="text-info" title="Tie, or a loss past regulation">T</span>
                     <span v-if="p.penalties" class="text-error">{{ p.penalties }}PEN</span>
                     <span v-if="p.ref_games" class="text-secondary">REF</span>
-                    <span v-if="p.games_played && !p.goals && !p.assists && !p.is_goalie_win && !p.ref_games" class="text-base-content/50">GP</span>
+                    <span v-if="p.games_played && !p.goals && !p.assists && !p.is_goalie_win && !p.is_goalie_tie && !p.ref_games" class="text-base-content/50">GP</span>
                   </div>
                 </div>
                 <!-- Zeroes: just names, dimmed -->

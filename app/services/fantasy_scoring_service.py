@@ -6,7 +6,8 @@ Scoring rules:
   Assist      = 2 pts
   Game played = 1 pt (skaters) / 3 pts (goalies)
   Penalty (per minor) = -0.5 pts
-  Goalie win  = 5 pts
+  Goalie win  = 4 pts
+  Goalie tie, or loss in OT/shootout = 2 pts
   Goalie shutout bonus = +3 pts
   Ref: game officiated = 4 pts, penalty called = 0.5 pts, game misconduct = 2 pts
        (both officials are credited with every penalty in a game they worked)
@@ -19,6 +20,7 @@ from sqlalchemy import delete as sa_delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db import HBSession, PredSession
+from hockey_blast_common_lib.game_status import StatusId
 from app.models.fantasy_roster import FantasyRoster
 from app.models.fantasy_game_scores import FantasyGameScores
 from app.models.fantasy_standings import FantasyStandings
@@ -41,12 +43,22 @@ ASSIST_PTS = 2.0
 GAME_PLAYED_PTS = 1.0
 GOALIE_GAME_PLAYED_PTS = 3.0
 PENALTY_PTS = -0.5
-GOALIE_WIN_PTS = 5.0
+# Win 4 / tie 2 mirrors hockey standings points (2-1-0) at half scale. A goalie who
+# ties, or loses past regulation, kept the game alive and is paid half a win — the
+# same value either way, since a shootout loss and a tie are the same outcome for
+# the netminder. Calibrated 2026-09-18 over both completed O35 seasons: goalies
+# already drew 16.7% of a median team's points from a 12.5% roster slot, so paying
+# for ties had to come out of the win bonus rather than on top of it. At 5/0 goalies
+# ran 1.54x a skater per game; at 4/2 they run 1.47x and 16.1% of a team, slightly
+# closer to their slot share, with ties and OT/SO losses no longer worth nothing.
+GOALIE_WIN_PTS = 4.0
+GOALIE_TIE_PTS = 2.0
 SHUTOUT_BONUS = 3.0
 
 
 def _compute_points(goals, assists, penalties, games_played, is_goalie_win, is_shutout,
-                    ref_games=0, ref_penalties=0, ref_gm=0, is_goalie=False) -> float:
+                    ref_games=0, ref_penalties=0, ref_gm=0, is_goalie=False,
+                    is_goalie_tie=False) -> float:
     pts = 0.0
     pts += goals * GOAL_PTS
     pts += assists * ASSIST_PTS
@@ -55,6 +67,8 @@ def _compute_points(goals, assists, penalties, games_played, is_goalie_win, is_s
     pts += penalties * PENALTY_PTS
     if is_goalie_win:
         pts += GOALIE_WIN_PTS
+    elif is_goalie_tie:
+        pts += GOALIE_TIE_PTS
     if is_shutout:
         pts += SHUTOUT_BONUS
     # Ref scoring
@@ -153,21 +167,28 @@ def score_game(league_id: int, game_id: int) -> None:
     goalie_results: dict[int, dict] = {}
     try:
         game_row = hb.execute(
-            text("SELECT home_goalie_id, visitor_goalie_id, "
+            text("SELECT home_goalie_id, visitor_goalie_id, status_id, "
                  "home_final_score, visitor_final_score FROM games WHERE id = :gid"),
             {"gid": game_id},
         ).fetchone()
         if game_row and game_row.home_final_score is not None and game_row.visitor_final_score is not None:
             h = game_row.home_final_score
             v = game_row.visitor_final_score
+            # A tie, or a loss once the game went past regulation, both pay
+            # GOALIE_TIE_PTS. Note a shootout the feed records as a tie (h == v)
+            # lands here for BOTH goalies — the winner is not recoverable from the
+            # data, there is no shootout-goals column, so neither is given the win.
+            past_regulation = game_row.status_id in (StatusId.FINAL_OT, StatusId.FINAL_SO)
             if game_row.home_goalie_id:
                 goalie_results[game_row.home_goalie_id] = {
                     "is_win":     h > v,
+                    "is_tie":     h == v or (h < v and past_regulation),
                     "is_shutout": v == 0,
                 }
             if game_row.visitor_goalie_id:
                 goalie_results[game_row.visitor_goalie_id] = {
                     "is_win":     v > h,
+                    "is_tie":     h == v or (v < h and past_regulation),
                     "is_shutout": h == 0,
                 }
     except Exception as e:
@@ -244,6 +265,7 @@ def score_game(league_id: int, game_id: int) -> None:
         penalties = penalties_by_player.get(hb_human_id, 0)
         goalie_info  = goalie_results.get(hb_human_id, {})
         is_goalie_win = goalie_info.get("is_win", False)
+        is_goalie_tie = goalie_info.get("is_tie", False)
         is_shutout    = goalie_info.get("is_shutout", False)
 
         pts = _compute_points(
@@ -252,6 +274,7 @@ def score_game(league_id: int, game_id: int) -> None:
             penalties=penalties,
             games_played=1,
             is_goalie_win=is_goalie_win,
+            is_goalie_tie=is_goalie_tie,
             is_shutout=is_shutout,
             is_goalie=roster_entry.is_goalie,
         )
@@ -266,6 +289,7 @@ def score_game(league_id: int, game_id: int) -> None:
             penalties=penalties,
             games_played=1,
             is_goalie_win=is_goalie_win,
+            is_goalie_tie=is_goalie_tie,
             is_shutout=is_shutout,
             points=pts,
             scored_at=now,
@@ -277,6 +301,7 @@ def score_game(league_id: int, game_id: int) -> None:
                 "assists":        assists,
                 "penalties":      penalties,
                 "is_goalie_win":  is_goalie_win,
+                "is_goalie_tie":  is_goalie_tie,
                 "is_shutout":     is_shutout,
                 "points":         pts,
                 "scored_at":      now,
@@ -453,7 +478,7 @@ def score_live_game(league_id: int, game_id: int) -> None:
         assists   = assists_by_player.get(hb_human_id, 0)
         penalties = penalties_by_player.get(hb_human_id, 0)
 
-        # Goalie win/shutout NOT available in-progress — skip
+        # Goalie win/tie/shutout NOT available in-progress — skip
         pts = _compute_points(
             goals=goals,
             assists=assists,
@@ -474,6 +499,7 @@ def score_live_game(league_id: int, game_id: int) -> None:
             penalties=penalties,
             games_played=1,
             is_goalie_win=False,
+            is_goalie_tie=False,
             is_shutout=False,
             points=pts,
             scored_at=now,
@@ -485,6 +511,7 @@ def score_live_game(league_id: int, game_id: int) -> None:
                 "assists":        assists,
                 "penalties":      penalties,
                 "is_goalie_win":  False,
+                "is_goalie_tie":  False,
                 "is_shutout":     False,
                 "points":         pts,
                 "scored_at":      now,
@@ -931,20 +958,24 @@ def compute_in_window_fp(league_id: int, hb_human_ids: list[int]) -> dict[int, d
     # (score_game applies these from goalie_results regardless of roster role.)
     goalie_win = {h: 0 for h in hb_human_ids}
     goalie_so = {h: 0 for h in hb_human_ids}
+    goalie_tie = {h: 0 for h in hb_human_ids}
     for r in hb.execute(text(
-        f"SELECT home_goalie_id, visitor_goalie_id, home_final_score, visitor_final_score "
-        f"FROM games WHERE id IN ({ids_sql})")).fetchall():
+        f"SELECT home_goalie_id, visitor_goalie_id, status_id, "
+        f"home_final_score, visitor_final_score FROM games WHERE id IN ({ids_sql})")).fetchall():
         if r.home_final_score is None or r.visitor_final_score is None:
             continue
         h, v = r.home_final_score, r.visitor_final_score
+        past_regulation = r.status_id in (StatusId.FINAL_OT, StatusId.FINAL_SO)
         if r.home_goalie_id in result:
             if h > v: goalie_win[r.home_goalie_id] += 1
+            elif h == v or past_regulation: goalie_tie[r.home_goalie_id] += 1
             if v == 0: goalie_so[r.home_goalie_id] += 1
         if r.visitor_goalie_id in result:
             if v > h: goalie_win[r.visitor_goalie_id] += 1
+            elif h == v or past_regulation: goalie_tie[r.visitor_goalie_id] += 1
             if h == 0: goalie_so[r.visitor_goalie_id] += 1
 
-    # ── Ref: games*4 + penalties*2 + GMs*8 ────────────────────────────────────
+    # ── Ref: games*4 + penalties*0.5 + GMs*2 ─────────────────────────────────
     # Matches score_game: refs come off games.referee_1_id / referee_2_id, and
     # every official working a game is credited with ALL of its penalties and GMs
     # (there is no per-ref attribution of who made the call).
@@ -969,7 +1000,7 @@ def compute_in_window_fp(league_id: int, hb_human_ids: list[int]) -> dict[int, d
 
     # Each value mirrors score_game exactly for a player of that roster role:
     #   points = goals*3 + assists*2 + games_played*perGameMult + penalties*-0.5
-    #            + goalie_win_bonus + shutout_bonus
+    #            + goalie_win_or_tie_bonus + shutout_bonus
     # where games_played = count of in-window games the player is in game_rosters
     # (same for skater & goalie roles), perGameMult is 1 (skater) or 3 (goalie),
     # and win/shutout bonuses are credited to whoever was in net (any role).
@@ -977,6 +1008,7 @@ def compute_in_window_fp(league_id: int, hb_human_ids: list[int]) -> dict[int, d
         common = (goals.get(h, 0) * GOAL_PTS + assists.get(h, 0) * ASSIST_PTS
                   + penalties.get(h, 0) * PENALTY_PTS
                   + goalie_win.get(h, 0) * GOALIE_WIN_PTS
+                  + goalie_tie.get(h, 0) * GOALIE_TIE_PTS
                   + goalie_so.get(h, 0) * SHUTOUT_BONUS)
         g_played = gp.get(h, 0)
         result[h]["skater"] = round(common + g_played * GAME_PLAYED_PTS, 1)

@@ -1425,6 +1425,7 @@ def get_league_games(league_id: int):
                     "games_played": sc.games_played if sc else 0,
                     "is_goalie_win": sc.is_goalie_win if sc else False,
                     "is_shutout": sc.is_shutout if sc else False,
+                    "is_goalie_tie": sc.is_goalie_tie if sc else False,
                     "ref_games": sc.ref_games if sc else 0,
                 })
             # Sort: points desc, then name
@@ -1450,6 +1451,7 @@ def get_league_games(league_id: int):
                     "games_played": sc.games_played if sc else 0,
                     "is_goalie_win": sc.is_goalie_win if sc else False,
                     "is_shutout": sc.is_shutout if sc else False,
+                    "is_goalie_tie": sc.is_goalie_tie if sc else False,
                     "ref_games": sc.ref_games if sc else 0,
                     "is_provisional": True,
                 })
