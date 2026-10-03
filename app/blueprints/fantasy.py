@@ -1657,7 +1657,12 @@ def trade_swap(league_id: int):
 @fantasy_bp.route("/leagues/<int:league_id>/trade/skip", methods=["POST"])
 @require_auth
 def trade_skip(league_id: int):
-    """POST /api/fantasy/leagues/<id>/trade/skip — caller keeps their team, ends turn."""
+    """POST /api/fantasy/leagues/<id>/trade/skip — caller keeps their team.
+
+    Allowed at ANY point in the round, not only on the caller's turn: skip_turn
+    marks every unresolved turn they hold, and the round steps over it when it
+    gets there.
+    """
     from app.services.fantasy_trade_service import skip_turn
     user = g.pred_user
     try:
