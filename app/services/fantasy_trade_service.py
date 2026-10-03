@@ -539,8 +539,9 @@ def get_available_players(league_id: int, of_type: str | None = None) -> list[di
     """
     Players eligible to be acquired: the UNION of the draft-season pool
     (league.draft_season_id) and the current-season pool (league.hb_season_id),
-    minus everyone currently rostered in this league. Optionally filter to a
-    single type ('skater' | 'goalie' | 'ref').
+    minus everyone currently rostered in this league and everyone in
+    settings.draft_blocked. Optionally filter to a single type
+    ('skater' | 'goalie' | 'ref').
 
     Why the union: a player who was draft-eligible last season but quit this
     season (0/few games in hb_season_id) is absent from the current-season pool.
@@ -588,7 +589,20 @@ def get_available_players(league_id: int, of_type: str | None = None) -> list[di
         select(FantasyRoster.hb_human_id).where(FantasyRoster.league_id == league_id)
     ).scalars().all())
 
-    return [p for hid, p in merged.items() if hid not in rostered]
+    # Blocked players are barred from the league, not merely from the draft. The
+    # draft path enforced this in four places and the trade path in none, so a
+    # blocked player stayed acquirable all season — and because the expired-turn
+    # auto-trade takes max(available, key=fantasy_points), a blocked player who is
+    # the highest scorer in the pool is the FIRST one it reaches for. That is how
+    # 116004 landed on a roster in league 122 on 2026-10-02.
+    #
+    # This is the one chokepoint for every acquisition: the /trade/available list,
+    # make_trade's validation, and _try_auto_trade_for_expired_turn's candidate
+    # search all read it. Filtering here closes all three.
+    blocked_ids = set((league.settings or {}).get("draft_blocked", []))
+
+    return [p for hid, p in merged.items()
+            if hid not in rostered and hid not in blocked_ids]
 
 
 def _reassign_player_scores(league_id: int, hb_human_id: int, new_user_id: int, pred) -> None:
