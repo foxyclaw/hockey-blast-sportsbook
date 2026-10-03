@@ -670,9 +670,12 @@
             </div>
           </div>
 
+          <!-- Outside the my-turn gate: skipping is now reachable off-turn, so a
+               failed skip has to be visible to someone who is not on the clock. -->
+          <div v-if="tradeError" class="alert alert-error mb-3 py-2 text-sm">{{ tradeError }}</div>
+
           <!-- The trade UI — only when it's my turn -->
           <div v-if="tradeState.is_my_turn">
-            <div v-if="tradeError" class="alert alert-error mb-3 py-2 text-sm">{{ tradeError }}</div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- LEFT: my roster (select someone to release) -->
@@ -742,12 +745,23 @@
               </div>
             </div>
 
-            <!-- Skip option -->
-            <div class="mt-4 text-center">
-              <button class="btn btn-outline btn-sm" :disabled="tradeSubmitting" @click="skipTrade">
-                I like my team — skip my turn
-              </button>
-            </div>
+          </div>
+
+          <!-- Stand pat. Offered at ANY point in the round, not only on your
+               turn: a manager happy with their roster should not have to wait
+               for everyone ahead of them just to pass, and the round should not
+               burn a 24h deadline on someone who already knows. -->
+          <div v-if="tradeState.can_skip" class="mt-4 text-center">
+            <button class="btn btn-outline btn-sm" :disabled="tradeSubmitting" @click="skipTrade">
+              I like my team — skip
+              <span v-if="!tradeState.is_my_turn" class="opacity-60">(don't wait for my turn)</span>
+            </button>
+            <p v-if="!tradeState.is_my_turn" class="text-xs text-base-content/50 mt-1">
+              The round moves straight past you — you keep your team as it is.
+            </p>
+          </div>
+          <div v-else-if="tradeState.i_have_skipped" class="mt-4 text-center text-sm text-base-content/60">
+            ⏭️ You're standing pat this round — keeping your team as it is.
           </div>
         </div>
       </div>

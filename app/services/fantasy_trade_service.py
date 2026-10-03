@@ -496,24 +496,60 @@ def make_trade(league_id: int, user_id: int, release_hb_human_id: int,
 
 
 def skip_turn(league_id: int, user_id: int) -> dict:
-    """Manager keeps their team and ends their turn."""
+    """
+    Manager keeps their team and gives up their turn — at ANY time, not only
+    when they are on the clock.
+
+    Owner, 2026-10-02: "anyone can skip their swap at ANY TIME (say I like my
+    team), do not wait for their turn." A manager who is happy with their roster
+    should not have to sit through everyone ahead of them just to pass, and the
+    round should not spend 24h on a deadline for someone who already knows they
+    are standing pat.
+
+    Nothing in the advance machinery had to change for this: _current_turn and
+    _next_unstarted_turn both filter `is_skipped == False`, so a turn marked
+    skipped BEFORE its deadline is set is simply stepped over when the round
+    reaches it. And because _build_second_chance_pass revives only turns that
+    were MISSED, a manager who chose to skip is not dragged back for pass 2 —
+    which is the right reading of "I like my team".
+    """
     pred = PredSession()
     rnd = _active_round(league_id, pred)
     if rnd is None:
         raise ValueError("No trade round is in progress")
 
-    current = _current_turn(rnd.id, pred)
-    if current is None:
-        raise ValueError("No active turn right now")
-    if current.user_id != user_id:
-        raise ValueError("It is not your turn to trade")
+    # Every unresolved turn this manager holds in the round — the one they are
+    # on the clock for, or one still waiting ahead of them.
+    mine = pred.execute(
+        select(FantasyTradeTurn)
+        .where(
+            FantasyTradeTurn.round_id == rnd.id,
+            FantasyTradeTurn.user_id == user_id,
+            FantasyTradeTurn.acted_at.is_(None),
+            FantasyTradeTurn.is_skipped == False,  # noqa: E712
+            FantasyTradeTurn.is_missed == False,  # noqa: E712
+        )
+        .order_by(FantasyTradeTurn.pass_number.asc(), FantasyTradeTurn.turn_order.asc())
+    ).scalars().all()
+    if not mine:
+        raise ValueError("You have no turn left to skip in this round")
 
-    current.is_skipped = True
-    current.acted_at = datetime.now(timezone.utc)
+    current = _current_turn(rnd.id, pred)
+    was_on_the_clock = bool(current and current.user_id == user_id)
+
+    now = datetime.now(timezone.utc)
+    for t in mine:
+        t.is_skipped = True
+        t.acted_at = now
     pred.commit()
-    logger.info("[trade] league=%d user=%d skipped", league_id, user_id)
-    _activate_next_turn(rnd.id, pred)
-    return current.to_dict()
+    logger.info("[trade] league=%d user=%d skipped %d turn(s) (on_the_clock=%s)",
+                league_id, user_id, len(mine), was_on_the_clock)
+
+    # Only move the clock when the skipper WAS holding it. Skipping ahead of
+    # time must not disturb whoever is mid-turn.
+    if was_on_the_clock:
+        _activate_next_turn(rnd.id, pred)
+    return mine[0].to_dict()
 
 
 # ── Queries / helpers ──────────────────────────────────────────────────────────
@@ -766,6 +802,13 @@ def get_round_state(league_id: int, viewer_user_id: int | None = None) -> dict:
         "current_turn": current.to_dict() if current else None,
         "is_my_turn": bool(current and viewer_user_id and current.user_id == viewer_user_id),
         "can_initiate": False,  # already one in progress
+        # A manager may stand pat at any point in the round, so the button is
+        # offered whenever they still hold an unresolved turn.
+        "can_skip": bool(viewer_user_id and any(
+            t.user_id == viewer_user_id and t.acted_at is None
+            and not t.is_skipped and not t.is_missed for t in turns)),
+        "i_have_skipped": bool(viewer_user_id and any(
+            t.user_id == viewer_user_id and t.is_skipped for t in turns)),
     }
 
 
