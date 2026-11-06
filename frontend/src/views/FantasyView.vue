@@ -51,7 +51,8 @@
                     <span v-if="league.season_label">📅 {{ league.season_label }}</span>
                   </p>
                 </div>
-                <span class="badge badge-sm shrink-0" :class="statusBadgeClass(league.status)">
+                <span v-if="league.migrated_at" class="badge badge-sm badge-info shrink-0" title="This league moved to hockey-blast.com">Moved</span>
+                <span v-else class="badge badge-sm shrink-0" :class="statusBadgeClass(league.status)">
                   {{ statusLabel(league.status) }}
                 </span>
                 <span v-if="league.has_live_game" class="inline-flex items-center gap-1 badge badge-xs badge-success animate-pulse ml-1">
@@ -70,7 +71,7 @@
                 <span v-else-if="league.is_member" class="badge badge-xs badge-success">Joined</span>
               </div>
               <!-- Join button / code input for non-members in forming status -->
-              <div v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)" class="mt-3">
+              <div v-if="!league.migrated_at && !league.is_member && ['forming', 'draft_open'].includes(league.status)" class="mt-3">
                 <div v-if="!league.is_private">
                   <button class="btn btn-xs btn-outline btn-primary" @click="$router.push(`/fantasy/${league.id}`)">Join →</button>
                 </div>

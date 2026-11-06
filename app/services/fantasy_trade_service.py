@@ -376,7 +376,12 @@ def advance_active_trade_rounds() -> dict:
     pred = PredSession()
     summary = {"rounds": 0, "advanced": 0}
     rounds = pred.execute(
-        select(FantasyTradeRound).where(FantasyTradeRound.status == TRADE_ROUND_ACTIVE)
+        select(FantasyTradeRound)
+        .join(FantasyLeague, FantasyLeague.id == FantasyTradeRound.league_id)
+        .where(
+            FantasyTradeRound.status == TRADE_ROUND_ACTIVE,
+            FantasyLeague.migrated_at.is_(None),
+        )
     ).scalars().all()
     for rnd in rounds:
         summary["rounds"] += 1

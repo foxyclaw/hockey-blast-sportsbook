@@ -6,6 +6,14 @@
     </div>
 
     <template v-else-if="league">
+      <!-- Moved to the social site — this copy is read-only (no close button on purpose) -->
+      <div v-if="isMigrated" class="alert alert-info mb-4">
+        <span>
+          This league moved to hockey-blast.com —
+          <a v-if="league.migrated_to_url" :href="league.migrated_to_url" class="link font-semibold" target="_blank" rel="noopener">Open it there ↗</a>
+        </span>
+      </div>
+
       <!-- Header -->
       <div class="mb-6">
         <div class="flex items-start justify-between flex-wrap gap-3">
@@ -25,7 +33,7 @@
               <span v-if="league.season_label">🏷️ {{ league.season_label }}</span>
             </p>
             <!-- Invite code callout — only visible to creator while league is forming/draft_open -->
-            <div v-if="league.is_private && league.join_code && league.is_creator && ['forming','draft_open'].includes(league.status)"
+            <div v-if="!isMigrated && league.is_private && league.join_code && league.is_creator && ['forming','draft_open'].includes(league.status)"
                  class="mt-3 p-3 rounded-xl border border-primary/40 bg-primary/10 flex flex-col gap-1">
               <p class="text-xs font-semibold text-primary uppercase tracking-wide">📣 Share this invite link with your friends</p>
               <div class="flex items-center gap-3 mt-1">
@@ -43,7 +51,7 @@
             </span>
             <!-- Share button for active/completed leagues -->
             <button
-              v-if="['active', 'completed'].includes(league.status)"
+              v-if="!isMigrated && ['active', 'completed'].includes(league.status)"
               class="btn btn-outline btn-xs"
               @click="copyLeagueLink"
               :title="linkCopied ? 'Link copied!' : 'Share league link'"
@@ -52,7 +60,7 @@
             </button>
             <!-- Start Trade Round — creator only, active league, no round in progress -->
             <button
-              v-if="league.is_creator && league.status === 'active' && !tradeState.round"
+              v-if="!isMigrated && league.is_creator && league.status === 'active' && !tradeState.round"
               class="btn btn-secondary btn-xs"
               :disabled="initiatingTrade"
               @click="initiateTradeRound"
@@ -63,7 +71,7 @@
             </button>
             <!-- Join button -->
             <button
-              v-if="!league.is_member && ['forming', 'draft_open'].includes(league.status)"
+              v-if="!isMigrated && !league.is_member && ['forming', 'draft_open'].includes(league.status)"
               class="btn btn-primary btn-sm"
               @click="isAuthenticated ? showJoinModal = true : requireLogin()"
             >
@@ -132,7 +140,7 @@
           <p class="text-sm mt-1 max-w-xs mx-auto">
             {{ league.is_member ? 'Use this time to star players and build your queue below!' : 'The draft starts at the scheduled time once enough managers join.' }}
           </p>
-          <p v-if="!league.is_member" class="mt-3">
+          <p v-if="!isMigrated && !league.is_member" class="mt-3">
             <button class="btn btn-primary btn-sm" @click="isAuthenticated ? showJoinModal = true : requireLogin()">Join League</button>
           </p>
         </div>
@@ -159,7 +167,7 @@
           </div>
 
           <!-- My Priority Queue strip -->
-          <div v-if="['forming', 'draft_open', 'drafting'].includes(league.status) && league.is_member && isAuthenticated && myPriorityQueue.length > 0" class="mb-4">
+          <div v-if="!isMigrated && ['forming', 'draft_open', 'drafting'].includes(league.status) && league.is_member && isAuthenticated && myPriorityQueue.length > 0" class="mb-4">
             <div class="card bg-warning/10 border border-warning/30 shadow">
               <div class="card-body p-3">
                 <div class="flex items-center gap-2 flex-wrap">
@@ -183,7 +191,7 @@
           </div>
 
           <!-- Player pool panel (shown during forming for queue building, and during draft) -->
-          <div v-if="['forming', 'draft_open', 'drafting'].includes(league.status) && league.is_member" class="mb-6">
+          <div v-if="!isMigrated && ['forming', 'draft_open', 'drafting'].includes(league.status) && league.is_member" class="mb-6">
             <div class="card bg-base-200 shadow">
               <div class="card-body p-4">
                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -249,7 +257,7 @@
                       >
                         <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
-                          <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
+                          <template v-else-if="!isMigrated && currentPick && currentPick.user_id === myUserId && league.is_member">
                             <div class="flex items-center gap-1">
                               <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
                               <button
@@ -260,7 +268,7 @@
                               >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
                             </div>
                           </template>
-                          <template v-else-if="league.is_member && isAuthenticated">
+                          <template v-else-if="!isMigrated && league.is_member && isAuthenticated">
                             <button
                               class="btn btn-xs"
                               :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
@@ -313,7 +321,7 @@
                       >
                         <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
-                          <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member">
+                          <template v-else-if="!isMigrated && currentPick && currentPick.user_id === myUserId && league.is_member">
                             <div class="flex items-center gap-1">
                               <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
                               <button
@@ -324,7 +332,7 @@
                               >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
                             </div>
                           </template>
-                          <template v-else-if="league.is_member && isAuthenticated">
+                          <template v-else-if="!isMigrated && league.is_member && isAuthenticated">
                             <button
                               class="btn btn-xs"
                               :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
@@ -375,7 +383,7 @@
                       >
                         <td>
                           <span v-if="p.drafted_by" class="text-xs text-base-content/40">{{ p.drafted_by.team_name }}</span>
-                          <template v-else-if="currentPick && currentPick.user_id === myUserId && league.is_member && currentPick.is_ref_pick">
+                          <template v-else-if="!isMigrated && currentPick && currentPick.user_id === myUserId && league.is_member && currentPick.is_ref_pick">
                             <div class="flex items-center gap-1">
                               <button class="btn btn-xs btn-primary" :disabled="picking" @click="pickPlayer(p)">Draft</button>
                               <button
@@ -386,7 +394,7 @@
                               >{{ queuePositionOf(p.hb_human_id) ?? '☆' }}</button>
                             </div>
                           </template>
-                          <template v-else-if="league.is_member && isAuthenticated">
+                          <template v-else-if="!isMigrated && league.is_member && isAuthenticated">
                             <button
                               class="btn btn-xs"
                               :class="queuePositionOf(p.hb_human_id) ? 'btn-warning' : 'btn-ghost opacity-40'"
@@ -610,7 +618,7 @@
       <div v-if="activeTab === 'myteam'">
         <div v-if="!league.is_member" class="text-center py-10 text-base-content/40">
           <p>You're not in this league.</p>
-          <button v-if="['forming', 'draft_open'].includes(league.status)" class="btn btn-primary btn-sm mt-3" @click="isAuthenticated ? showJoinModal = true : requireLogin()">
+          <button v-if="!isMigrated && ['forming', 'draft_open'].includes(league.status)" class="btn btn-primary btn-sm mt-3" @click="isAuthenticated ? showJoinModal = true : requireLogin()">
             Join League
           </button>
         </div>
@@ -626,7 +634,7 @@
         <div v-if="!tradeState.round" class="text-center py-10 text-base-content/40">
           <div class="text-4xl mb-2">🔁</div>
           <p class="font-medium">No trade round in progress.</p>
-          <p v-if="league.is_creator" class="text-sm mt-1">Use “Start Trade Round” in the header to begin one.</p>
+          <p v-if="!isMigrated && league.is_creator" class="text-sm mt-1">Use “Start Trade Round” in the header to begin one.</p>
         </div>
 
         <div v-else>
@@ -675,7 +683,7 @@
           <div v-if="tradeError" class="alert alert-error mb-3 py-2 text-sm">{{ tradeError }}</div>
 
           <!-- The trade UI — only when it's my turn -->
-          <div v-if="tradeState.is_my_turn">
+          <div v-if="!isMigrated && tradeState.is_my_turn">
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- LEFT: my roster (select someone to release) -->
@@ -751,7 +759,7 @@
                turn: a manager happy with their roster should not have to wait
                for everyone ahead of them just to pass, and the round should not
                burn a 24h deadline on someone who already knows. -->
-          <div v-if="tradeState.can_skip" class="mt-4 text-center">
+          <div v-if="!isMigrated && tradeState.can_skip" class="mt-4 text-center">
             <button class="btn btn-outline btn-sm" :disabled="tradeSubmitting" @click="skipTrade">
               I like my team — skip
               <span v-if="!tradeState.is_my_turn" class="opacity-60">(don't wait for my turn)</span>
@@ -917,6 +925,8 @@ const { isAuthenticated, isLoading: authLoading, loginWithRedirect } = useAuth0(
 const userStore = useUserStore()
 
 const league = ref(null)
+// Imported into the social site: read-only here (server answers 409 to every write).
+const isMigrated = computed(() => !!league.value?.migrated_at)
 const loading = ref(true)
 const draftQueue = ref([])
 const pool = ref({ skaters: [], goalies: [], refs: [] })

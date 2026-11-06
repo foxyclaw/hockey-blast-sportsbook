@@ -163,6 +163,7 @@ def start_scheduler(app):
                         FantasyLeague.status == "forming",
                         FantasyLeague.draft_opens_at <= now,
                         FantasyLeague.draft_opens_at.isnot(None),
+                        FantasyLeague.migrated_at.is_(None),
                     )
                 ).scalars().all()
 
@@ -219,7 +220,8 @@ def start_scheduler(app):
                 now = datetime.now(_tz.utc)
                 drafting_leagues = pred.execute(
                     select(FantasyLeague.id).where(
-                        FantasyLeague.status.in_(["drafting", "draft_open"])
+                        FantasyLeague.status.in_(["drafting", "draft_open"]),
+                        FantasyLeague.migrated_at.is_(None),
                     )
                 ).scalars().all()
 

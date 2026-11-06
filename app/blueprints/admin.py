@@ -26,7 +26,7 @@ from app.auth.admin_required import require_admin
 from app.db import HBSession, PredSession
 from app.models.pred_user import PredUser
 from app.models.pred_user_hb_claim import PredUserHbClaim
-from app.utils.response import error_response
+from app.utils.response import error_response, reject_if_migrated
 
 # Super admin — only this user can grant/revoke admin on others
 SUPER_ADMIN_ID = 17
@@ -779,6 +779,9 @@ def update_fantasy_league(league_id: int):
     league = pred.get(FantasyLeague, league_id)
     if not league:
         return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
 
     orig_season_id = league.hb_season_id  # capture before any edits
 
@@ -981,6 +984,9 @@ def clear_scoring_season(league_id: int):
     league = pred.get(FantasyLeague, league_id)
     if not league:
         return jsonify({"error": "NOT_FOUND", "message": "League not found"}), 404
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
     league.hb_season_id = None
     league.hb_division_id = None
     pred.execute(sa_delete(FantasyGameScores).where(FantasyGameScores.league_id == league_id))
@@ -1071,6 +1077,9 @@ def toggle_blocked_player(league_id: int):
     league = pred.get(FantasyLeague, league_id)
     if not league:
         return error_response("NOT_FOUND", f"No league with id={league_id}", 404)
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
 
     settings = dict(league.settings or {})
     current = list(settings.get("draft_blocked", []))
