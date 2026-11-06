@@ -58,6 +58,10 @@ class FantasyLeague(PredBase):
     winner_user_id: Mapped[int | None] = mapped_column(
         Integer, sa.ForeignKey("pred_users.id", ondelete="SET NULL"), nullable=True
     )
+    # Set when the league was imported into the social site (hockey-blast.com).
+    # A migrated league is read-only here: writes return 409, jobs skip it.
+    migrated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    migrated_to_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     # Relationships
     managers: Mapped[list["FantasyManager"]] = relationship(
@@ -105,6 +109,8 @@ class FantasyLeague(PredBase):
             "join_code": self.join_code,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "winner_user_id": self.winner_user_id,
+            "migrated_at": self.migrated_at.isoformat() if self.migrated_at else None,
+            "migrated_to_url": self.migrated_to_url,
         }
 
     def __repr__(self) -> str:

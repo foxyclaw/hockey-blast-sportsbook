@@ -589,7 +589,10 @@ def score_live_games() -> dict:
     try:
         from app.models.fantasy_league import FantasyLeague
         leagues = pred.execute(
-            select(FantasyLeague).where(FantasyLeague.status == "active")
+            select(FantasyLeague).where(
+                FantasyLeague.status == "active",
+                FantasyLeague.migrated_at.is_(None),
+            )
         ).scalars().all()
     except Exception as e:
         logger.exception("[fantasy-live] Could not load active leagues: %s", e)
@@ -675,6 +678,7 @@ def auto_assign_seasons() -> dict:
                 FantasyLeague.status == "active",
                 FantasyLeague.hb_season_id.is_(None),
                 FantasyLeague.season_starts_at <= now,
+                FantasyLeague.migrated_at.is_(None),
             )
         ).scalars().all()
     except Exception as e:
@@ -755,6 +759,7 @@ def complete_finished_leagues() -> dict:
             select(FantasyLeague).where(
                 FantasyLeague.status == "active",
                 FantasyLeague.hb_division_id.is_not(None),
+                FantasyLeague.migrated_at.is_(None),
             )
         ).scalars().all()
     except Exception as e:
@@ -856,7 +861,10 @@ def score_active_leagues() -> dict:
     try:
         from app.models.fantasy_league import FantasyLeague
         leagues = pred.execute(
-            select(FantasyLeague).where(FantasyLeague.status == "active")
+            select(FantasyLeague).where(
+                FantasyLeague.status == "active",
+                FantasyLeague.migrated_at.is_(None),
+            )
         ).scalars().all()
     except Exception as e:
         logger.exception("[fantasy] Could not load active leagues: %s", e)

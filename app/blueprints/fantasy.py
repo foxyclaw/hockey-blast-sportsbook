@@ -31,7 +31,7 @@ from app.models.fantasy_draft_queue import FantasyDraftQueue
 from app.models.fantasy_standings import FantasyStandings
 from app.models.pred_user import PredUser
 from app.utils.names import format_player_name
-from app.utils.response import error_response
+from app.utils.response import error_response, reject_if_migrated
 from hockey_blast_common_lib.game_status import StatusId, FINAL_STATUS_IDS
 
 fantasy_bp = Blueprint("fantasy", __name__)
@@ -724,6 +724,9 @@ def join_league(league_id: int):
     league = pred.get(FantasyLeague, league_id)
     if league is None:
         return error_response("NOT_FOUND", "League not found", 404)
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
     if league.status != "forming":
         return error_response("CONFLICT", "League is no longer accepting managers", 409)
 
@@ -894,6 +897,10 @@ def make_pick(league_id: int):
     if not hb_human_id:
         return error_response("VALIDATION_ERROR", "hb_human_id is required", 400)
 
+    resp = reject_if_migrated(PredSession().get(FantasyLeague, league_id))
+    if resp:
+        return resp
+
     from app.services.fantasy_draft_service import make_pick as _make_pick
     try:
         result = _make_pick(league_id, user.id, int(hb_human_id))
@@ -998,6 +1005,9 @@ def save_my_draft_queue(league_id: int):
     from app.models.fantasy_manager_queue import FantasyManagerQueue
     user_id = g.pred_user.id
     pred = PredSession()
+    resp = reject_if_migrated(pred.get(FantasyLeague, league_id))
+    if resp:
+        return resp
 
     data = request.get_json(silent=True) or {}
     human_ids = data.get("queue", [])
@@ -1047,6 +1057,9 @@ def process_draft_queue(league_id: int):
     user_id = g.pred_user.id
     pred = PredSession()
     league = pred.get(FantasyLeague, league_id)
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
 
     if league is None or league.status not in ("draft_open", "drafting"):
         return jsonify({"picked": False, "reason": "draft not active"})
@@ -1490,6 +1503,9 @@ def open_draft(league_id: int):
 
     if league is None:
         return error_response("NOT_FOUND", "League not found", 404)
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
     if league.created_by != user.id:
         return error_response("FORBIDDEN", "Only the league creator can open the draft", 403)
     if league.status != "forming":
@@ -1533,6 +1549,9 @@ def start_season(league_id: int):
 
     if league is None:
         return error_response("NOT_FOUND", "League not found", 404)
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
     if league.created_by != user.id:
         return error_response("FORBIDDEN", "Only the league creator can start the season", 403)
     if league.status not in ("drafting", "draft_open"):
@@ -1619,6 +1638,9 @@ def initiate_trade(league_id: int):
     league = pred.get(FantasyLeague, league_id)
     if league is None:
         return error_response("NOT_FOUND", "League not found", 404)
+    resp = reject_if_migrated(league)
+    if resp:
+        return resp
     if league.created_by != user.id:
         return error_response("FORBIDDEN", "Only the league creator can start a trade round", 403)
 
@@ -1641,6 +1663,9 @@ def trade_swap(league_id: int):
     """
     from app.services.fantasy_trade_service import make_trade
     user = g.pred_user
+    resp = reject_if_migrated(PredSession().get(FantasyLeague, league_id))
+    if resp:
+        return resp
     body = request.get_json(silent=True) or {}
     release_id = body.get("release_hb_human_id")
     acquire_id = body.get("acquire_hb_human_id")
@@ -1665,6 +1690,9 @@ def trade_skip(league_id: int):
     """
     from app.services.fantasy_trade_service import skip_turn
     user = g.pred_user
+    resp = reject_if_migrated(PredSession().get(FantasyLeague, league_id))
+    if resp:
+        return resp
     try:
         turn = skip_turn(league_id, user.id)
     except ValueError as e:
